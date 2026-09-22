@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 
-// ===== Mock 用户类型 =====
+// ===== 用户类型 =====
 export interface MockUser {
   id: string;
   name: string;
@@ -11,25 +11,11 @@ export interface MockUser {
   avatar?: string;
 }
 
-// ===== Mock 用户数据库 =====
-const mockUsers: (MockUser & { password: string })[] = [
-  {
-    id: "u1",
-    name: "管理员",
-    email: "admin@mindray.com",
-    password: "admin123",
-    role: "admin",
-  },
-  {
-    id: "u2",
-    name: "信息收集员",
-    email: "collector@mindray.com",
-    password: "collector123",
-    role: "collector",
-  },
-];
+const STORAGE_KEY = "mindray_auth_token";
+const USER_KEY = "mindray_auth_user";
 
-const STORAGE_KEY = "mindray_auth_user";
+// API 基础地址（通过 Next.js rewrite 代理，前端直接调 /api）
+const API_BASE = "/api/v1";
 
 // ===== Auth Context =====
 interface AuthContextValue {
@@ -48,58 +34,113 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 初始化：从 localStorage 恢复登录状态
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setUser(JSON.parse(stored));
+    const init = async () => {
+      try {
+        const token = localStorage.getItem(STORAGE_KEY);
+        const storedUser = localStorage.getItem(USER_KEY);
+        if (token && storedUser) {
+          setUser(JSON.parse(storedUser));
+          // 验证 token 是否仍然有效
+          try {
+            const resp = await fetch(`${API_BASE}/user/profile`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data.user) {
+                const u: MockUser = {
+                  id: String(data.user.id),
+                  name: data.user.name,
+                  email: data.user.email,
+                  role: data.user.role,
+                  avatar: data.user.avatar,
+                };
+                setUser(u);
+                localStorage.setItem(USER_KEY, JSON.stringify(u));
+              }
+            } else if (resp.status === 401) {
+              localStorage.removeItem(STORAGE_KEY);
+              localStorage.removeItem(USER_KEY);
+              setUser(null);
+            }
+          } catch {
+            // 网络错误（开发阶段后端未启动），保留 localStorage 中的用户
+          }
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+    init();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    // 模拟网络延迟
-    await new Promise((r) => setTimeout(r, 500));
+    try {
+      const resp = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-    const found = mockUsers.find(
-      (u) => u.email === email && u.password === password
-    );
-    if (!found) {
-      return { success: false, error: "邮箱或密码不正确" };
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        return { success: false, error: data.msg || "登录失败" };
+      }
+
+      const u: MockUser = {
+        id: String(data.user.id),
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role,
+        avatar: data.user.avatar,
+      };
+
+      setUser(u);
+      localStorage.setItem(STORAGE_KEY, data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(u));
+      return { success: true };
+    } catch {
+      return { success: false, error: "网络错误，请检查服务是否启动" };
     }
-
-    const { password: _, ...userWithoutPwd } = found;
-    setUser(userWithoutPwd);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(userWithoutPwd));
-    return { success: true };
   }, []);
 
   const signup = useCallback(async (name: string, email: string, password: string) => {
-    // 模拟网络延迟
-    await new Promise((r) => setTimeout(r, 500));
+    try {
+      const resp = await fetch(`${API_BASE}/auth/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
 
-    // 检查邮箱是否已注册
-    if (mockUsers.some((u) => u.email === email)) {
-      return { success: false, error: "该邮箱已被注册" };
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        return { success: false, error: data.msg || "注册失败" };
+      }
+
+      const u: MockUser = {
+        id: String(data.user.id),
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role,
+        avatar: data.user.avatar,
+      };
+
+      setUser(u);
+      localStorage.setItem(STORAGE_KEY, data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(u));
+      return { success: true };
+    } catch {
+      return { success: false, error: "网络错误，请检查服务是否启动" };
     }
-
-    // Mock 注册：直接创建新用户（不会持久到 mockUsers，仅模拟流程）
-    const newUser: MockUser = {
-      id: `u${Date.now()}`,
-      name,
-      email,
-      role: "collector",
-    };
-    setUser(newUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-    return { success: true };
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(USER_KEY);
   }, []);
 
   return (
