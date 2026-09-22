@@ -1,0 +1,36 @@
+# Secrets & local env
+.env
+.env.*
+!.env.example
+deploy/.env
+
+# Dependencies & build outputs
+node_modules/
+.next/
+out/
+dist/
+build/
+*.exe
+apps/backend/mindray
+apps/backend/mindray.exe
+
+# Tooling / editor
+.DS_Store
+.idea/
+.vscode/
+*.local
+.agents/
+.codebuddy/
+skills-lock.json
+
+# Leftovers from monorepo migration
+mindray-backend/
+mindray-frontend/
+_trash_backend/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Go
+apps/backend/vendor/

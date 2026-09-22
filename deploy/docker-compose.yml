@@ -1,0 +1,73 @@
+# Production: pull pre-built images only. Never build on the ECS host.
+# Usage (on server):
+#   IMAGE_TAG=<git-sha> docker compose --env-file .env up -d
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: mindray-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-mindray}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mindray_secret}
+      POSTGRES_DB: ${DB_NAME:-mindray}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../apps/backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mindray} -d ${DB_NAME:-mindray}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mindray
+
+  api:
+    image: ghcr.io/kanthon1209/mindray-api:${IMAGE_TAG:-latest}
+    container_name: mindray-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-mindray_jwt_secret_change_me}
+    networks:
+      - mindray
+
+  web:
+    image: ghcr.io/kanthon1209/mindray-web:${IMAGE_TAG:-latest}
+    container_name: mindray-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      # Server-side proxy target inside the compose network
+      API_UPSTREAM: http://api:8080
+    networks:
+      - mindray
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mindray-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - mindray
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  mindray:
+    driver: bridge

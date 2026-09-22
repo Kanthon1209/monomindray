@@ -1,0 +1,21 @@
+# Production Caddyfile
+# Set SITE_ADDRESS in .env (e.g. example.com). Caddy auto-HTTPS when DNS points here.
+
+{$SITE_ADDRESS:localhost} {
+	# Backend already serves /api/v1/... — do not strip the prefix
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	encode gzip zstd
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
