@@ -88,7 +88,7 @@ export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
               <Input
                 id="name"
                 type="text"
-                placeholder="张三"
+                placeholder="Vivian"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
