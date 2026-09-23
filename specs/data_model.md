@@ -83,3 +83,5 @@ hospitals ──< devices
 - `003_create_business_tables.sql` — 本模型
 - `004_seed_demo.sql` — 演示数据（医院/设备/客户/案例）
 - `005_hospital_archive.sql` — 化免档案 archive JSONB + 演示回填
+- `006_anhui_city_seed.sql` — 安徽地市演示医院
+- `007_surveys.sql` — 问卷模板/发放/任务/答卷 + 化免种子模板 `immuno_archive_v1`
