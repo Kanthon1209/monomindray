@@ -8,6 +8,8 @@ export interface Hospital {
   deviceCount: number;
   deviceModels: string[];
   status: "active" | "pending" | "inactive" | string;
+  remark?: string;
+  archive?: Record<string, string>;
 }
 
 export interface FilterOptions {

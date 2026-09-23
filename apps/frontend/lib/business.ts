@@ -75,6 +75,8 @@ function mapHospital(raw: any): Hospital {
     deviceCount: raw.deviceCount ?? 0,
     deviceModels: raw.deviceModels || [],
     status: raw.status,
+    remark: raw.remark || undefined,
+    archive: raw.archive || {},
   };
 }
 
@@ -134,6 +136,7 @@ function qs(params: Record<string, string | number | undefined>) {
 export async function fetchDashboardHospitals(params: {
   region?: string;
   province?: string;
+  city?: string;
   level?: string;
   type?: string;
   status?: string;
@@ -145,6 +148,7 @@ export async function fetchDashboardHospitals(params: {
     `/dashboard/hospitals${qs({
       region: params.region,
       province: params.province,
+      city: params.city,
       level: params.level,
       type: params.type,
       status: params.status,
@@ -183,6 +187,12 @@ export async function listHospitals(params: {
     items: (data?.items || []).map(mapHospital),
     total: data?.total || 0,
   };
+}
+
+export async function getHospital(id: string) {
+  const { data, error } = await apiFetch<{ hospital: any }>(`/hospitals/${id}`);
+  if (error) return { error };
+  return { hospital: mapHospital(data!.hospital) };
 }
 
 export async function createHospital(payload: Record<string, string>) {

@@ -14,7 +14,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { HospitalDetailSheet } from "./HospitalDetailSheet";
 import type { Hospital } from "@/lib/types";
+import { regionLabelFromCity } from "@/lib/hospital-archive";
 import { cn } from "@/lib/utils";
 
 interface HospitalPanelProps {
@@ -25,7 +27,7 @@ interface HospitalPanelProps {
 const PAGE_SIZE = 10;
 
 const statusConfig: Record<
-  Hospital["status"],
+  string,
   { label: string; variant: "success" | "warning" | "secondary" }
 > = {
   active: { label: "运营中", variant: "success" },
@@ -36,8 +38,9 @@ const statusConfig: Record<
 export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
-  // 筛选条件变化后重置到第 1 页
   useEffect(() => {
     setCurrentPage(1);
   }, [hospitals, selectedProvince]);
@@ -49,25 +52,26 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
       (h) =>
         h.name.toLowerCase().includes(lower) ||
         h.province.toLowerCase().includes(lower) ||
-        h.city.toLowerCase().includes(lower)
+        h.city.toLowerCase().includes(lower),
     );
   }, [hospitals, searchQuery]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const safePage = Math.min(currentPage, totalPages);
-  const pageData = filtered.slice(
-    (safePage - 1) * PAGE_SIZE,
-    safePage * PAGE_SIZE
-  );
+  const pageData = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
     setCurrentPage(1);
   };
 
+  const openDetail = (id: string) => {
+    setSelectedId(id);
+    setDetailOpen(true);
+  };
+
   return (
     <div className="flex h-full flex-col bg-white dark:bg-zinc-950">
-      {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold">医院清单</h2>
@@ -82,7 +86,6 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
         )}
       </div>
 
-      {/* Search & Action */}
       <div className="flex items-center gap-2 border-b px-4 py-2.5">
         <div className="relative flex-1">
           <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -101,13 +104,12 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
         </Button>
       </div>
 
-      {/* Table */}
       <div className="flex-1 overflow-auto">
         <Table className="min-w-[480px]">
           <TableHeader className="sticky top-0 z-10 bg-white dark:bg-zinc-950">
             <TableRow className="border-b">
-              <TableHead className="w-16">省/市</TableHead>
-              <TableHead className="w-16">区/市</TableHead>
+              <TableHead className="w-16">地市</TableHead>
+              <TableHead className="w-14">区域</TableHead>
               <TableHead>医院名称</TableHead>
               <TableHead className="w-20">级别</TableHead>
               <TableHead className="w-20">设备数</TableHead>
@@ -123,31 +125,34 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
               </TableRow>
             ) : (
               pageData.map((hospital) => (
-                <TableRow key={hospital.id} className="cursor-pointer hover:bg-muted/50">
-                  <TableCell className="truncate text-xs text-muted-foreground">
-                    {hospital.province}
-                  </TableCell>
+                <TableRow
+                  key={hospital.id}
+                  className={cn(
+                    "cursor-pointer hover:bg-muted/50",
+                    selectedId === hospital.id && detailOpen && "bg-muted/60",
+                  )}
+                  onClick={() => openDetail(hospital.id)}
+                >
                   <TableCell className="truncate text-xs text-muted-foreground">
                     {hospital.city}
                   </TableCell>
-                  <TableCell className="text-xs font-medium">
-                    {hospital.name}
+                  <TableCell className="truncate text-xs text-muted-foreground">
+                    {regionLabelFromCity(hospital.city) || "—"}
                   </TableCell>
+                  <TableCell className="text-xs font-medium">{hospital.name}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {hospital.level}
                   </TableCell>
                   <TableCell className="text-xs">
-                    <span className="font-medium text-primary">
-                      {hospital.deviceCount}
-                    </span>
+                    <span className="font-medium text-primary">{hospital.deviceCount}</span>
                     <span className="text-muted-foreground"> 台</span>
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={(statusConfig[hospital.status as keyof typeof statusConfig] || statusConfig.pending).variant}
+                      variant={(statusConfig[hospital.status] || statusConfig.pending).variant}
                       className="text-[10px]"
                     >
-                      {(statusConfig[hospital.status as keyof typeof statusConfig] || statusConfig.pending).label}
+                      {(statusConfig[hospital.status] || statusConfig.pending).label}
                     </Badge>
                   </TableCell>
                 </TableRow>
@@ -157,7 +162,6 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
         </Table>
       </div>
 
-      {/* Pagination */}
       <div className="flex items-center justify-between border-t px-4 py-2">
         <span className="text-xs text-muted-foreground">
           共 {filtered.length} 条，第 {safePage}/{totalPages} 页
@@ -172,7 +176,6 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
           >
             上一页
           </Button>
-          {/* 桌面端显示完整页码 */}
           <div className="hidden items-center gap-1 sm:flex">
             {generatePageNumbers(safePage, totalPages).map((page, idx) =>
               page === "..." ? (
@@ -187,15 +190,14 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
                     "h-7 min-w-7 rounded-md px-2 text-xs transition-colors",
                     page === safePage
                       ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
+                      : "hover:bg-muted",
                   )}
                 >
                   {page}
                 </button>
-              )
+              ),
             )}
           </div>
-          {/* 移动端只显示当前页 */}
           <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-primary px-2 text-xs text-primary-foreground sm:hidden">
             {safePage}
           </span>
@@ -210,6 +212,12 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
           </Button>
         </div>
       </div>
+
+      <HospitalDetailSheet
+        hospitalId={selectedId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }
