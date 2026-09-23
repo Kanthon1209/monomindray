@@ -312,7 +312,7 @@ export default function SurveyTemplatesPage() {
       ...(fieldDraft.locked ? { locked: true } : {}),
     };
 
-    let fields = [...(schema.fields || [])];
+    const fields = [...(schema.fields || [])];
     if (fieldMode === "edit" && editingOriginalKey) {
       const idx = fields.findIndex((f) => f.key === editingOriginalKey);
       if (idx < 0) {
@@ -362,7 +362,7 @@ export default function SurveyTemplatesPage() {
     }
     const schema = normalizeSchema(template.schema);
     const sections = [...(schema.sections || [])];
-    let fields = [...(schema.fields || [])];
+    const fields = [...(schema.fields || [])];
 
     if (renamingSection) {
       if (name !== renamingSection && sections.includes(name)) {
