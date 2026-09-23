@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import Link from "next/link";
 import { Search, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -92,9 +93,11 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
             className="h-8 pl-8"
           />
         </div>
-        <Button size="sm" variant="default" className="shrink-0">
-          <Plus className="h-4 w-4" />
-          <span className="hidden sm:inline">案例维护</span>
+        <Button size="sm" variant="default" className="shrink-0" asChild>
+          <Link href="/dashboard/cases">
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">案例维护</span>
+          </Link>
         </Button>
       </div>
 
