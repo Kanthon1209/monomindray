@@ -237,10 +237,10 @@ type (
 		Template SurveyTemplateInfo `json:"template"`
 	}
 	UpdateSurveyTemplateRequest struct {
-		Title       string          `json:"title,omitempty"`
-		Description string          `json:"description,omitempty"`
+		Title       string          `json:"title,optional"`
+		Description string          `json:"description,optional"`
 		Schema      json.RawMessage `json:"schema"`
-		Status      string          `json:"status,omitempty"`
+		Status      string          `json:"status,optional"`
 	}
 
 	SurveyAssignmentBrief struct {
@@ -270,10 +270,10 @@ type (
 	CreateSurveyCampaignRequest struct {
 		TemplateId  int64             `json:"templateId"`
 		Title       string            `json:"title"`
-		Description string            `json:"description,omitempty"`
-		DueAt       string            `json:"dueAt,omitempty"`
-		Defaults    map[string]string `json:"defaults,omitempty"`
-		LockedKeys  []string          `json:"lockedKeys,omitempty"`
+		Description string            `json:"description,optional"`
+		DueAt       string            `json:"dueAt,optional"`
+		Defaults    map[string]string `json:"defaults,optional"`
+		LockedKeys  []string          `json:"lockedKeys,optional"`
 		AssigneeIds []int64           `json:"assigneeIds"`
 	}
 	ListSurveyCampaignsRequest struct {
@@ -320,7 +320,7 @@ type (
 	}
 	SaveSurveyAnswersRequest struct {
 		Answers    map[string]string `json:"answers"`
-		HospitalId *int64            `json:"hospitalId,omitempty"`
+		HospitalId *int64            `json:"hospitalId,optional"`
 	}
 
 	SurveySubmissionInfo struct {
@@ -350,6 +350,6 @@ type (
 		Submission SurveySubmissionInfo `json:"submission"`
 	}
 	ReviewSurveySubmissionRequest struct {
-		Note string `json:"note,omitempty"`
+		Note string `json:"note,optional"`
 	}
 )
