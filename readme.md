@@ -8,6 +8,7 @@
 apps/backend     Go (go-zero) API
 apps/frontend    Next.js Web
 deploy/          生产 / 本地 compose、Caddy、环境变量模板
+scripts/         本机 → ECS 快同步（不经 git）
 .github/workflows  CI 与部署
 specs/           需求与设计笔记
 ```
@@ -44,9 +45,34 @@ cd apps/frontend && npm ci && npm run dev
 - Web: `http://localhost:3000`
 - 经 Caddy: `http://localhost/api/...`、`http://localhost/`
 
+## 开发快同步到 ECS（不提交）
+
+本地改完想立刻看公网效果、又不想走 commit / Actions 时，用：
+
+```powershell
+# Windows（推荐）
+.\scripts\deploy-ecs.ps1              # 构建 api+web 并 scp 重启
+.\scripts\deploy-ecs.ps1 -Target web  # 只更前端
+.\scripts\deploy-ecs.ps1 -Target api  # 只更后端
+.\scripts\deploy-ecs.ps1 -SkipBuild   # 已有产物，只打包上传
+.\scripts\deploy-ecs.ps1 -Migrate 006_anhui_city_seed.sql
+```
+
+```bash
+# Git Bash / WSL / macOS
+./scripts/deploy-ecs.sh
+./scripts/deploy-ecs.sh web
+MIGRATE=006_anhui_city_seed.sql ./scripts/deploy-ecs.sh
+```
+
+前提：本机已配置 SSH Host `mindray`（或设 `MINDRAY_SSH_HOST`），ECS 目录默认 `/home/kanthon/mindray`。  
+流程是本机交叉编译 / `npm run build` → scp → 服务器 `docker compose.ecs.yml --build`（只拷贝产物，不在 ECS 上跑 go/npm）。
+
+**注意：** 这与正式 CI/CD 并行存在；要让仓库与公网长期一致，仍需 `push main` 走 Actions。
+
 ## 生产（ECS）
 
-服务器要求：**禁止**在 ECS 上 `docker compose build` / `npm ci` / `go build`。
+服务器要求：**正式流水线禁止**在 ECS 上跑 `npm ci` / `go build`。开发快同步用 `docker-compose.ecs.yml` 时，`--build` 仅基于本机已编译产物做轻量镜像层。
 
 ```text
 /home/kanthon/mindray/          # 本仓 clone

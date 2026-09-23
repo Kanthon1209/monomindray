@@ -39,3 +39,8 @@ npm-debug.log*
 
 # Go
 apps/backend/vendor/
+
+
+
+# Data
+data/
