@@ -44,8 +44,33 @@ WHERE h.province = '安徽省'
       AND x.id <> h.id
   );
 
-UPDATE hospitals SET city = '合肥市'
-WHERE province = '安徽省' AND name = '合肥人民医院' AND city IN ('合肥', '合肥市');
+-- Prefer 「合肥市」命名：若已有带「市」的同名行，删掉旧「合肥」行；否则改名
+DELETE FROM hospitals AS h
+WHERE h.province = '安徽省'
+  AND h.name = '合肥人民医院'
+  AND h.city = '合肥'
+  AND EXISTS (
+    SELECT 1
+    FROM hospitals AS x
+    WHERE x.province = h.province
+      AND x.name = h.name
+      AND x.city = '合肥市'
+      AND x.id <> h.id
+  );
+
+UPDATE hospitals AS h
+SET city = '合肥市'
+WHERE h.province = '安徽省'
+  AND h.name = '合肥人民医院'
+  AND h.city = '合肥'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM hospitals AS x
+    WHERE x.province = h.province
+      AND x.name = h.name
+      AND x.city = '合肥市'
+      AND x.id <> h.id
+  );
 
 -- +goose Down
 -- Historical migration: prefer forward fixes over automatic rollback.
