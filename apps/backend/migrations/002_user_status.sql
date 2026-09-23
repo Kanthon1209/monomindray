@@ -1,3 +1,4 @@
+-- +goose Up
 -- Add approval status for existing databases created before status column existed.
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'pending';
@@ -11,3 +12,7 @@ CREATE INDEX IF NOT EXISTS idx_users_status ON users (status);
 -- Existing admins and previously created accounts become approved.
 UPDATE users SET status = 'approved' WHERE role = 'admin' OR status IS NULL OR status = '';
 UPDATE users SET status = 'approved' WHERE email = 'admin@mindray.com';
+
+-- +goose Down
+-- Historical migration: prefer forward fixes over automatic rollback.
+SELECT 1;

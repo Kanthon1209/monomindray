@@ -5,9 +5,8 @@
 # 用法:
 #   ./scripts/deploy-ecs.sh
 #   ./scripts/deploy-ecs.sh web
-#   ./scripts/deploy-ecs.sh api
 #   SKIP_BUILD=1 ./scripts/deploy-ecs.sh
-#   MIGRATE=006_anhui_city_seed.sql ./scripts/deploy-ecs.sh
+#   SKIP_MIGRATE=1 ./scripts/deploy-ecs.sh
 
 set -euo pipefail
 
@@ -18,7 +17,7 @@ TARGET="${1:-all}"
 HOST="${MINDRAY_SSH_HOST:-mindray}"
 REMOTE_DIR="${MINDRAY_REMOTE_DIR:-/home/kanthon/mindray}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
-MIGRATE="${MIGRATE:-}"
+SKIP_MIGRATE="${SKIP_MIGRATE:-0}"
 
 need_api=0
 need_web=0
@@ -65,6 +64,7 @@ pack=(
   deploy/Caddyfile
   apps/backend/migrations
   apps/backend/etc
+  scripts/goose-up.sh
 )
 [[ "$need_api" == "1" ]] && pack+=(deploy/artifacts/mindray-api)
 [[ "$need_web" == "1" ]] && pack+=(
@@ -79,34 +79,30 @@ step "上传到 ${HOST}:/tmp"
 remote_tgz="/tmp/$(basename "$tgz")"
 scp "$tgz" "${HOST}:${remote_tgz}"
 
-step "ECS 解压并重启: ${services}"
 migrate_block=""
-if [[ -n "$MIGRATE" ]]; then
-  IFS=',' read -ra files <<<"$MIGRATE"
-  for f in "${files[@]}"; do
-    f="$(echo "$f" | xargs)"
-    [[ -z "$f" ]] && continue
-    migrate_block+=$'\n'"cd '$REMOTE_DIR'"
-    migrate_block+=$'\n'"echo migrate: $f"
-    migrate_block+=$'\n'"docker exec -i mindray-db psql -U mindray -d mindray < apps/backend/migrations/$f"
-  done
+if [[ "$SKIP_MIGRATE" != "1" ]]; then
+  migrate_block=$'\n'"cd '$REMOTE_DIR'"$'\n'"./scripts/goose-up.sh up"
 fi
 
+step "ECS 解压 / goose up / 重启: ${services}"
 ssh "$HOST" bash -s <<EOF
 set -euo pipefail
 cd '$REMOTE_DIR'
 tar -xzf '$remote_tgz'
 rm -f '$remote_tgz'
 [[ -f deploy/artifacts/mindray-api ]] && chmod +x deploy/artifacts/mindray-api
+chmod +x scripts/goose-up.sh
 cd deploy
-docker compose -f docker-compose.ecs.yml --env-file .env up -d --build $services
+docker compose -f docker-compose.ecs.yml --env-file .env up -d postgres
 sleep 2
 $migrate_block
 cd '$REMOTE_DIR/deploy'
+docker compose -f docker-compose.ecs.yml --env-file .env up -d --build $services
+sleep 2
 docker compose -f docker-compose.ecs.yml ps
 curl -sS -o /dev/null -w 'dashboard=%{http_code}\n' http://127.0.0.1/dashboard || true
 echo DONE
 EOF
 
 rm -f "$tgz"
-step "完成（未提交到 git；正式发布请 push main → Actions）"
+step "完成（goose up + services；正式发布请 push main → Actions）"

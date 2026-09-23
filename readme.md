@@ -51,25 +51,31 @@ cd apps/frontend && npm ci && npm run dev
 
 ```powershell
 # Windows（推荐）
-.\scripts\deploy-ecs.ps1              # 构建 api+web 并 scp 重启
-.\scripts\deploy-ecs.ps1 -Target web  # 只更前端
-.\scripts\deploy-ecs.ps1 -Target api  # 只更后端
-.\scripts\deploy-ecs.ps1 -SkipBuild   # 已有产物，只打包上传
-.\scripts\deploy-ecs.ps1 -Migrate 006_anhui_city_seed.sql
+.\scripts\deploy-ecs.ps1              # 构建 + goose up + 重启
+.\scripts\deploy-ecs.ps1 -Target web  # 只更前端（仍会 goose up）
+.\scripts\deploy-ecs.ps1 -Target api
+.\scripts\deploy-ecs.ps1 -SkipBuild
+.\scripts\deploy-ecs.ps1 -SkipMigrate # 跳过数据库迁移
 ```
 
 ```bash
 # Git Bash / WSL / macOS
 ./scripts/deploy-ecs.sh
-./scripts/deploy-ecs.sh web
-MIGRATE=006_anhui_city_seed.sql ./scripts/deploy-ecs.sh
+SKIP_MIGRATE=1 ./scripts/deploy-ecs.sh
 ```
 
 前提：本机已配置 SSH Host `mindray`（或设 `MINDRAY_SSH_HOST`），ECS 目录默认 `/home/kanthon/mindray`。  
-流程是本机交叉编译 / `npm run build` → scp → 服务器 `docker compose.ecs.yml --build`（只拷贝产物，不在 ECS 上跑 go/npm）。
+流程：本机构建 → scp → 起 postgres → **`scripts/goose-up.sh`（与 Actions 相同）** → 重启 api/web。
 
-**注意：** 这与正式 CI/CD 并行存在；要让仓库与公网长期一致，仍需 `push main` 走 Actions。
+数据库迁移使用 [pressly/goose](https://github.com/pressly/goose)：对比 `apps/backend/migrations` 与库内版本表，只执行未应用的 SQL。手动检查：
 
+```bash
+# 在 ECS 上
+./scripts/goose-up.sh status
+./scripts/goose-up.sh up
+```
+
+**注意：** 这与正式 CI/CD 并行存在；要让仓库与公网长期一致，仍需 `push main` 走 Actions（Actions 部署同样会跑 goose up）。
 ## 生产（ECS）
 
 服务器要求：**正式流水线禁止**在 ECS 上跑 `npm ci` / `go build`。开发快同步用 `docker-compose.ecs.yml` 时，`--build` 仅基于本机已编译产物做轻量镜像层。
@@ -92,11 +98,11 @@ IMAGE_TAG=<sha> docker compose up -d
 之后由 GitHub Actions `ci-cd.yml` 自动：
 
 ```text
-backend/frontend 检查通过 → 构建并推送 GHCR 镜像 → SSH → git pull → compose pull && up -d
+backend/frontend 检查通过 → 构建并推送 GHCR 镜像
+  → SSH → git pull → compose up postgres → goose up → compose up -d
 ```
 
 PR 只跑检查，不部署；`push` 到 `main` 才会构建镜像并部署。
-
 ### GitHub Secrets
 
 | Secret | 含义 |

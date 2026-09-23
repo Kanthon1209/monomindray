@@ -127,5 +127,8 @@ jobs:
               echo "IMAGE_TAG=${IMAGE_TAG}" > .env
             fi
             docker compose pull
+            docker compose up -d postgres
+            chmod +x /home/kanthon/mindray/scripts/goose-up.sh
+            /home/kanthon/mindray/scripts/goose-up.sh up
             docker compose up -d
             docker compose ps

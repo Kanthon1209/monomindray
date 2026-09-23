@@ -6,6 +6,8 @@
 .DESCRIPTION
   Cross-compile API + Next standalone on the dev machine; ECS only runs
   docker compose --build that copies prebuilt artifacts (no go/npm on server).
+  By default also runs scripts/goose-up.sh so pending SQL migrations apply
+  (same as GitHub Actions deploy).
 
 .PARAMETER Target
   all | api | web (default: all)
@@ -13,9 +15,8 @@
 .PARAMETER SkipBuild
   Pack and upload existing artifacts only
 
-.PARAMETER Migrate
-  Comma-separated SQL files under apps/backend/migrations to apply after upload
-  Example: -Migrate 005_hospital_archive.sql,006_anhui_city_seed.sql
+.PARAMETER SkipMigrate
+  Skip goose up (default is to migrate)
 
 .PARAMETER SshHost
   SSH host alias (default: env MINDRAY_SSH_HOST or mindray)
@@ -27,7 +28,7 @@
   .\scripts\deploy-ecs.ps1
   .\scripts\deploy-ecs.ps1 -Target web
   .\scripts\deploy-ecs.ps1 -SkipBuild -Target api
-  .\scripts\deploy-ecs.ps1 -Migrate 006_anhui_city_seed.sql
+  .\scripts\deploy-ecs.ps1 -SkipMigrate
 #>
 [CmdletBinding()]
 param(
@@ -36,7 +37,7 @@ param(
 
   [switch]$SkipBuild,
 
-  [string]$Migrate = "",
+  [switch]$SkipMigrate,
 
   [string]$SshHost = $(if ($env:MINDRAY_SSH_HOST) { $env:MINDRAY_SSH_HOST } else { "mindray" }),
 
@@ -136,7 +137,8 @@ $packList = @(
   "deploy/docker-compose.ecs.yml",
   "deploy/Caddyfile",
   "apps/backend/migrations",
-  "apps/backend/etc"
+  "apps/backend/etc",
+  "scripts/goose-up.sh"
 )
 if ($needApi) { $packList += "deploy/artifacts/mindray-api" }
 if ($needWeb) {
@@ -157,34 +159,30 @@ $tgzRemote = "/tmp/$tgzName"
 & scp $tgzLocal "${SshHost}:$tgzRemote"
 if ($LASTEXITCODE -ne 0) { throw "scp failed ($LASTEXITCODE)" }
 
-Write-Step "Remote extract and restart: $services"
+Write-Step "Remote extract, migrate, restart: $services"
 $remoteLines = @(
   "set -euo pipefail",
   "cd '$RemoteDir'",
   "tar -xzf '$tgzRemote'",
   "rm -f '$tgzRemote'",
   "if [ -f deploy/artifacts/mindray-api ]; then chmod +x deploy/artifacts/mindray-api; fi",
+  "chmod +x scripts/goose-up.sh",
   "cd deploy",
-  "docker compose -f docker-compose.ecs.yml --env-file .env up -d --build $services",
+  "docker compose -f docker-compose.ecs.yml --env-file .env up -d postgres",
   "sleep 2"
 )
 
-if ($Migrate.Trim()) {
-  foreach ($f in ($Migrate.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
-    $remoteLines += @(
-      "cd '$RemoteDir'",
-      "if [ -f apps/backend/migrations/$f ]; then",
-      "  echo migrate: $f",
-      "  docker exec -i mindray-db psql -U mindray -d mindray < apps/backend/migrations/$f",
-      "else",
-      "  echo WARN: missing apps/backend/migrations/$f >&2",
-      "fi"
-    )
-  }
+if (-not $SkipMigrate) {
+  $remoteLines += @(
+    "cd '$RemoteDir'",
+    "./scripts/goose-up.sh up"
+  )
 }
 
 $remoteLines += @(
   "cd '$RemoteDir/deploy'",
+  "docker compose -f docker-compose.ecs.yml --env-file .env up -d --build $services",
+  "sleep 2",
   "docker compose -f docker-compose.ecs.yml ps",
   "curl -sS -o /dev/null -w 'dashboard=%{http_code}\n' http://127.0.0.1/dashboard || true",
   "echo DONE"
@@ -195,5 +193,5 @@ $remoteScript | & ssh $SshHost "bash -s"
 if ($LASTEXITCODE -ne 0) { throw "remote apply failed ($LASTEXITCODE)" }
 
 Remove-Item $tgzLocal -Force -ErrorAction SilentlyContinue
-Write-Step "Done (not committed; for production push main -> Actions)"
+Write-Step "Done (goose up + services; for production push main -> Actions)"
 Write-Host "Public: http://115.29.235.41/dashboard"

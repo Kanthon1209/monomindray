@@ -1,3 +1,4 @@
+-- +goose Up
 -- ============================================================
 -- Business domain tables for IVD dashboard data collection
 -- Depends on: users (001/002)
@@ -155,3 +156,7 @@ LEFT JOIN LATERAL (
     FROM devices
     WHERE hospital_id = h.id AND status = 'active'
 ) d ON TRUE;
+
+-- +goose Down
+-- Historical migration: prefer forward fixes over automatic rollback.
+SELECT 1;

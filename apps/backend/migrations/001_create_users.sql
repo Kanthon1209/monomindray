@@ -1,3 +1,4 @@
+-- +goose Up
 -- users table
 CREATE TABLE IF NOT EXISTS users (
     id           BIGSERIAL PRIMARY KEY,
@@ -40,3 +41,7 @@ VALUES (
     'approved'
 )
 ON CONFLICT (email) DO NOTHING;
+
+-- +goose Down
+-- Historical migration: prefer forward fixes over automatic rollback.
+SELECT 1;

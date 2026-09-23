@@ -85,3 +85,6 @@ hospitals ──< devices
 - `005_hospital_archive.sql` — 化免档案 archive JSONB + 演示回填
 - `006_anhui_city_seed.sql` — 安徽地市演示医院
 - `007_surveys.sql` — 问卷模板/发放/任务/答卷 + 化免种子模板 `immuno_archive_v1`
+
+迁移由 [goose](https://github.com/pressly/goose) 管理（文件含 `-- +goose Up/Down`）。  
+存量库与空库均通过 `scripts/goose-up.sh` 应用；`docker-entrypoint-initdb.d` 仅作全新 volume 的兜底。

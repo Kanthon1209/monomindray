@@ -1,3 +1,4 @@
+-- +goose Up
 -- ============================================================
 -- Hospital archive fields aligned with 化免客户档案 Excel headers
 -- ============================================================
@@ -55,3 +56,7 @@ UPDATE hospitals SET archive = jsonb_build_object(
 )
 WHERE name = '广州人民医院' AND province = '广东省'
   AND (archive IS NULL OR archive = '{}'::jsonb);
+
+-- +goose Down
+-- Historical migration: prefer forward fixes over automatic rollback.
+SELECT 1;

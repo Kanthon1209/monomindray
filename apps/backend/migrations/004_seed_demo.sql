@@ -1,3 +1,4 @@
+-- +goose Up
 -- ============================================================
 -- Demo seed data for dashboard (idempotent-ish via ON CONFLICT)
 -- Run after 003_create_business_tables.sql
@@ -105,3 +106,7 @@ JOIN (VALUES
 WHERE NOT EXISTS (
   SELECT 1 FROM cases c WHERE c.title = v.title AND c.hospital_id = h.id
 );
+
+-- +goose Down
+-- Historical migration: prefer forward fixes over automatic rollback.
+SELECT 1;

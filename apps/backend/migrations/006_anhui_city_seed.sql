@@ -1,3 +1,4 @@
+-- +goose Up
 -- ============================================================
 -- Anhui-focused demo hospitals for city-level map
 -- ============================================================
@@ -32,3 +33,7 @@ WHERE province = '安徽省' AND city <> '' AND city NOT LIKE '%市' AND city NO
 
 UPDATE hospitals SET city = '合肥市'
 WHERE province = '安徽省' AND name = '合肥人民医院' AND city IN ('合肥', '合肥市');
+
+-- +goose Down
+-- Historical migration: prefer forward fixes over automatic rollback.
+SELECT 1;

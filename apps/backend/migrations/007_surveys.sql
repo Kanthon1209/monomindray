@@ -1,3 +1,4 @@
+-- +goose Up
 -- ============================================================
 -- Survey workflow: template → campaign → assignment → submission
 -- Does NOT alter hospitals/devices; publish-to-hospital is a later step.
@@ -148,3 +149,7 @@ VALUES (
     'active'
 )
 ON CONFLICT (code) DO NOTHING;
+
+-- +goose Down
+-- Historical migration: prefer forward fixes over automatic rollback.
+SELECT 1;
