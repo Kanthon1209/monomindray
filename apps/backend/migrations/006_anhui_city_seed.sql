@@ -27,9 +27,22 @@ VALUES
   ('阜阳太和县人民医院', '安徽省', '阜阳市', '', '二级甲等', '综合医院', 'pending', '')
 ON CONFLICT (name, province, city) DO NOTHING;
 
--- Normalize older seed city names without 「市」
-UPDATE hospitals SET city = city || '市'
-WHERE province = '安徽省' AND city <> '' AND city NOT LIKE '%市' AND city NOT LIKE '%县' AND city NOT LIKE '%区';
+-- Normalize older seed city names without 「市」(skip rows that would violate unique)
+UPDATE hospitals AS h
+SET city = h.city || '市'
+WHERE h.province = '安徽省'
+  AND h.city <> ''
+  AND h.city NOT LIKE '%市'
+  AND h.city NOT LIKE '%县'
+  AND h.city NOT LIKE '%区'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM hospitals AS x
+    WHERE x.province = h.province
+      AND x.name = h.name
+      AND x.city = h.city || '市'
+      AND x.id <> h.id
+  );
 
 UPDATE hospitals SET city = '合肥市'
 WHERE province = '安徽省' AND name = '合肥人民医院' AND city IN ('合肥', '合肥市');
