@@ -48,17 +48,60 @@ func resolveModel(v string) string {
 	return v
 }
 
-func provincesByRegion(region string) []string {
+var anhuiCityRegionMap = map[string]string{
+	"宿州市": "wanbei", "淮北市": "wanbei", "亳州市": "wanbei", "阜阳市": "wanbei", "蚌埠市": "wanbei", "淮南市": "wanbei",
+	"合肥市": "wanzhong", "六安市": "wanzhong", "滁州市": "wanzhong",
+	"芜湖市": "wannan", "马鞍山市": "wannan", "宣城市": "wannan", "铜陵市": "wannan", "池州市": "wannan", "安庆市": "wannan", "黄山市": "wannan",
+	// 兼容不带「市」的存量写法
+	"宿州": "wanbei", "淮北": "wanbei", "亳州": "wanbei", "阜阳": "wanbei", "蚌埠": "wanbei", "淮南": "wanbei",
+	"合肥": "wanzhong", "六安": "wanzhong", "滁州": "wanzhong",
+	"芜湖": "wannan", "马鞍山": "wannan", "宣城": "wannan", "铜陵": "wannan", "池州": "wannan", "安庆": "wannan", "黄山": "wannan",
+}
+
+const defaultDashboardProvince = "安徽省"
+
+func citiesByAnhuiRegion(region string) []string {
 	if region == "" || region == "all" {
 		return nil
 	}
+	seen := map[string]struct{}{}
 	out := make([]string, 0)
-	for p, r := range provinceRegionMap {
-		if r == region {
-			out = append(out, p)
+	for city, r := range anhuiCityRegionMap {
+		if r != region {
+			continue
+		}
+		for _, v := range cityVariants(city) {
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			out = append(out, v)
 		}
 	}
 	return out
+}
+
+func cityVariants(city string) []string {
+	city = strings.TrimSpace(city)
+	if city == "" {
+		return nil
+	}
+	if strings.HasSuffix(city, "市") {
+		base := strings.TrimSuffix(city, "市")
+		return []string{city, base}
+	}
+	return []string{city, city + "市"}
+}
+
+func normalizeAnhuiCity(city string) string {
+	city = strings.TrimSpace(city)
+	if city == "" {
+		return ""
+	}
+	if strings.HasSuffix(city, "市") {
+		return city
+	}
+	return city + "市"
 }
 
 func ptrInt64(v int64) *int64 { return &v }
@@ -82,10 +125,14 @@ func toHospitalInfo(h *model.Hospital) types.HospitalInfo {
 	if models == nil {
 		models = []string{}
 	}
+	archive := h.Archive
+	if archive == nil {
+		archive = map[string]string{}
+	}
 	return types.HospitalInfo{
 		Id: h.Id, Name: h.Name, Province: h.Province, City: h.City, District: h.District,
 		Level: h.Level, Type: h.Type, Status: h.Status, Address: h.Address, Remark: h.Remark,
-		DeviceCount: h.DeviceCount, DeviceModels: models, CreatedAt: formatTime(h.CreatedAt),
+		Archive: archive, DeviceCount: h.DeviceCount, DeviceModels: models, CreatedAt: formatTime(h.CreatedAt),
 	}
 }
 

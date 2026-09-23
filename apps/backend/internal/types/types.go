@@ -52,19 +52,20 @@ type (
 	}
 
 	HospitalInfo struct {
-		Id           int64    `json:"id"`
-		Name         string   `json:"name"`
-		Province     string   `json:"province"`
-		City         string   `json:"city"`
-		District     string   `json:"district,omitempty"`
-		Level        string   `json:"level"`
-		Type         string   `json:"type"`
-		Status       string   `json:"status"`
-		Address      string   `json:"address,omitempty"`
-		Remark       string   `json:"remark,omitempty"`
-		DeviceCount  int      `json:"deviceCount"`
-		DeviceModels []string `json:"deviceModels"`
-		CreatedAt    string   `json:"createdAt,omitempty"`
+		Id           int64             `json:"id"`
+		Name         string            `json:"name"`
+		Province     string            `json:"province"`
+		City         string            `json:"city"`
+		District     string            `json:"district,omitempty"`
+		Level        string            `json:"level"`
+		Type         string            `json:"type"`
+		Status       string            `json:"status"`
+		Address      string            `json:"address,omitempty"`
+		Remark       string            `json:"remark,omitempty"`
+		Archive      map[string]string `json:"archive,omitempty"`
+		DeviceCount  int               `json:"deviceCount"`
+		DeviceModels []string          `json:"deviceModels"`
+		CreatedAt    string            `json:"createdAt,omitempty"`
 	}
 	HospitalUpsertRequest struct {
 		Name     string `json:"name"`
@@ -104,6 +105,7 @@ type (
 	DashboardHospitalsRequest struct {
 		Region         string `form:"region,optional"`
 		Province       string `form:"province,optional"`
+		City           string `form:"city,optional"`
 		Level          string `form:"level,optional"`
 		Type           string `form:"type,optional"`
 		Status         string `form:"status,optional"`

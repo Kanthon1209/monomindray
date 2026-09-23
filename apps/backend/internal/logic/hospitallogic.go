@@ -47,33 +47,20 @@ func (l *HospitalLogic) List(req *types.ListHospitalsRequest) (*types.ListHospit
 }
 
 func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*types.ListHospitalsResponse, error) {
+	province := strings.TrimSpace(req.Province)
+	if province == "" {
+		province = defaultDashboardProvince
+	}
 	f := model.HospitalFilter{
-		Province: req.Province, Level: resolveLevel(req.Level), Type: resolveType(req.Type),
+		Province: province,
+		Level: resolveLevel(req.Level), Type: resolveType(req.Type),
 		Status: req.Status, DeviceCategory: req.DeviceCategory, DeviceModel: resolveModel(req.DeviceModel),
 		Keyword: req.Keyword, Limit: 500, Offset: 0,
 	}
-	if f.Province == "" && req.Region != "" && req.Region != "all" {
-		// filter in memory after list if region set without province — use province list via EXISTS
-		provinces := provincesByRegion(req.Region)
-		if len(provinces) == 0 {
-			return &types.ListHospitalsResponse{Items: []types.HospitalInfo{}}, nil
-		}
-		// fetch all then filter — for simplicity query without province and filter
-		items, _, err := l.svcCtx.HospitalModel.List(l.ctx, f)
-		if err != nil {
-			return nil, ErrInternal
-		}
-		allowed := map[string]struct{}{}
-		for _, p := range provinces {
-			allowed[p] = struct{}{}
-		}
-		filtered := make([]types.HospitalInfo, 0)
-		for i := range items {
-			if _, ok := allowed[items[i].Province]; ok {
-				filtered = append(filtered, toHospitalInfo(&items[i]))
-			}
-		}
-		return &types.ListHospitalsResponse{Total: int64(len(filtered)), Items: filtered}, nil
+	if city := strings.TrimSpace(req.City); city != "" {
+		f.Cities = cityVariants(city)
+	} else {
+		f.Cities = citiesByAnhuiRegion(req.Region)
 	}
 	items, total, err := l.svcCtx.HospitalModel.List(l.ctx, f)
 	if err != nil {
@@ -88,14 +75,15 @@ func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*ty
 }
 
 func (l *HospitalLogic) Provinces(req *types.DashboardProvincesRequest) (*types.DashboardProvincesResponse, error) {
-	stats, err := l.svcCtx.HospitalModel.ProvinceStats(l.ctx, provincesByRegion(req.Region))
+	// 看板已收敛为安徽省：返回地市医院数量，供安徽地图着色
+	stats, err := l.svcCtx.HospitalModel.CityStats(l.ctx, defaultDashboardProvince, citiesByAnhuiRegion(req.Region))
 	if err != nil {
-		l.Errorf("province stats: %v", err)
+		l.Errorf("city stats: %v", err)
 		return nil, ErrInternal
 	}
 	items := make([]types.ProvinceStat, 0, len(stats))
 	for _, s := range stats {
-		items = append(items, types.ProvinceStat{Name: s.Name, Value: s.Value})
+		items = append(items, types.ProvinceStat{Name: normalizeAnhuiCity(s.Name), Value: s.Value})
 	}
 	return &types.DashboardProvincesResponse{Items: items}, nil
 }

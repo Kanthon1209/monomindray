@@ -27,8 +27,11 @@ hospitals ──< devices
 | type | `综合医院` / `专科医院` / `中医医院` / `妇幼保健院` |
 | status | `active` 运营中 / `pending` 待确认 / `inactive` 停用 |
 | created_by | 录入人（采集员） |
+| archive | JSONB，对齐《化免客户档案》Excel 扩展字段（大区/分公司/机型/标本量/质控等） |
 
 唯一约束：`(name, province, city)` 防重复建档。
+
+`archive` 常用键：`branchOffice`、`customerCode`、`contactName`、`contactPhone`、`enabledAt`、`usageLocation`、`projectCount`、`mindrayReagentCount`、`matchingRate`、`otherAnalyzers`、`mindraySampleVolume`、`totalSampleVolume`、`qcVendor`、`qcLevels`、`qcCycle`、`reagentSupplier`、`mindrayProjects`、`newProjects`、`unusedProjects`、`missingProjects`、`archiveRemark`。
 
 区域（华北/华东…）**不落库**，由省份映射得出（与现前端 `provinceRegionMap` 一致）。
 
@@ -79,3 +82,4 @@ hospitals ──< devices
 - `002_user_status.sql` — 用户审核状态（存量库）
 - `003_create_business_tables.sql` — 本模型
 - `004_seed_demo.sql` — 演示数据（医院/设备/客户/案例）
+- `005_hospital_archive.sql` — 化免档案 archive JSONB + 演示回填

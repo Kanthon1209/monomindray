@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,26 +12,29 @@ import (
 )
 
 type Hospital struct {
-	Id           int64     `db:"id"`
-	Name         string    `db:"name"`
-	Province     string    `db:"province"`
-	City         string    `db:"city"`
-	District     string    `db:"district"`
-	Level        string    `db:"level"`
-	Type         string    `db:"type"`
-	Status       string    `db:"status"`
-	Address      string    `db:"address"`
-	Remark       string    `db:"remark"`
-	CreatedBy    *int64    `db:"created_by"`
-	UpdatedBy    *int64    `db:"updated_by"`
-	CreatedAt    time.Time `db:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at"`
-	DeviceCount  int       `db:"device_count"`
-	DeviceModels []string  `db:"device_models"`
+	Id           int64             `db:"id"`
+	Name         string            `db:"name"`
+	Province     string            `db:"province"`
+	City         string            `db:"city"`
+	District     string            `db:"district"`
+	Level        string            `db:"level"`
+	Type         string            `db:"type"`
+	Status       string            `db:"status"`
+	Address      string            `db:"address"`
+	Remark       string            `db:"remark"`
+	Archive      map[string]string `db:"archive"`
+	CreatedBy    *int64            `db:"created_by"`
+	UpdatedBy    *int64            `db:"updated_by"`
+	CreatedAt    time.Time         `db:"created_at"`
+	UpdatedAt    time.Time         `db:"updated_at"`
+	DeviceCount  int               `db:"device_count"`
+	DeviceModels []string          `db:"device_models"`
 }
 
 type HospitalFilter struct {
 	Province       string
+	City           string
+	Cities         []string
 	Level          string
 	Type           string
 	Status         string
@@ -53,6 +57,7 @@ type HospitalModel interface {
 	Update(ctx context.Context, h *Hospital) error
 	Delete(ctx context.Context, id int64) error
 	ProvinceStats(ctx context.Context, regionProvinces []string) ([]ProvinceCount, error)
+	CityStats(ctx context.Context, province string, cities []string) ([]ProvinceCount, error)
 }
 
 type hospitalModel struct {
@@ -82,6 +87,12 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 
 	if f.Province != "" {
 		add("h.province = $%d", f.Province)
+	}
+	if f.City != "" {
+		add("h.city = $%d", f.City)
+	}
+	if len(f.Cities) > 0 {
+		add("h.city = ANY($%d)", f.Cities)
 	}
 	if f.Level != "" {
 		add("h.level = $%d", f.Level)
@@ -115,7 +126,7 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 	args = append(args, limit, offset)
 	listSQL := fmt.Sprintf(`
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
-		       h.address, h.remark, h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       h.address, h.remark, COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
 		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
@@ -132,13 +143,15 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 	items := make([]Hospital, 0)
 	for rows.Next() {
 		var h Hospital
+		var archiveRaw []byte
 		if err := rows.Scan(
 			&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
-			&h.Address, &h.Remark, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+			&h.Address, &h.Remark, &archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
 			&h.DeviceCount, &h.DeviceModels,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan hospital: %w", err)
 		}
+		h.Archive = decodeArchive(archiveRaw)
 		if h.DeviceModels == nil {
 			h.DeviceModels = []string{}
 		}
@@ -149,15 +162,16 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 
 func (m *hospitalModel) FindById(ctx context.Context, id int64) (*Hospital, error) {
 	var h Hospital
+	var archiveRaw []byte
 	err := m.conn.QueryRow(ctx, `
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
-		       h.address, h.remark, h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       h.address, h.remark, COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
 		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
 		WHERE h.id = $1`, id).Scan(
 		&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
-		&h.Address, &h.Remark, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+		&h.Address, &h.Remark, &archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
 		&h.DeviceCount, &h.DeviceModels,
 	)
 	if err != nil {
@@ -166,10 +180,29 @@ func (m *hospitalModel) FindById(ctx context.Context, id int64) (*Hospital, erro
 		}
 		return nil, fmt.Errorf("find hospital: %w", err)
 	}
+	h.Archive = decodeArchive(archiveRaw)
 	if h.DeviceModels == nil {
 		h.DeviceModels = []string{}
 	}
 	return &h, nil
+}
+
+func decodeArchive(raw []byte) map[string]string {
+	out := map[string]string{}
+	if len(raw) == 0 {
+		return out
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return out
+	}
+	for k, v := range generic {
+		if v == nil {
+			continue
+		}
+		out[k] = fmt.Sprint(v)
+	}
+	return out
 }
 
 func (m *hospitalModel) Insert(ctx context.Context, h *Hospital) (int64, error) {
@@ -220,6 +253,36 @@ func (m *hospitalModel) ProvinceStats(ctx context.Context, regionProvinces []str
 	}
 	if err != nil {
 		return nil, fmt.Errorf("province stats: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]ProvinceCount, 0)
+	for rows.Next() {
+		var p ProvinceCount
+		if err := rows.Scan(&p.Name, &p.Value); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (m *hospitalModel) CityStats(ctx context.Context, province string, cities []string) ([]ProvinceCount, error) {
+	var rows pgx.Rows
+	var err error
+	if len(cities) == 0 {
+		rows, err = m.conn.Query(ctx, `
+			SELECT city AS name, COUNT(*)::INT AS value
+			FROM hospitals WHERE province = $1
+			GROUP BY city ORDER BY city`, province)
+	} else {
+		rows, err = m.conn.Query(ctx, `
+			SELECT city AS name, COUNT(*)::INT AS value
+			FROM hospitals WHERE province = $1 AND city = ANY($2)
+			GROUP BY city ORDER BY city`, province, cities)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("city stats: %w", err)
 	}
 	defer rows.Close()
 
