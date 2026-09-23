@@ -14,7 +14,7 @@ import {
   type SurveyTemplate,
 } from "@/lib/business";
 import { formatTime } from "@/lib/users-admin";
-import { API_BASE, getAuthToken, mapUser, readError, type User } from "@/lib/auth";
+import { API_BASE, getAuthToken, mapUser, type User } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
