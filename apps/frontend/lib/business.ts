@@ -541,9 +541,16 @@ export async function createSurveyCampaign(payload: {
   dueAt?: string;
   assigneeIds: number[];
 }) {
+  const body: Record<string, unknown> = {
+    templateId: payload.templateId,
+    title: payload.title,
+    assigneeIds: payload.assigneeIds,
+  };
+  if (payload.description) body.description = payload.description;
+  if (payload.dueAt) body.dueAt = payload.dueAt;
   const { data, error } = await apiFetch<{ campaign: any }>("/surveys/campaigns", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   if (error) return { error };
   return { campaign: mapCampaign(data!.campaign) };

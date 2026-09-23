@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Send,
   Inbox,
+  LayoutTemplate,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,7 @@ const userAdminSubItems = [
 ];
 
 const surveyAdminSubItems = [
+  { title: "模板管理", href: "/dashboard/surveys/templates", icon: LayoutTemplate },
   { title: "问卷发放", href: "/dashboard/surveys/campaigns", icon: Send },
   { title: "答卷审核", href: "/dashboard/surveys/review", icon: Inbox },
 ];
@@ -150,12 +152,12 @@ function AppSidebar() {
               {user?.role === "admin" ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    tooltip="问卷"
+                    tooltip="数据收集"
                     isActive={surveysSectionActive}
                     onClick={() => setSurveysOpen((open) => !open)}
                   >
                     <ClipboardList />
-                    <span>问卷</span>
+                    <span>数据收集</span>
                     <ChevronRight
                       className={cn(
                         "ml-auto transition-transform duration-200",

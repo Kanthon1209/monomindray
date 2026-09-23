@@ -66,6 +66,7 @@ export default function SurveyCampaignsPage() {
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [dueAt, setDueAt] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
 
@@ -128,10 +129,21 @@ export default function SurveyCampaignsPage() {
     }
     setSaving(true);
     setError(null);
+    let dueAtIso: string | undefined;
+    if (dueAt.trim()) {
+      const d = new Date(dueAt);
+      if (Number.isNaN(d.getTime())) {
+        setSaving(false);
+        setError("截止时间格式无效");
+        return;
+      }
+      dueAtIso = d.toISOString();
+    }
     const res = await createSurveyCampaign({
       templateId: Number(templateId),
       title: title.trim(),
       description: description.trim() || undefined,
+      dueAt: dueAtIso,
       assigneeIds: selectedAssignees.map(Number),
     });
     setSaving(false);
@@ -142,6 +154,7 @@ export default function SurveyCampaignsPage() {
     setShowForm(false);
     setTitle("");
     setDescription("");
+    setDueAt("");
     setSelectedAssignees([]);
     await load();
   };
@@ -236,13 +249,23 @@ export default function SurveyCampaignsPage() {
                   </Select>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>说明（可选）</Label>
-                <Input
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="给采集员的补充说明"
-                />
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>说明（可选）</Label>
+                  <Input
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="给采集员的补充说明"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>截止时间（可选）</Label>
+                  <Input
+                    type="datetime-local"
+                    value={dueAt}
+                    onChange={(e) => setDueAt(e.target.value)}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>采集员（已选 {selectedAssignees.length} 人）</Label>
@@ -286,6 +309,7 @@ export default function SurveyCampaignsPage() {
                   <TableHead>标题</TableHead>
                   <TableHead>模板</TableHead>
                   <TableHead>任务数</TableHead>
+                  <TableHead>截止</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>创建时间</TableHead>
                   <TableHead className="text-right">操作</TableHead>
@@ -294,13 +318,13 @@ export default function SurveyCampaignsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       加载中…
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       暂无发放记录
                     </TableCell>
                   </TableRow>
@@ -313,6 +337,7 @@ export default function SurveyCampaignsPage() {
                           templateLabel(item.templateId, item.templateCode)}
                       </TableCell>
                       <TableCell>{item.assignmentCount}</TableCell>
+                      <TableCell>{formatTime(item.dueAt)}</TableCell>
                       <TableCell>{campaignStatusBadge(item.status)}</TableCell>
                       <TableCell>{formatTime(item.createdAt)}</TableCell>
                       <TableCell className="text-right">

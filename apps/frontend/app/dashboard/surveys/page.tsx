@@ -11,7 +11,7 @@ export default function SurveysIndexPage() {
   useEffect(() => {
     if (!user) return;
     if (user.role === "admin") {
-      router.replace("/dashboard/surveys/campaigns");
+      router.replace("/dashboard/surveys/templates");
     } else {
       router.replace("/dashboard/surveys/tasks");
     }

@@ -26,7 +26,8 @@ func NewSurveyLogic(ctx context.Context, svcCtx *svc.ServiceContext) *SurveyLogi
 }
 
 func (l *SurveyLogic) ListTemplates() (*types.ListSurveyTemplatesResponse, error) {
-	items, err := l.svcCtx.SurveyModel.ListTemplates(l.ctx, true)
+	activeOnly := authx.RoleFromCtx(l.ctx) != "admin"
+	items, err := l.svcCtx.SurveyModel.ListTemplates(l.ctx, activeOnly)
 	if err != nil {
 		l.Errorf("list templates: %v", err)
 		return nil, ErrInternal
@@ -86,9 +87,9 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 
 	var dueAt *time.Time
 	if strings.TrimSpace(req.DueAt) != "" {
-		t, err := time.Parse(time.RFC3339, strings.TrimSpace(req.DueAt))
+		t, err := parseDueAt(strings.TrimSpace(req.DueAt))
 		if err != nil {
-			return nil, NewCodeError(400, "截止时间格式无效，请使用 RFC3339")
+			return nil, NewCodeError(400, "截止时间格式无效")
 		}
 		dueAt = &t
 	}
@@ -654,4 +655,26 @@ func uniqueInt64(ids []int64) []int64 {
 		out = append(out, id)
 	}
 	return out
+}
+
+// parseDueAt accepts RFC3339 or HTML datetime-local (YYYY-MM-DDTHH:MM[:SS]).
+func parseDueAt(raw string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04",
+	}
+	var lastErr error
+	for _, layout := range layouts {
+		t, err := time.ParseInLocation(layout, raw, time.Local)
+		if err == nil {
+			return t, nil
+		}
+		lastErr = err
+	}
+	return time.Time{}, lastErr
 }
