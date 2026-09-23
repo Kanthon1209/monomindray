@@ -117,6 +117,7 @@ type SurveyModel interface {
 	ListSubmissions(ctx context.Context, f SurveySubmissionFilter) ([]SurveySubmission, int64, error)
 	FindSubmissionById(ctx context.Context, id int64) (*SurveySubmission, error)
 	ReviewSubmission(ctx context.Context, id, reviewerID int64, status, note string) error
+	SetSubmissionHospital(ctx context.Context, submissionID, hospitalID int64) error
 }
 
 type surveyModel struct{ conn *pgxpool.Pool }
@@ -638,4 +639,10 @@ func (m *surveyModel) ReviewSubmission(ctx context.Context, id, reviewerID int64
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (m *surveyModel) SetSubmissionHospital(ctx context.Context, submissionID, hospitalID int64) error {
+	_, err := m.conn.Exec(ctx, `
+		UPDATE survey_submissions SET hospital_id=$1, updated_at=NOW() WHERE id=$2`, hospitalID, submissionID)
+	return err
 }

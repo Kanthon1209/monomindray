@@ -145,7 +145,7 @@ func (l *HospitalLogic) Update(id int64, req *types.HospitalUpsertRequest) (*typ
 		City: strings.TrimSpace(req.City), District: strings.TrimSpace(req.District),
 		Level: req.Level, Type: req.Type, Status: status,
 		Address: strings.TrimSpace(req.Address), Remark: strings.TrimSpace(req.Remark),
-		UpdatedBy: ptrInt64(uid),
+		Archive: existing.Archive, UpdatedBy: ptrInt64(uid),
 	}
 	if err := l.svcCtx.HospitalModel.Update(l.ctx, h); err != nil {
 		l.Errorf("update hospital: %v", err)

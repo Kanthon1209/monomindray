@@ -53,6 +53,7 @@ type ProvinceCount struct {
 type HospitalModel interface {
 	List(ctx context.Context, f HospitalFilter) ([]Hospital, int64, error)
 	FindById(ctx context.Context, id int64) (*Hospital, error)
+	FindByNameProvinceCity(ctx context.Context, name, province, city string) (*Hospital, error)
 	Insert(ctx context.Context, h *Hospital) (int64, error)
 	Update(ctx context.Context, h *Hospital) error
 	Delete(ctx context.Context, id int64) error
@@ -187,6 +188,33 @@ func (m *hospitalModel) FindById(ctx context.Context, id int64) (*Hospital, erro
 	return &h, nil
 }
 
+func (m *hospitalModel) FindByNameProvinceCity(ctx context.Context, name, province, city string) (*Hospital, error) {
+	var h Hospital
+	var archiveRaw []byte
+	err := m.conn.QueryRow(ctx, `
+		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
+		       h.address, h.remark, COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
+		FROM hospitals h
+		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
+		WHERE h.name=$1 AND h.province=$2 AND h.city=$3`, name, province, city).Scan(
+		&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
+		&h.Address, &h.Remark, &archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+		&h.DeviceCount, &h.DeviceModels,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find hospital by name: %w", err)
+	}
+	h.Archive = decodeArchive(archiveRaw)
+	if h.DeviceModels == nil {
+		h.DeviceModels = []string{}
+	}
+	return &h, nil
+}
+
 func decodeArchive(raw []byte) map[string]string {
 	out := map[string]string{}
 	if len(raw) == 0 {
@@ -206,11 +234,18 @@ func decodeArchive(raw []byte) map[string]string {
 }
 
 func (m *hospitalModel) Insert(ctx context.Context, h *Hospital) (int64, error) {
+	archiveJSON, err := json.Marshal(h.Archive)
+	if err != nil {
+		return 0, fmt.Errorf("marshal archive: %w", err)
+	}
+	if h.Archive == nil {
+		archiveJSON = []byte("{}")
+	}
 	var id int64
-	err := m.conn.QueryRow(ctx, `
-		INSERT INTO hospitals (name, province, city, district, level, type, status, address, remark, created_by, updated_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-		h.Name, h.Province, h.City, h.District, h.Level, h.Type, h.Status, h.Address, h.Remark, h.CreatedBy, h.UpdatedBy,
+	err = m.conn.QueryRow(ctx, `
+		INSERT INTO hospitals (name, province, city, district, level, type, status, address, remark, archive, created_by, updated_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12) RETURNING id`,
+		h.Name, h.Province, h.City, h.District, h.Level, h.Type, h.Status, h.Address, h.Remark, archiveJSON, h.CreatedBy, h.UpdatedBy,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert hospital: %w", err)
@@ -219,10 +254,17 @@ func (m *hospitalModel) Insert(ctx context.Context, h *Hospital) (int64, error) 
 }
 
 func (m *hospitalModel) Update(ctx context.Context, h *Hospital) error {
-	_, err := m.conn.Exec(ctx, `
+	archiveJSON, err := json.Marshal(h.Archive)
+	if err != nil {
+		return fmt.Errorf("marshal archive: %w", err)
+	}
+	if h.Archive == nil {
+		archiveJSON = []byte("{}")
+	}
+	_, err = m.conn.Exec(ctx, `
 		UPDATE hospitals SET name=$1, province=$2, city=$3, district=$4, level=$5, type=$6,
-		status=$7, address=$8, remark=$9, updated_by=$10 WHERE id=$11`,
-		h.Name, h.Province, h.City, h.District, h.Level, h.Type, h.Status, h.Address, h.Remark, h.UpdatedBy, h.Id,
+		status=$7, address=$8, remark=$9, archive=$10::jsonb, updated_by=$11 WHERE id=$12`,
+		h.Name, h.Province, h.City, h.District, h.Level, h.Type, h.Status, h.Address, h.Remark, archiveJSON, h.UpdatedBy, h.Id,
 	)
 	if err != nil {
 		return fmt.Errorf("update hospital: %w", err)

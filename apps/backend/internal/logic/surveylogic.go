@@ -300,7 +300,52 @@ func (l *SurveyLogic) ListSubmissions(req *types.ListSurveySubmissionsRequest) (
 }
 
 func (l *SurveyLogic) ApproveSubmission(id int64, req *types.ReviewSurveySubmissionRequest) (*types.SurveySubmissionResponse, error) {
-	return l.review(id, "approved", req.Note)
+	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
+		return nil, err
+	}
+	uid, err := authx.UserIDFromCtx(l.ctx)
+	if err != nil {
+		return nil, ErrUnauthorized
+	}
+
+	sub, err := l.svcCtx.SurveyModel.FindSubmissionById(l.ctx, id)
+	if err != nil {
+		return nil, ErrInternal
+	}
+	if sub == nil {
+		return nil, NewCodeError(404, "答卷不存在")
+	}
+	if sub.Status != "submitted" {
+		return nil, NewCodeError(409, "仅能审核已提交的答卷")
+	}
+
+	a, err := l.svcCtx.SurveyModel.FindAssignmentById(l.ctx, sub.AssignmentId)
+	if err != nil || a == nil {
+		return nil, ErrInternal
+	}
+
+	hospitalID, err := l.publishSubmissionToHospital(uid, a, sub)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := l.svcCtx.SurveyModel.ReviewSubmission(l.ctx, id, uid, "approved", strings.TrimSpace(req.Note)); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, NewCodeError(409, "仅能审核已提交的答卷")
+		}
+		l.Errorf("review approve: %v", err)
+		return nil, ErrInternal
+	}
+	if err := l.svcCtx.SurveyModel.SetSubmissionHospital(l.ctx, id, hospitalID); err != nil {
+		l.Errorf("link hospital: %v", err)
+		return nil, ErrInternal
+	}
+
+	sub, err = l.svcCtx.SurveyModel.FindSubmissionById(l.ctx, id)
+	if err != nil || sub == nil {
+		return nil, ErrInternal
+	}
+	return &types.SurveySubmissionResponse{Submission: toSurveySubmissionInfo(sub)}, nil
 }
 
 func (l *SurveyLogic) RejectSubmission(id int64, req *types.ReviewSurveySubmissionRequest) (*types.SurveySubmissionResponse, error) {
@@ -331,6 +376,153 @@ func (l *SurveyLogic) review(id int64, status, note string) (*types.SurveySubmis
 		return nil, ErrInternal
 	}
 	return &types.SurveySubmissionResponse{Submission: toSurveySubmissionInfo(sub)}, nil
+}
+
+type surveySchemaField struct {
+	Key      string `json:"key"`
+	Label    string `json:"label"`
+	Required bool   `json:"required"`
+	Target   string `json:"target"`
+}
+
+func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.SurveyAssignment, sub *model.SurveySubmission) (int64, error) {
+	var schema struct {
+		Fields []surveySchemaField `json:"fields"`
+	}
+	if len(a.Schema) > 0 {
+		_ = json.Unmarshal(a.Schema, &schema)
+	}
+
+	answers := sub.Answers
+	if answers == nil {
+		answers = map[string]string{}
+	}
+
+	cols := map[string]string{}
+	archive := map[string]string{}
+
+	applyTarget := func(target, key, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		target = strings.TrimSpace(target)
+		switch {
+		case strings.HasPrefix(target, "hospital.archive."):
+			archive[strings.TrimPrefix(target, "hospital.archive.")] = value
+		case strings.HasPrefix(target, "hospital."):
+			cols[strings.TrimPrefix(target, "hospital.")] = value
+		case target == "":
+			switch key {
+			case "name", "province", "city", "district", "level", "type", "address", "remark":
+				cols[key] = value
+			default:
+				archive[key] = value
+			}
+		default:
+			archive[key] = value
+		}
+	}
+
+	if len(schema.Fields) > 0 {
+		for _, f := range schema.Fields {
+			applyTarget(f.Target, f.Key, answers[f.Key])
+		}
+	} else {
+		for k, v := range answers {
+			applyTarget("", k, v)
+		}
+	}
+
+	// Prefer explicit hospital name; fall back to customerName in archive.
+	name := strings.TrimSpace(cols["name"])
+	if name == "" {
+		name = strings.TrimSpace(archive["customerName"])
+	}
+	province := strings.TrimSpace(cols["province"])
+	city := strings.TrimSpace(cols["city"])
+	if name == "" || province == "" || city == "" {
+		return 0, NewCodeError(400, "答卷缺少医院名称/省份/城市，无法写入看板")
+	}
+
+	level := strings.TrimSpace(cols["level"])
+	typ := strings.TrimSpace(cols["type"])
+	if level == "" {
+		level = "二级甲等"
+	}
+	if typ == "" {
+		typ = "综合医院"
+	}
+
+	var existing *model.Hospital
+	var err error
+	if sub.HospitalId != nil && *sub.HospitalId > 0 {
+		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *sub.HospitalId)
+	} else {
+		existing, err = l.svcCtx.HospitalModel.FindByNameProvinceCity(l.ctx, name, province, city)
+	}
+	if err != nil {
+		l.Errorf("find hospital for publish: %v", err)
+		return 0, ErrInternal
+	}
+
+	mergedArchive := map[string]string{}
+	if existing != nil && existing.Archive != nil {
+		for k, v := range existing.Archive {
+			mergedArchive[k] = v
+		}
+	}
+	for k, v := range archive {
+		mergedArchive[k] = v
+	}
+
+	district := strings.TrimSpace(cols["district"])
+	address := strings.TrimSpace(cols["address"])
+	remark := strings.TrimSpace(cols["remark"])
+	if remark == "" {
+		remark = strings.TrimSpace(archive["archiveRemark"])
+	}
+
+	if existing == nil {
+		h := &model.Hospital{
+			Name: name, Province: province, City: city, District: district,
+			Level: level, Type: typ, Status: "active", Address: address, Remark: remark,
+			Archive: mergedArchive, CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
+		}
+		id, err := l.svcCtx.HospitalModel.Insert(l.ctx, h)
+		if err != nil {
+			l.Errorf("insert hospital from survey: %v", err)
+			return 0, NewCodeError(400, "写入医院失败，可能已存在同名医院或字段不合法")
+		}
+		return id, nil
+	}
+
+	if district != "" {
+		existing.District = district
+	}
+	if level != "" {
+		existing.Level = level
+	}
+	if typ != "" {
+		existing.Type = typ
+	}
+	if address != "" {
+		existing.Address = address
+	}
+	if remark != "" {
+		existing.Remark = remark
+	}
+	existing.Name = name
+	existing.Province = province
+	existing.City = city
+	existing.Status = "active"
+	existing.Archive = mergedArchive
+	existing.UpdatedBy = ptrInt64(reviewerID)
+	if err := l.svcCtx.HospitalModel.Update(l.ctx, existing); err != nil {
+		l.Errorf("update hospital from survey: %v", err)
+		return 0, NewCodeError(400, "更新医院失败，请检查字段是否合法")
+	}
+	return existing.Id, nil
 }
 
 func (l *SurveyLogic) ensureAssignee(assignmentID, uid int64) (*model.SurveyAssignment, error) {
