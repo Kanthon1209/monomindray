@@ -40,7 +40,8 @@ npm-debug.log*
 # Go
 apps/backend/vendor/
 
-
-
 # Data
 data/
+
+# Scratch / one-off scripts (use repo-root tmp/, not commit)
+/tmp/
