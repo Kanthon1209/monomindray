@@ -95,9 +95,9 @@ export function LoginForm({
                   {loading && <Loader2 className="size-4 animate-spin" />}
                   登录
                 </Button>
-                <Button variant="outline" type="button" disabled={loading}>
+                {/* <Button variant="outline" type="button" disabled={loading}>
                   使用 Google 登录
-                </Button>
+                </Button> */}
                 <FieldDescription className="text-center">
                   还没有账户？{" "}
                   <a href="/signup" className="underline underline-offset-4 hover:text-primary">

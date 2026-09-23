@@ -141,10 +141,10 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={statusConfig[hospital.status].variant}
+                      variant={(statusConfig[hospital.status as keyof typeof statusConfig] || statusConfig.pending).variant}
                       className="text-[10px]"
                     >
-                      {statusConfig[hospital.status].label}
+                      {(statusConfig[hospital.status as keyof typeof statusConfig] || statusConfig.pending).label}
                     </Badge>
                   </TableCell>
                 </TableRow>

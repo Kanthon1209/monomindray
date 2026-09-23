@@ -1,40 +1,63 @@
 syntax = "v1"
 
-// ===== 通用响应 =====
-
-// ===== 用户认证 =====
-
 type (
 	LoginRequest {
-		Email    string `json:"email" validate:"required,email"`
-		Password string `json:"password" validate:"required,min=6"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	LoginResponse {
-		Token    string    `json:"token"`
-		User     UserInfo  `json:"user"`
-	}
-
-	SignupRequest {
-		Name     string `json:"name" validate:"required,min=2"`
-		Email    string `json:"email" validate:"required,email"`
-		Password string `json:"password" validate:"required,min=8"`
-	}
-
-	SignupResponse {
 		Token string   `json:"token"`
 		User  UserInfo `json:"user"`
 	}
 
+	SignupRequest {
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	SignupResponse {
+		Message string   `json:"message"`
+		User    UserInfo `json:"user"`
+	}
+
 	UserInfo {
-		Id     int64  `json:"id"`
+		Id        int64  `json:"id"`
+		Name      string `json:"name"`
+		Email     string `json:"email"`
+		Role      string `json:"role"`
+		Status    string `json:"status"`
+		Avatar    string `json:"avatar,optional"`
+		CreatedAt string `json:"createdAt,optional"`
+	}
+
+	UpdateUserRequest {
 		Name   string `json:"name"`
 		Email  string `json:"email"`
-		Role   string `json:"role"`
-		Avatar string `json:"avatar,omitempty"`
+		Avatar string `json:"avatar,optional"`
 	}
 
 	GetUserResponse {
+		User UserInfo `json:"user"`
+	}
+
+	ListUsersRequest {
+		Status   string `form:"status,optional"`
+		Page     int    `form:"page,optional"`
+		PageSize int    `form:"pageSize,optional"`
+	}
+
+	ListUsersResponse {
+		Total int64      `json:"total"`
+		Items []UserInfo `json:"items"`
+	}
+
+	ReviewUserRequest {
+		Id int64 `path:"id"`
+	}
+
+	ReviewUserResponse {
 		User UserInfo `json:"user"`
 	}
 )
@@ -58,5 +81,26 @@ service mindray-api {
 		group: "user"
 	)
 	@handler UpdateUserHandler
-	put /api/v1/user/profile (UserInfo) returns (GetUserResponse)
+	put /api/v1/user/profile (UpdateUserRequest) returns (GetUserResponse)
+
+	@server (
+		jwt: Auth
+		group: "admin"
+	)
+	@handler ListUsersHandler
+	get /api/v1/admin/users (ListUsersRequest) returns (ListUsersResponse)
+
+	@server (
+		jwt: Auth
+		group: "admin"
+	)
+	@handler ApproveUserHandler
+	post /api/v1/admin/users/:id/approve (ReviewUserRequest) returns (ReviewUserResponse)
+
+	@server (
+		jwt: Auth
+		group: "admin"
+	)
+	@handler RejectUserHandler
+	post /api/v1/admin/users/:id/reject (ReviewUserRequest) returns (ReviewUserResponse)
 }

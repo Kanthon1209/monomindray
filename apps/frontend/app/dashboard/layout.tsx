@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
@@ -11,8 +11,13 @@ import {
   Settings,
   LogOut,
   Activity,
+  ShieldCheck,
+  ChevronRight,
+  ClipboardCheck,
+  UserRoundCog,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 import {
   Sidebar,
   SidebarContent,
@@ -25,6 +30,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
@@ -50,10 +58,23 @@ const navItems = [
   { title: "系统设置", href: "/dashboard/settings", icon: Settings },
 ];
 
+const userAdminSubItems = [
+  { title: "用户审核", href: "/dashboard/users/review", icon: ClipboardCheck },
+  { title: "用户列表", href: "/dashboard/users/manage", icon: UserRoundCog },
+];
+
 function AppSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const router = useRouter();
+  const usersSectionActive = pathname.startsWith("/dashboard/users");
+  const [usersOpen, setUsersOpen] = useState(usersSectionActive);
+
+  useEffect(() => {
+    if (usersSectionActive) {
+      setUsersOpen(true);
+    }
+  }, [usersSectionActive]);
 
   const handleLogout = () => {
     logout();
@@ -63,15 +84,25 @@ function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Activity className="h-5 w-5" />
-          </div>
-          <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-            <span className="text-sm font-bold">Mindray</span>
-            <span className="text-xs text-muted-foreground">IVD 价值平台</span>
-          </div>
-        </div>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="lg"
+              asChild
+              className="group-data-[collapsible=icon]:p-2!"
+            >
+              <Link href="/dashboard">
+                <div className="bg-primary text-primary-foreground flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:rounded-md">
+                  <Activity className="size-4 group-data-[collapsible=icon]:size-3" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">Mindray</span>
+                  <span className="truncate text-xs">IVD 价值平台</span>
+                </div>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
 
       <SidebarContent>
@@ -79,11 +110,65 @@ function AppSidebar() {
           <SidebarGroupLabel>主菜单</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {navItems.slice(0, 4).map((item) => {
                 const isActive =
                   item.href === "/dashboard"
                     ? pathname === "/dashboard"
                     : pathname.startsWith(item.href);
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      tooltip={item.title}
+                    >
+                      <Link href={item.href}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+
+              {user?.role === "admin" ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip="用户管理"
+                    isActive={usersSectionActive}
+                    onClick={() => setUsersOpen((open) => !open)}
+                  >
+                    <ShieldCheck />
+                    <span>用户管理</span>
+                    <ChevronRight
+                      className={cn(
+                        "ml-auto transition-transform duration-200",
+                        usersOpen && "rotate-90",
+                      )}
+                    />
+                  </SidebarMenuButton>
+                  {usersOpen ? (
+                    <SidebarMenuSub>
+                      {userAdminSubItems.map((item) => (
+                        <SidebarMenuSubItem key={item.href}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={pathname.startsWith(item.href)}
+                          >
+                            <Link href={item.href}>
+                              <item.icon />
+                              <span>{item.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  ) : null}
+                </SidebarMenuItem>
+              ) : null}
+
+              {navItems.slice(4).map((item) => {
+                const isActive = pathname.startsWith(item.href);
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton

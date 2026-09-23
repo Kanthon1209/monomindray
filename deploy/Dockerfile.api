@@ -1,0 +1,9 @@
+# Runtime-only image — expects prebuilt Linux binary at deploy/artifacts/mindray-api
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY deploy/artifacts/mindray-api /app/mindray
+RUN chmod +x /app/mindray
+COPY apps/backend/etc /app/etc
+EXPOSE 8080
+CMD ["/app/mindray", "-f", "/app/etc/mindray-api.yaml"]

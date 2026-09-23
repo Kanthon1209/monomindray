@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,11 +28,13 @@ export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
 
     if (password !== confirmPassword) {
       setError("两次输入的密码不一致");
@@ -45,21 +47,38 @@ export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
 
     setLoading(true);
     const result = await signup(name, email, password);
-    if (result.success) {
-      router.push("/dashboard");
-    } else {
-      setError(result.error || "注册失败");
-    }
     setLoading(false);
+    if (result.success) {
+      setSuccess(result.message || "注册成功，请等待管理员审核后再登录");
+      return;
+    }
+    setError(result.error || "注册失败");
   };
+
+  if (success) {
+    return (
+      <Card {...props}>
+        <CardHeader>
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+            <CheckCircle2 className="h-5 w-5" />
+          </div>
+          <CardTitle>已提交注册</CardTitle>
+          <CardDescription>{success}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button className="w-full" onClick={() => router.push("/login")}>
+            返回登录
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card {...props}>
       <CardHeader>
         <CardTitle>创建账户</CardTitle>
-        <CardDescription>
-          填写以下信息以创建您的账户
-        </CardDescription>
+        <CardDescription>注册后需管理员审核通过才能登录</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit}>
@@ -85,9 +104,6 @@ export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <FieldDescription>
-                我们将使用此邮箱与您联系，不会向第三方分享。
-              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="password">密码</FieldLabel>
@@ -98,9 +114,7 @@ export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <FieldDescription>
-                密码至少需要 8 个字符。
-              </FieldDescription>
+              <FieldDescription>密码至少需要 8 个字符。</FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="confirm-password">确认密码</FieldLabel>
@@ -111,28 +125,20 @@ export function SignupForm({ ...props }: React.ComponentProps<typeof Card>) {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
               />
-              <FieldDescription>请再次输入密码以确认。</FieldDescription>
             </Field>
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
-            <FieldGroup>
-              <Field>
-                <Button type="submit" disabled={loading}>
-                  {loading && <Loader2 className="size-4 animate-spin" />}
-                  创建账户
-                </Button>
-                <Button variant="outline" type="button" disabled={loading}>
-                  使用 Google 注册
-                </Button>
-                <FieldDescription className="px-6 text-center">
-                  已有账户？{" "}
-                  <a href="/login" className="underline underline-offset-4 hover:text-primary">
-                    登录
-                  </a>
-                </FieldDescription>
-              </Field>
-            </FieldGroup>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Field>
+              <Button type="submit" disabled={loading}>
+                {loading && <Loader2 className="size-4 animate-spin" />}
+                提交注册
+              </Button>
+              <FieldDescription className="px-6 text-center">
+                已有账户？{" "}
+                <a href="/login" className="underline underline-offset-4 hover:text-primary">
+                  登录
+                </a>
+              </FieldDescription>
+            </Field>
           </FieldGroup>
         </form>
       </CardContent>

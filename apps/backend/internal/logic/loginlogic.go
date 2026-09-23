@@ -2,15 +2,14 @@ package logic
 
 import (
 	"context"
-	"errors"
-	"net/http"
+	"strings"
 
+	"mindray/internal/authx"
 	"mindray/internal/model"
 	"mindray/internal/svc"
 	"mindray/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
-	"github.com/zeromicro/go-zero/core/stores/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -29,40 +28,47 @@ func NewLoginLogic(ctx context.Context, svcCtx *svc.ServiceContext) *LoginLogic 
 }
 
 func (l *LoginLogic) Login(req *types.LoginRequest) (*types.LoginResponse, error) {
+	if strings.TrimSpace(req.Email) == "" || req.Password == "" {
+		return nil, NewCodeError(400, "邮箱和密码不能为空")
+	}
+
 	user, err := l.svcCtx.UserModel.FindByEmail(l.ctx, req.Email)
 	if err != nil {
 		l.Errorf("query user by email failed: %v", err)
-		return nil, errorResponse("服务器内部错误", 500)
+		return nil, ErrInternal
 	}
 	if user == nil {
-		return nil, errorResponse("邮箱或密码不正确", 401)
+		return nil, ErrBadCredential
 	}
 
-	// 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return nil, errorResponse("邮箱或密码不正确", 401)
+		return nil, ErrBadCredential
 	}
 
-	// 生成 JWT
-	token, err := jwt.Sign(
-		[]byte(l.svcCtx.Config.Auth.AccessSecret),
-		int64(l.svcCtx.Config.Auth.ExpireAfter),
-		jwt.WithKey("userId", user.Id),
-		jwt.WithKey("role", user.Role),
+	switch user.Status {
+	case model.StatusPending:
+		return nil, NewCodeError(403, "账号待管理员审核，通过后方可登录")
+	case model.StatusRejected:
+		return nil, NewCodeError(403, "账号未通过审核，请联系管理员")
+	case model.StatusApproved:
+		// ok
+	default:
+		return nil, NewCodeError(403, "账号状态异常，请联系管理员")
+	}
+
+	token, err := authx.SignToken(
+		l.svcCtx.Config.Auth.AccessSecret,
+		l.svcCtx.Config.Auth.ExpireAfter,
+		user.Id,
+		user.Role,
 	)
 	if err != nil {
 		l.Errorf("sign jwt failed: %v", err)
-		return nil, errorResponse("服务器内部错误", 500)
+		return nil, ErrInternal
 	}
 
 	return &types.LoginResponse{
 		Token: token,
-		User: types.UserInfo{
-			Id:     user.Id,
-			Name:   user.Name,
-			Email:  user.Email,
-			Role:   user.Role,
-			Avatar: user.Avatar,
-		},
+		User:  toUserInfo(user),
 	}, nil
 }

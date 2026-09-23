@@ -12,40 +12,37 @@ import (
 )
 
 type ServiceContext struct {
-	Config    config.Config
-	UserModel model.UserModel
+	Config        config.Config
+	UserModel     model.UserModel
+	HospitalModel model.HospitalModel
+	DeviceModel   model.DeviceModel
+	CustomerModel model.CustomerModel
+	CaseModel     model.CaseModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
 	ctx := context.Background()
-
-	// 构建 PostgreSQL 连接字符串
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?pool_max_conns=%d&pool_min_conns=%d",
-		c.Postgres.User,
-		c.Postgres.Password,
-		c.Postgres.Host,
-		c.Postgres.Port,
-		c.Postgres.Database,
-		c.Postgres.MaxConn,
-		c.Postgres.MaxIdle,
+		c.Postgres.User, c.Postgres.Password, c.Postgres.Host, c.Postgres.Port,
+		c.Postgres.Database, c.Postgres.MaxConn, c.Postgres.MaxIdle,
 	)
-
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		logx.Errorf("connect to postgres failed: %v", err)
 		panic(fmt.Errorf("connect postgres: %w", err))
 	}
-
-	// 测试连接
 	if err := pool.Ping(ctx); err != nil {
 		logx.Errorf("ping postgres failed: %v", err)
 		panic(fmt.Errorf("ping postgres: %w", err))
 	}
-
 	logx.Info("postgres connected successfully")
 
 	return &ServiceContext{
-		Config:    c,
-		UserModel: model.NewUserModel(pool),
+		Config:        c,
+		UserModel:     model.NewUserModel(pool),
+		HospitalModel: model.NewHospitalModel(pool),
+		DeviceModel:   model.NewDeviceModel(pool),
+		CustomerModel: model.NewCustomerModel(pool),
+		CaseModel:     model.NewCaseModel(pool),
 	}
 }

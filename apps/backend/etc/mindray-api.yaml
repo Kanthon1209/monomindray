@@ -3,8 +3,8 @@ Host: 0.0.0.0
 Port: 8080
 
 Auth:
-  AccessSecret: "mindray_jwt_secret_change_me"
-  ExpireAfter: 86400  # 24h in seconds
+  AccessSecret: mindray_jwt_secret_change_me
+  ExpireAfter: 86400
 
 Postgres:
   Host: postgres
@@ -12,9 +12,5 @@ Postgres:
   User: mindray
   Password: mindray_secret
   Database: mindray
-  MaxConn: 20
-  MaxIdle: 10
-
-Redis:
-  Host: redis:6379
-  Type: node
+  MaxConn: 10
+  MaxIdle: 2

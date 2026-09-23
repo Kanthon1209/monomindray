@@ -6,10 +6,12 @@ import (
 
 	"mindray/internal/config"
 	"mindray/internal/handler"
+	"mindray/internal/logic"
 	"mindray/internal/svc"
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
 var configFile = flag.String("f", "etc/mindray-api.yaml", "the config file")
@@ -20,7 +22,15 @@ func main() {
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
 
-	server := rest.MustNewServer(c.RestConf)
+	httpx.SetErrorHandler(func(err error) (int, any) {
+		code := logic.HTTPStatus(err)
+		return code, map[string]any{
+			"code": code,
+			"msg":  err.Error(),
+		}
+	})
+
+	server := rest.MustNewServer(c.RestConf, rest.WithCors("*"))
 	defer server.Stop()
 
 	ctx := svc.NewServiceContext(c)

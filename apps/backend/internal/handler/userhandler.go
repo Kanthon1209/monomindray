@@ -24,7 +24,7 @@ func GetUserHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func UpdateUserHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req types.UserInfo
+		var req types.UpdateUserRequest
 		if err := httpx.Parse(r, &req); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return

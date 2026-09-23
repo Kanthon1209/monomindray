@@ -2,35 +2,217 @@ package types
 
 type (
 	LoginRequest struct {
-		Email    string `json:"email" validate:"required,email"`
-		Password string `json:"password" validate:"required,min=6"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
-
 	LoginResponse struct {
 		Token string   `json:"token"`
 		User  UserInfo `json:"user"`
 	}
-
 	SignupRequest struct {
-		Name     string `json:"name" validate:"required,min=2"`
-		Email    string `json:"email" validate:"required,email"`
-		Password string `json:"password" validate:"required,min=8"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
-
 	SignupResponse struct {
-		Token string   `json:"token"`
-		User  UserInfo `json:"user"`
+		Message string   `json:"message"`
+		User    UserInfo `json:"user"`
 	}
-
 	UserInfo struct {
-		Id     int64  `json:"id"`
+		Id        int64  `json:"id"`
+		Name      string `json:"name"`
+		Email     string `json:"email"`
+		Role      string `json:"role"`
+		Status    string `json:"status"`
+		Avatar    string `json:"avatar,omitempty"`
+		CreatedAt string `json:"createdAt,omitempty"`
+	}
+	UpdateUserRequest struct {
 		Name   string `json:"name"`
 		Email  string `json:"email"`
-		Role   string `json:"role"`
 		Avatar string `json:"avatar,omitempty"`
 	}
-
 	GetUserResponse struct {
 		User UserInfo `json:"user"`
+	}
+	ListUsersRequest struct {
+		Status   string `form:"status,optional"`
+		Page     int    `form:"page,optional"`
+		PageSize int    `form:"pageSize,optional"`
+	}
+	ListUsersResponse struct {
+		Total int64      `json:"total"`
+		Items []UserInfo `json:"items"`
+	}
+	ReviewUserRequest struct {
+		Id int64 `path:"id"`
+	}
+	ReviewUserResponse struct {
+		User UserInfo `json:"user"`
+	}
+
+	HospitalInfo struct {
+		Id           int64    `json:"id"`
+		Name         string   `json:"name"`
+		Province     string   `json:"province"`
+		City         string   `json:"city"`
+		District     string   `json:"district,omitempty"`
+		Level        string   `json:"level"`
+		Type         string   `json:"type"`
+		Status       string   `json:"status"`
+		Address      string   `json:"address,omitempty"`
+		Remark       string   `json:"remark,omitempty"`
+		DeviceCount  int      `json:"deviceCount"`
+		DeviceModels []string `json:"deviceModels"`
+		CreatedAt    string   `json:"createdAt,omitempty"`
+	}
+	HospitalUpsertRequest struct {
+		Name     string `json:"name"`
+		Province string `json:"province"`
+		City     string `json:"city"`
+		District string `json:"district,omitempty"`
+		Level    string `json:"level"`
+		Type     string `json:"type"`
+		Status   string `json:"status,omitempty"`
+		Address  string `json:"address,omitempty"`
+		Remark   string `json:"remark,omitempty"`
+	}
+	IdPathRequest struct {
+		Id int64 `path:"id"`
+	}
+	HospitalIdPathRequest struct {
+		Id int64 `path:"id"`
+	}
+	ListHospitalsRequest struct {
+		Province       string `form:"province,optional"`
+		Level          string `form:"level,optional"`
+		Type           string `form:"type,optional"`
+		Status         string `form:"status,optional"`
+		DeviceCategory string `form:"deviceCategory,optional"`
+		DeviceModel    string `form:"deviceModel,optional"`
+		Keyword        string `form:"keyword,optional"`
+		Page           int    `form:"page,optional"`
+		PageSize       int    `form:"pageSize,optional"`
+	}
+	ListHospitalsResponse struct {
+		Total int64          `json:"total"`
+		Items []HospitalInfo `json:"items"`
+	}
+	HospitalResponse struct {
+		Hospital HospitalInfo `json:"hospital"`
+	}
+	DashboardHospitalsRequest struct {
+		Region         string `form:"region,optional"`
+		Province       string `form:"province,optional"`
+		Level          string `form:"level,optional"`
+		Type           string `form:"type,optional"`
+		Status         string `form:"status,optional"`
+		DeviceCategory string `form:"deviceCategory,optional"`
+		DeviceModel    string `form:"deviceModel,optional"`
+		Keyword        string `form:"keyword,optional"`
+	}
+	ProvinceStat struct {
+		Name  string `json:"name"`
+		Value int    `json:"value"`
+	}
+	DashboardProvincesRequest struct {
+		Region string `form:"region,optional"`
+	}
+	DashboardProvincesResponse struct {
+		Items []ProvinceStat `json:"items"`
+	}
+
+	DeviceInfo struct {
+		Id           int64  `json:"id"`
+		HospitalId   int64  `json:"hospitalId"`
+		Category     string `json:"category"`
+		Model        string `json:"model"`
+		SerialNo     string `json:"serialNo,omitempty"`
+		Status       string `json:"status"`
+		InstalledAt  string `json:"installedAt,omitempty"`
+		Remark       string `json:"remark,omitempty"`
+	}
+	DeviceUpsertRequest struct {
+		Category    string `json:"category"`
+		Model       string `json:"model"`
+		SerialNo    string `json:"serialNo,omitempty"`
+		Status      string `json:"status,omitempty"`
+		InstalledAt string `json:"installedAt,omitempty"`
+		Remark      string `json:"remark,omitempty"`
+	}
+	ListDevicesResponse struct {
+		Items []DeviceInfo `json:"items"`
+	}
+	DeviceResponse struct {
+		Device DeviceInfo `json:"device"`
+	}
+
+	CustomerInfo struct {
+		Id           int64  `json:"id"`
+		HospitalId   *int64 `json:"hospitalId,omitempty"`
+		HospitalName string `json:"hospitalName,omitempty"`
+		Name         string `json:"name"`
+		Title        string `json:"title,omitempty"`
+		Phone        string `json:"phone,omitempty"`
+		Email        string `json:"email,omitempty"`
+		Remark       string `json:"remark,omitempty"`
+		CreatedAt    string `json:"createdAt,omitempty"`
+	}
+	CustomerUpsertRequest struct {
+		HospitalId *int64 `json:"hospitalId,omitempty"`
+		Name       string `json:"name"`
+		Title      string `json:"title,omitempty"`
+		Phone      string `json:"phone,omitempty"`
+		Email      string `json:"email,omitempty"`
+		Remark     string `json:"remark,omitempty"`
+	}
+	ListCustomersRequest struct {
+		HospitalId int64  `form:"hospitalId,optional"`
+		Keyword    string `form:"keyword,optional"`
+		Page       int    `form:"page,optional"`
+		PageSize   int    `form:"pageSize,optional"`
+	}
+	ListCustomersResponse struct {
+		Total int64          `json:"total"`
+		Items []CustomerInfo `json:"items"`
+	}
+	CustomerResponse struct {
+		Customer CustomerInfo `json:"customer"`
+	}
+
+	CaseInfo struct {
+		Id           int64  `json:"id"`
+		HospitalId   int64  `json:"hospitalId"`
+		HospitalName string `json:"hospitalName,omitempty"`
+		DeviceId     *int64 `json:"deviceId,omitempty"`
+		DeviceModel  string `json:"deviceModel,omitempty"`
+		Title        string `json:"title"`
+		Summary      string `json:"summary,omitempty"`
+		Content      string `json:"content,omitempty"`
+		Status       string `json:"status"`
+		CollectedAt  string `json:"collectedAt,omitempty"`
+		CreatedAt    string `json:"createdAt,omitempty"`
+	}
+	CaseUpsertRequest struct {
+		HospitalId int64  `json:"hospitalId"`
+		DeviceId   *int64 `json:"deviceId,omitempty"`
+		Title      string `json:"title"`
+		Summary    string `json:"summary,omitempty"`
+		Content    string `json:"content,omitempty"`
+		Status     string `json:"status,omitempty"`
+	}
+	ListCasesRequest struct {
+		HospitalId int64  `form:"hospitalId,optional"`
+		Status     string `form:"status,optional"`
+		Keyword    string `form:"keyword,optional"`
+		Page       int    `form:"page,optional"`
+		PageSize   int    `form:"pageSize,optional"`
+	}
+	ListCasesResponse struct {
+		Total int64      `json:"total"`
+		Items []CaseInfo `json:"items"`
+	}
+	CaseResponse struct {
+		Case CaseInfo `json:"case"`
 	}
 )

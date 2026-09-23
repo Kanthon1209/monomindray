@@ -7,7 +7,7 @@ export interface Hospital {
   type: string;
   deviceCount: number;
   deviceModels: string[];
-  status: "active" | "pending" | "inactive";
+  status: "active" | "pending" | "inactive" | string;
 }
 
 export interface FilterOptions {

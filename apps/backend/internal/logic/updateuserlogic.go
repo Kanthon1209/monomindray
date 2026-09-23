@@ -2,14 +2,14 @@ package logic
 
 import (
 	"context"
-	"fmt"
+	"strings"
 
+	"mindray/internal/authx"
 	"mindray/internal/model"
 	"mindray/internal/svc"
 	"mindray/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
-	"github.com/zeromicro/go-zero/core/stores/jwt"
 )
 
 type UpdateUserLogic struct {
@@ -26,56 +26,53 @@ func NewUpdateUserLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Update
 	}
 }
 
-func (l *UpdateUserLogic) UpdateUser(req *types.UserInfo) (*types.GetUserResponse, error) {
-	claims, err := jwt.GetClaims(l.ctx)
+func (l *UpdateUserLogic) UpdateUser(req *types.UpdateUserRequest) (*types.GetUserResponse, error) {
+	userID, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
-		return nil, errorResponse("未授权", 401)
+		return nil, ErrUnauthorized
 	}
 
-	userIdIntf, ok := claims["userId"]
-	if !ok {
-		return nil, errorResponse("未授权", 401)
-	}
-
-	userIdFloat, ok := userIdIntf.(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid userId type")
-	}
-	userId := int64(userIdFloat)
-
-	current, err := l.svcCtx.UserModel.FindById(l.ctx, userId)
+	current, err := l.svcCtx.UserModel.FindById(l.ctx, userID)
 	if err != nil {
 		l.Errorf("query user by id failed: %v", err)
-		return nil, errorResponse("服务器内部错误", 500)
+		return nil, ErrInternal
 	}
 	if current == nil {
-		return nil, errorResponse("用户不存在", 404)
+		return nil, NewCodeError(404, "用户不存在")
 	}
 
-	updatedUser := &model.User{
-		Id:     userId,
-		Name:   req.Name,
-		Email:  req.Email,
-		Avatar: req.Avatar,
+	name := strings.TrimSpace(req.Name)
+	email := strings.TrimSpace(req.Email)
+	if name == "" {
+		return nil, NewCodeError(400, "昵称不能为空")
 	}
-	if current.Role == "admin" {
-		updatedUser.Role = req.Role
-	} else {
-		updatedUser.Role = current.Role
+	if email == "" {
+		return nil, NewCodeError(400, "邮箱不能为空")
 	}
 
-	if err := l.svcCtx.UserModel.Update(l.ctx, updatedUser); err != nil {
+	if email != current.Email {
+		existing, err := l.svcCtx.UserModel.FindByEmail(l.ctx, email)
+		if err != nil {
+			l.Errorf("query user by email failed: %v", err)
+			return nil, ErrInternal
+		}
+		if existing != nil && existing.Id != userID {
+			return nil, NewCodeError(409, "该邮箱已被注册")
+		}
+	}
+
+	updated := &model.User{
+		Id:     userID,
+		Name:   name,
+		Email:  email,
+		Avatar: strings.TrimSpace(req.Avatar),
+		Role:   current.Role,
+	}
+
+	if err := l.svcCtx.UserModel.Update(l.ctx, updated); err != nil {
 		l.Errorf("update user failed: %v", err)
-		return nil, errorResponse("服务器内部错误", 500)
+		return nil, ErrInternal
 	}
 
-	return &types.GetUserResponse{
-		User: types.UserInfo{
-			Id:     updatedUser.Id,
-			Name:   updatedUser.Name,
-			Email:  updatedUser.Email,
-			Role:   updatedUser.Role,
-			Avatar: updatedUser.Avatar,
-		},
-	}, nil
+	return &types.GetUserResponse{User: toUserInfo(updated)}, nil
 }

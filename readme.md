@@ -22,8 +22,8 @@ specs/           需求与设计笔记
 
 本仓 remote：
 
-- `legacy-frontend` → 原 frontend 仓（只读备份）
-- `origin` → 新的 monorepo 仓（创建后设置）
+- `origin` → `git@github.com:Kanthon1209/monomindray.git`
+- `legacy-frontend` / `legacy-backend` → 旧仓（只读备份，勿再 push）
 
 ## 本地开发
 

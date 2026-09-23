@@ -2,13 +2,13 @@ package logic
 
 import (
 	"context"
+	"strings"
 
 	"mindray/internal/model"
 	"mindray/internal/svc"
 	"mindray/internal/types"
 
 	"github.com/zeromicro/go-zero/core/logx"
-	"github.com/zeromicro/go-zero/core/stores/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,56 +27,49 @@ func NewSignupLogic(ctx context.Context, svcCtx *svc.ServiceContext) *SignupLogi
 }
 
 func (l *SignupLogic) Signup(req *types.SignupRequest) (*types.SignupResponse, error) {
-	// 检查邮箱是否已注册
-	existing, err := l.svcCtx.UserModel.FindByEmail(l.ctx, req.Email)
-	if err != nil {
-		l.Errorf("query user by email failed: %v", err)
-		return nil, errorResponse("服务器内部错误", 500)
-	}
-	if existing != nil {
-		return nil, errorResponse("该邮箱已被注册", 409)
+	name := strings.TrimSpace(req.Name)
+	email := strings.TrimSpace(req.Email)
+	if name == "" || email == "" || len(req.Password) < 8 {
+		return nil, NewCodeError(400, "请填写有效的昵称、邮箱，密码至少 8 位")
 	}
 
-	// 加密密码
+	existing, err := l.svcCtx.UserModel.FindByEmail(l.ctx, email)
+	if err != nil {
+		l.Errorf("query user by email failed: %v", err)
+		return nil, ErrInternal
+	}
+	if existing != nil {
+		return nil, NewCodeError(409, "该邮箱已被注册")
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		l.Errorf("hash password failed: %v", err)
-		return nil, errorResponse("服务器内部错误", 500)
+		return nil, ErrInternal
 	}
 
-	// 创建用户
 	newUser := &model.User{
-		Name:     req.Name,
-		Email:    req.Email,
+		Name:     name,
+		Email:    email,
 		Password: string(hashedPassword),
 		Role:     "collector",
+		Status:   model.StatusPending,
 	}
 
-	userId, err := l.svcCtx.UserModel.Insert(l.ctx, newUser)
+	userID, err := l.svcCtx.UserModel.Insert(l.ctx, newUser)
 	if err != nil {
 		l.Errorf("insert user failed: %v", err)
-		return nil, errorResponse("服务器内部错误", 500)
-	}
-
-	// 生成 JWT
-	token, err := jwt.Sign(
-		[]byte(l.svcCtx.Config.Auth.AccessSecret),
-		int64(l.svcCtx.Config.Auth.ExpireAfter),
-		jwt.WithKey("userId", userId),
-		jwt.WithKey("role", "collector"),
-	)
-	if err != nil {
-		l.Errorf("sign jwt failed: %v", err)
-		return nil, errorResponse("服务器内部错误", 500)
+		return nil, ErrInternal
 	}
 
 	return &types.SignupResponse{
-		Token: token,
+		Message: "注册成功，请等待管理员审核通过后再登录",
 		User: types.UserInfo{
-			Id:    userId,
-			Name:  req.Name,
-			Email: req.Email,
-			Role:  "collector",
+			Id:     userID,
+			Name:   name,
+			Email:  email,
+			Role:   "collector",
+			Status: model.StatusPending,
 		},
 	}, nil
 }

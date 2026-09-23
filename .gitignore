@@ -28,6 +28,11 @@ mindray-backend/
 mindray-frontend/
 _trash_backend/
 
+# Deploy artifacts (built locally before ECS sync)
+deploy/artifacts/
+deploy/*.tgz
+apps/frontend/.next/
+
 # Logs
 *.log
 npm-debug.log*

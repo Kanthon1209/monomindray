@@ -1,0 +1,78 @@
+# ECS / production compose — build from precompiled artifacts (no Go/npm on server).
+# From repo root on ECS:
+#   docker compose -f deploy/docker-compose.ecs.yml --env-file deploy/.env up -d --build
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: mindray-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-mindray}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mindray_secret}
+      POSTGRES_DB: ${DB_NAME:-mindray}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../apps/backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mindray} -d ${DB_NAME:-mindray}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mindray
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    image: mindray-api:local
+    container_name: mindray-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mindray
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    image: mindray-web:local
+    container_name: mindray-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      API_UPSTREAM: http://api:8080
+    networks:
+      - mindray
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mindray-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - mindray
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  mindray:
+    driver: bridge
