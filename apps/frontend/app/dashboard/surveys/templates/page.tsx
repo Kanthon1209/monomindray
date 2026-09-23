@@ -362,7 +362,7 @@ export default function SurveyTemplatesPage() {
     }
     const schema = normalizeSchema(template.schema);
     const sections = [...(schema.sections || [])];
-    const fields = [...(schema.fields || [])];
+    let fields = [...(schema.fields || [])];
 
     if (renamingSection) {
       if (name !== renamingSection && sections.includes(name)) {
