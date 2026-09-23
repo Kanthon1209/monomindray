@@ -15,6 +15,9 @@ import {
   ChevronRight,
   ClipboardCheck,
   UserRoundCog,
+  ClipboardList,
+  Send,
+  Inbox,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -63,18 +66,31 @@ const userAdminSubItems = [
   { title: "用户列表", href: "/dashboard/users/manage", icon: UserRoundCog },
 ];
 
+const surveyAdminSubItems = [
+  { title: "问卷发放", href: "/dashboard/surveys/campaigns", icon: Send },
+  { title: "答卷审核", href: "/dashboard/surveys/review", icon: Inbox },
+];
+
 function AppSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const router = useRouter();
   const usersSectionActive = pathname.startsWith("/dashboard/users");
+  const surveysSectionActive = pathname.startsWith("/dashboard/surveys");
   const [usersOpen, setUsersOpen] = useState(usersSectionActive);
+  const [surveysOpen, setSurveysOpen] = useState(surveysSectionActive);
 
   useEffect(() => {
     if (usersSectionActive) {
       setUsersOpen(true);
     }
   }, [usersSectionActive]);
+
+  useEffect(() => {
+    if (surveysSectionActive) {
+      setSurveysOpen(true);
+    }
+  }, [surveysSectionActive]);
 
   const handleLogout = () => {
     logout();
@@ -130,6 +146,55 @@ function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+
+              {user?.role === "admin" ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip="问卷"
+                    isActive={surveysSectionActive}
+                    onClick={() => setSurveysOpen((open) => !open)}
+                  >
+                    <ClipboardList />
+                    <span>问卷</span>
+                    <ChevronRight
+                      className={cn(
+                        "ml-auto transition-transform duration-200",
+                        surveysOpen && "rotate-90",
+                      )}
+                    />
+                  </SidebarMenuButton>
+                  {surveysOpen ? (
+                    <SidebarMenuSub>
+                      {surveyAdminSubItems.map((item) => (
+                        <SidebarMenuSubItem key={item.href}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={pathname.startsWith(item.href)}
+                          >
+                            <Link href={item.href}>
+                              <item.icon />
+                              <span>{item.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  ) : null}
+                </SidebarMenuItem>
+              ) : (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.startsWith("/dashboard/surveys/tasks")}
+                    tooltip="我的问卷"
+                  >
+                    <Link href="/dashboard/surveys/tasks">
+                      <ClipboardList />
+                      <span>我的问卷</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
 
               {user?.role === "admin" ? (
                 <SidebarMenuItem>

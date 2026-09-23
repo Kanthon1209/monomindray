@@ -351,3 +351,286 @@ export async function updateCase(
 export async function deleteCase(id: string) {
   return apiFetch(`/cases/${id}`, { method: "DELETE" });
 }
+
+// ---- surveys ----
+
+export interface SurveyField {
+  key: string;
+  label: string;
+  section: string;
+  required?: boolean;
+  type?: string;
+  target?: string;
+}
+
+export interface SurveyTemplate {
+  id: string;
+  code: string;
+  title: string;
+  description?: string;
+  schema: { fields: SurveyField[] };
+  version: number;
+  status: string;
+}
+
+export interface SurveyCampaign {
+  id: string;
+  templateId: string;
+  templateCode?: string;
+  templateTitle?: string;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  status: string;
+  assignmentCount: number;
+  createdAt?: string;
+  assignments?: {
+    id: string;
+    assigneeId: string;
+    assigneeName?: string;
+    assigneeEmail?: string;
+    status: string;
+    submissionId?: string;
+    submissionStatus?: string;
+  }[];
+}
+
+export interface SurveyAssignment {
+  id: string;
+  campaignId: string;
+  campaignTitle?: string;
+  campaignStatus?: string;
+  dueAt?: string;
+  status: string;
+  templateId: string;
+  templateCode?: string;
+  templateTitle?: string;
+  schema?: { fields: SurveyField[] };
+  submissionId?: string;
+  submissionStatus?: string;
+  answers?: Record<string, string>;
+  reviewNote?: string;
+}
+
+export interface SurveySubmission {
+  id: string;
+  assignmentId: string;
+  campaignTitle?: string;
+  assigneeName?: string;
+  assigneeEmail?: string;
+  collectorName?: string;
+  hospitalId?: string;
+  answers: Record<string, string>;
+  status: string;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewNote?: string;
+}
+
+function parseSchema(raw: any): { fields: SurveyField[] } {
+  if (!raw) return { fields: [] };
+  if (typeof raw === "string") {
+    try {
+      return parseSchema(JSON.parse(raw));
+    } catch {
+      return { fields: [] };
+    }
+  }
+  return { fields: Array.isArray(raw.fields) ? raw.fields : [] };
+}
+
+function mapTemplate(raw: any): SurveyTemplate {
+  return {
+    id: String(raw.id),
+    code: raw.code,
+    title: raw.title,
+    description: raw.description || undefined,
+    schema: parseSchema(raw.schema),
+    version: raw.version ?? 1,
+    status: raw.status,
+  };
+}
+
+function mapCampaign(raw: any): SurveyCampaign {
+  return {
+    id: String(raw.id),
+    templateId: String(raw.templateId),
+    templateCode: raw.templateCode || undefined,
+    templateTitle: raw.templateTitle || undefined,
+    title: raw.title,
+    description: raw.description || undefined,
+    dueAt: raw.dueAt || undefined,
+    status: raw.status,
+    assignmentCount: raw.assignmentCount ?? 0,
+    createdAt: raw.createdAt || undefined,
+    assignments: (raw.assignments || []).map((a: any) => ({
+      id: String(a.id),
+      assigneeId: String(a.assigneeId),
+      assigneeName: a.assigneeName || undefined,
+      assigneeEmail: a.assigneeEmail || undefined,
+      status: a.status,
+      submissionId: a.submissionId != null ? String(a.submissionId) : undefined,
+      submissionStatus: a.submissionStatus || undefined,
+    })),
+  };
+}
+
+function mapAssignment(raw: any): SurveyAssignment {
+  return {
+    id: String(raw.id),
+    campaignId: String(raw.campaignId),
+    campaignTitle: raw.campaignTitle || undefined,
+    campaignStatus: raw.campaignStatus || undefined,
+    dueAt: raw.dueAt || undefined,
+    status: raw.status,
+    templateId: String(raw.templateId),
+    templateCode: raw.templateCode || undefined,
+    templateTitle: raw.templateTitle || undefined,
+    schema: parseSchema(raw.schema),
+    submissionId: raw.submissionId != null ? String(raw.submissionId) : undefined,
+    submissionStatus: raw.submissionStatus || undefined,
+    answers: raw.answers || {},
+    reviewNote: raw.reviewNote || undefined,
+  };
+}
+
+function mapSubmission(raw: any): SurveySubmission {
+  return {
+    id: String(raw.id),
+    assignmentId: String(raw.assignmentId),
+    campaignTitle: raw.campaignTitle || undefined,
+    assigneeName: raw.assigneeName || undefined,
+    assigneeEmail: raw.assigneeEmail || undefined,
+    collectorName: raw.collectorName || undefined,
+    hospitalId: raw.hospitalId != null ? String(raw.hospitalId) : undefined,
+    answers: raw.answers || {},
+    status: raw.status,
+    submittedAt: raw.submittedAt || undefined,
+    reviewedAt: raw.reviewedAt || undefined,
+    reviewNote: raw.reviewNote || undefined,
+  };
+}
+
+export async function listSurveyTemplates() {
+  const { data, error } = await apiFetch<{ items: any[] }>("/surveys/templates");
+  if (error) return { error, items: [] as SurveyTemplate[] };
+  return { items: (data?.items || []).map(mapTemplate) };
+}
+
+export async function listSurveyCampaigns(params?: { status?: string }) {
+  const { data, error } = await apiFetch<{ total: number; items: any[] }>(
+    `/surveys/campaigns${qs({ status: params?.status, page: 1, pageSize: 100 })}`,
+  );
+  if (error) return { error, items: [] as SurveyCampaign[], total: 0 };
+  return {
+    items: (data?.items || []).map(mapCampaign),
+    total: data?.total || 0,
+  };
+}
+
+export async function getSurveyCampaign(id: string) {
+  const { data, error } = await apiFetch<{ campaign: any }>(`/surveys/campaigns/${id}`);
+  if (error) return { error };
+  return { campaign: mapCampaign(data!.campaign) };
+}
+
+export async function createSurveyCampaign(payload: {
+  templateId: number;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  assigneeIds: number[];
+}) {
+  const { data, error } = await apiFetch<{ campaign: any }>("/surveys/campaigns", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (error) return { error };
+  return { campaign: mapCampaign(data!.campaign) };
+}
+
+export async function closeSurveyCampaign(id: string) {
+  const { data, error } = await apiFetch<{ campaign: any }>(
+    `/surveys/campaigns/${id}/close`,
+    { method: "POST" },
+  );
+  if (error) return { error };
+  return { campaign: mapCampaign(data!.campaign) };
+}
+
+export async function listMySurveyAssignments(params?: { status?: string }) {
+  const { data, error } = await apiFetch<{ total: number; items: any[] }>(
+    `/me/survey-assignments${qs({ status: params?.status, page: 1, pageSize: 100 })}`,
+  );
+  if (error) return { error, items: [] as SurveyAssignment[], total: 0 };
+  return {
+    items: (data?.items || []).map(mapAssignment),
+    total: data?.total || 0,
+  };
+}
+
+export async function getMySurveyAssignment(id: string) {
+  const { data, error } = await apiFetch<{ assignment: any }>(
+    `/me/survey-assignments/${id}`,
+  );
+  if (error) return { error };
+  return { assignment: mapAssignment(data!.assignment) };
+}
+
+export async function saveSurveyDraft(
+  id: string,
+  payload: { answers: Record<string, string>; hospitalId?: number },
+) {
+  const { data, error } = await apiFetch<{ submission: any }>(
+    `/me/survey-assignments/${id}/draft`,
+    { method: "PUT", body: JSON.stringify(payload) },
+  );
+  if (error) return { error };
+  return { submission: mapSubmission(data!.submission) };
+}
+
+export async function submitSurveyAssignment(
+  id: string,
+  payload: { answers: Record<string, string>; hospitalId?: number },
+) {
+  const { data, error } = await apiFetch<{ submission: any }>(
+    `/me/survey-assignments/${id}/submit`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+  if (error) return { error };
+  return { submission: mapSubmission(data!.submission) };
+}
+
+export async function listSurveySubmissions(params?: { status?: string }) {
+  const { data, error } = await apiFetch<{ total: number; items: any[] }>(
+    `/surveys/submissions${qs({
+      status: params?.status ?? "submitted",
+      page: 1,
+      pageSize: 100,
+    })}`,
+  );
+  if (error) return { error, items: [] as SurveySubmission[], total: 0 };
+  return {
+    items: (data?.items || []).map(mapSubmission),
+    total: data?.total || 0,
+  };
+}
+
+export async function approveSurveySubmission(id: string, note?: string) {
+  const { data, error } = await apiFetch<{ submission: any }>(
+    `/surveys/submissions/${id}/approve`,
+    { method: "POST", body: JSON.stringify({ note: note || "" }) },
+  );
+  if (error) return { error };
+  return { submission: mapSubmission(data!.submission) };
+}
+
+export async function rejectSurveySubmission(id: string, note: string) {
+  const { data, error } = await apiFetch<{ submission: any }>(
+    `/surveys/submissions/${id}/reject`,
+    { method: "POST", body: JSON.stringify({ note }) },
+  );
+  if (error) return { error };
+  return { submission: mapSubmission(data!.submission) };
+}
+
