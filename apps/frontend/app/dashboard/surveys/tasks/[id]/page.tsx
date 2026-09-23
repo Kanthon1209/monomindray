@@ -80,8 +80,13 @@ export default function SurveyTaskFillPage() {
   );
 
   const readOnly = assignment?.status === "submitted";
+  const lockedSet = useMemo(
+    () => new Set(assignment?.lockedKeys || []),
+    [assignment],
+  );
 
   const setField = (key: string, value: string) => {
+    if (lockedSet.has(key)) return;
     setAnswers((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -114,12 +119,13 @@ export default function SurveyTaskFillPage() {
 
   const renderField = (field: SurveyField) => {
     const value = answers[field.key] || "";
+    const fieldLocked = readOnly || lockedSet.has(field.key);
     if (field.key === "level") {
       return (
         <Select
           value={value || undefined}
           onValueChange={(v) => setField(field.key, v)}
-          disabled={readOnly}
+          disabled={fieldLocked}
         >
           <SelectTrigger>
             <SelectValue placeholder="选择医院等级" />
@@ -139,7 +145,7 @@ export default function SurveyTaskFillPage() {
         <Select
           value={value || undefined}
           onValueChange={(v) => setField(field.key, v)}
-          disabled={readOnly}
+          disabled={fieldLocked}
         >
           <SelectTrigger>
             <SelectValue placeholder="选择医院类型" />
@@ -157,7 +163,7 @@ export default function SurveyTaskFillPage() {
     return (
       <Input
         value={value}
-        disabled={readOnly}
+        disabled={fieldLocked}
         onChange={(e) => setField(field.key, e.target.value)}
         placeholder={field.label}
       />
@@ -225,6 +231,11 @@ export default function SurveyTaskFillPage() {
                       {field.label}
                       {field.required ? (
                         <span className="text-destructive"> *</span>
+                      ) : null}
+                      {lockedSet.has(field.key) ? (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          （已锁定）
+                        </span>
                       ) : null}
                     </Label>
                     {renderField(field)}

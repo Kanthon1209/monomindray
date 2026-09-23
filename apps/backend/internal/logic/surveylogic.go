@@ -50,6 +50,72 @@ func (l *SurveyLogic) GetTemplate(id int64) (*types.SurveyTemplateResponse, erro
 	return &types.SurveyTemplateResponse{Template: toSurveyTemplateInfo(t)}, nil
 }
 
+func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRequest) (*types.SurveyTemplateResponse, error) {
+	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
+		return nil, err
+	}
+	existing, err := l.svcCtx.SurveyModel.FindTemplateById(l.ctx, id)
+	if err != nil {
+		return nil, ErrInternal
+	}
+	if existing == nil {
+		return nil, NewCodeError(404, "模板不存在")
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = existing.Title
+	}
+	if len(req.Schema) == 0 {
+		return nil, NewCodeError(400, "请提供模板字段 schema")
+	}
+	schemaBytes := []byte(req.Schema)
+	if !json.Valid(schemaBytes) {
+		return nil, NewCodeError(400, "schema 不是合法 JSON")
+	}
+	var parsed struct {
+		Fields []struct {
+			Key   string `json:"key"`
+			Label string `json:"label"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(schemaBytes, &parsed); err != nil {
+		return nil, NewCodeError(400, "schema 解析失败")
+	}
+	seen := map[string]struct{}{}
+	for _, f := range parsed.Fields {
+		key := strings.TrimSpace(f.Key)
+		label := strings.TrimSpace(f.Label)
+		if key == "" || label == "" {
+			return nil, NewCodeError(400, "每个字段都需要 key 与 label")
+		}
+		if _, ok := seen[key]; ok {
+			return nil, NewCodeError(400, "字段 key 重复："+key)
+		}
+		seen[key] = struct{}{}
+	}
+
+	status := strings.TrimSpace(req.Status)
+	if status == "" {
+		status = existing.Status
+	}
+	if status != "active" && status != "archived" {
+		return nil, NewCodeError(400, "状态无效")
+	}
+
+	updated, err := l.svcCtx.SurveyModel.UpdateTemplate(
+		l.ctx, id, title, req.Description, status, json.RawMessage(schemaBytes), true,
+	)
+	if err != nil {
+		l.Errorf("update template: %v", err)
+		return nil, ErrInternal
+	}
+	if updated == nil {
+		return nil, NewCodeError(404, "模板不存在")
+	}
+	return &types.SurveyTemplateResponse{Template: toSurveyTemplateInfo(updated)}, nil
+}
+
 func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*types.SurveyCampaignResponse, error) {
 	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
 		return nil, err
@@ -101,7 +167,13 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 		DueAt:       dueAt,
 		Status:      "active",
 		CreatedBy:   ptrInt64(uid),
+		Defaults:    normalizeAnswers(req.Defaults),
+		LockedKeys:  uniqueStrings(req.LockedKeys),
 	}
+	// Merge template field defaults when campaign did not override.
+	c.Defaults = mergeTemplateDefaults(tpl.Schema, c.Defaults)
+	c.LockedKeys = mergeTemplateLocked(tpl.Schema, c.LockedKeys)
+
 	id, err := l.svcCtx.SurveyModel.CreateCampaignWithAssignments(l.ctx, c, assignees)
 	if err != nil {
 		l.Errorf("create campaign: %v", err)
@@ -222,7 +294,11 @@ func (l *SurveyLogic) GetMyAssignment(id int64) (*types.SurveyAssignmentResponse
 		answers = sub.Answers
 		note = sub.ReviewNote
 	}
+	answers = mergePrefillAnswers(a.Schema, a.CampaignDefaults, answers)
+	locked := effectiveLockedKeys(a.Schema, a.LockedKeys)
+	answers = applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, answers)
 	info := toSurveyAssignmentInfo(a, answers, note)
+	info.LockedKeys = locked
 	return &types.SurveyAssignmentResponse{Assignment: info}, nil
 }
 
@@ -231,10 +307,12 @@ func (l *SurveyLogic) SaveDraft(id int64, req *types.SaveSurveyAnswersRequest) (
 	if err != nil {
 		return nil, ErrUnauthorized
 	}
-	if _, err := l.ensureAssignee(id, uid); err != nil {
+	a, err := l.ensureAssignee(id, uid)
+	if err != nil {
 		return nil, err
 	}
-	sub, err := l.svcCtx.SurveyModel.UpsertDraft(l.ctx, id, uid, normalizeAnswers(req.Answers), req.HospitalId)
+	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, normalizeAnswers(req.Answers))
+	sub, err := l.svcCtx.SurveyModel.UpsertDraft(l.ctx, id, uid, answers, req.HospitalId)
 	if err != nil {
 		if strings.Contains(err.Error(), "locked") {
 			return nil, NewCodeError(409, "答卷已提交或已通过，无法再存草稿")
@@ -257,7 +335,7 @@ func (l *SurveyLogic) Submit(id int64, req *types.SaveSurveyAnswersRequest) (*ty
 	if a.CampaignStatus == "closed" {
 		return nil, NewCodeError(400, "该发放已关闭，无法提交")
 	}
-	answers := normalizeAnswers(req.Answers)
+	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, normalizeAnswers(req.Answers))
 	if err := validateRequiredAnswers(a.Schema, answers); err != nil {
 		return nil, err
 	}
@@ -555,6 +633,7 @@ func toSurveyCampaignInfo(c *model.SurveyCampaign, assigns []types.SurveyAssignm
 	info := types.SurveyCampaignInfo{
 		Id: c.Id, TemplateId: c.TemplateId, TemplateCode: c.TemplateCode, TemplateTitle: c.TemplateTitle,
 		Title: c.Title, Description: c.Description, Status: c.Status,
+		Defaults: c.Defaults, LockedKeys: c.LockedKeys,
 		AssignmentCount: c.AssignmentCount, CreatedAt: formatTime(c.CreatedAt),
 		Assignments: assigns,
 	}
@@ -653,6 +732,109 @@ func uniqueInt64(ids []int64) []int64 {
 		}
 		seen[id] = struct{}{}
 		out = append(out, id)
+	}
+	return out
+}
+
+func uniqueStrings(vals []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+type schemaFieldMeta struct {
+	Key     string `json:"key"`
+	Default string `json:"default"`
+	Locked  bool   `json:"locked"`
+}
+
+func parseSchemaFields(schemaJSON json.RawMessage) []schemaFieldMeta {
+	var schema struct {
+		Fields []schemaFieldMeta `json:"fields"`
+	}
+	if len(schemaJSON) > 0 {
+		_ = json.Unmarshal(schemaJSON, &schema)
+	}
+	return schema.Fields
+}
+
+func mergeTemplateDefaults(schemaJSON json.RawMessage, campaignDefaults map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, f := range parseSchemaFields(schemaJSON) {
+		d := strings.TrimSpace(f.Default)
+		if d != "" {
+			out[f.Key] = d
+		}
+	}
+	for k, v := range campaignDefaults {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func mergeTemplateLocked(schemaJSON json.RawMessage, campaignLocked []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0)
+	for _, f := range parseSchemaFields(schemaJSON) {
+		if f.Locked && strings.TrimSpace(f.Key) != "" {
+			if _, ok := seen[f.Key]; !ok {
+				seen[f.Key] = struct{}{}
+				out = append(out, f.Key)
+			}
+		}
+	}
+	for _, k := range uniqueStrings(campaignLocked) {
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+func effectiveLockedKeys(schemaJSON json.RawMessage, campaignLocked []string) []string {
+	return mergeTemplateLocked(schemaJSON, campaignLocked)
+}
+
+// mergePrefillAnswers: template default < campaign default < saved answers.
+func mergePrefillAnswers(schemaJSON json.RawMessage, campaignDefaults, saved map[string]string) map[string]string {
+	out := mergeTemplateDefaults(schemaJSON, campaignDefaults)
+	for k, v := range saved {
+		out[k] = v
+	}
+	return out
+}
+
+func applyLockedAnswers(schemaJSON json.RawMessage, campaignDefaults map[string]string, campaignLocked []string, answers map[string]string) map[string]string {
+	prefill := mergeTemplateDefaults(schemaJSON, campaignDefaults)
+	lockedSet := map[string]struct{}{}
+	for _, k := range effectiveLockedKeys(schemaJSON, campaignLocked) {
+		lockedSet[k] = struct{}{}
+	}
+	out := map[string]string{}
+	for k, v := range answers {
+		out[k] = v
+	}
+	for k := range lockedSet {
+		if v, ok := prefill[k]; ok {
+			out[k] = v
+		}
 	}
 	return out
 }

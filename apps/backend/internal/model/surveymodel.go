@@ -25,37 +25,41 @@ type SurveyTemplate struct {
 }
 
 type SurveyCampaign struct {
-	Id           int64
-	TemplateId   int64
-	Title        string
-	Description  string
-	DueAt        *time.Time
-	Status       string
-	CreatedBy    *int64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	TemplateCode string
-	TemplateTitle string
+	Id              int64
+	TemplateId      int64
+	Title           string
+	Description     string
+	DueAt           *time.Time
+	Status          string
+	CreatedBy       *int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Defaults        map[string]string
+	LockedKeys      []string
+	TemplateCode    string
+	TemplateTitle   string
 	AssignmentCount int
 }
 
 type SurveyAssignment struct {
-	Id             int64
-	CampaignId     int64
-	AssigneeId     int64
-	Status         string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	CampaignTitle  string
-	CampaignStatus string
-	DueAt          *time.Time
-	AssigneeName   string
-	AssigneeEmail  string
-	TemplateId     int64
-	TemplateCode   string
-	TemplateTitle  string
-	Schema         json.RawMessage
-	SubmissionId   *int64
+	Id               int64
+	CampaignId       int64
+	AssigneeId       int64
+	Status           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CampaignTitle    string
+	CampaignStatus   string
+	DueAt            *time.Time
+	CampaignDefaults map[string]string
+	LockedKeys       []string
+	AssigneeName     string
+	AssigneeEmail    string
+	TemplateId       int64
+	TemplateCode     string
+	TemplateTitle    string
+	Schema           json.RawMessage
+	SubmissionId     *int64
 	SubmissionStatus string
 }
 
@@ -100,6 +104,7 @@ type SurveySubmissionFilter struct {
 type SurveyModel interface {
 	ListTemplates(ctx context.Context, activeOnly bool) ([]SurveyTemplate, error)
 	FindTemplateById(ctx context.Context, id int64) (*SurveyTemplate, error)
+	UpdateTemplate(ctx context.Context, id int64, title, description, status string, schema json.RawMessage, bumpVersion bool) (*SurveyTemplate, error)
 
 	CreateCampaignWithAssignments(ctx context.Context, c *SurveyCampaign, assigneeIDs []int64) (int64, error)
 	ListCampaigns(ctx context.Context, f SurveyCampaignFilter) ([]SurveyCampaign, int64, error)
@@ -158,6 +163,35 @@ func (m *surveyModel) FindTemplateById(ctx context.Context, id int64) (*SurveyTe
 	return scanTemplate(row)
 }
 
+func (m *surveyModel) UpdateTemplate(
+	ctx context.Context,
+	id int64,
+	title, description, status string,
+	schema json.RawMessage,
+	bumpVersion bool,
+) (*SurveyTemplate, error) {
+	if len(schema) == 0 {
+		schema = json.RawMessage(`{"fields":[]}`)
+	}
+	versionExpr := "version"
+	if bumpVersion {
+		versionExpr = "version + 1"
+	}
+	row := m.conn.QueryRow(ctx, fmt.Sprintf(`
+		UPDATE survey_templates
+		SET title = $2,
+		    description = $3,
+		    status = $4,
+		    schema = $5::jsonb,
+		    version = %s,
+		    updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, code, title, description, schema, version, status, created_by, created_at, updated_at`, versionExpr),
+		id, title, description, status, []byte(schema),
+	)
+	return scanTemplate(row)
+}
+
 func scanTemplate(row pgx.Row) (*SurveyTemplate, error) {
 	var t SurveyTemplate
 	var schema []byte
@@ -179,21 +213,53 @@ func (m *surveyModel) CreateCampaignWithAssignments(ctx context.Context, c *Surv
 	}
 	defer tx.Rollback(ctx)
 
+	if c.Defaults == nil {
+		c.Defaults = map[string]string{}
+	}
+	if c.LockedKeys == nil {
+		c.LockedKeys = []string{}
+	}
+	defaultsJSON, err := json.Marshal(c.Defaults)
+	if err != nil {
+		return 0, err
+	}
+	lockedJSON, err := json.Marshal(c.LockedKeys)
+	if err != nil {
+		return 0, err
+	}
+
 	var id int64
 	err = tx.QueryRow(ctx, `
-		INSERT INTO survey_campaigns (template_id, title, description, due_at, status, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		c.TemplateId, c.Title, c.Description, c.DueAt, c.Status, c.CreatedBy,
+		INSERT INTO survey_campaigns (template_id, title, description, due_at, status, created_by, defaults, locked_keys)
+		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) RETURNING id`,
+		c.TemplateId, c.Title, c.Description, c.DueAt, c.Status, c.CreatedBy, defaultsJSON, lockedJSON,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
 	for _, uid := range assigneeIDs {
-		if _, err := tx.Exec(ctx, `
+		var assignmentID int64
+		err := tx.QueryRow(ctx, `
 			INSERT INTO survey_assignments (campaign_id, assignee_id, status)
 			VALUES ($1,$2,'todo')
-			ON CONFLICT (campaign_id, assignee_id) DO NOTHING`, id, uid); err != nil {
+			ON CONFLICT (campaign_id, assignee_id) DO UPDATE SET updated_at = NOW()
+			RETURNING id`, id, uid).Scan(&assignmentID)
+		if err != nil {
 			return 0, err
+		}
+		if len(c.Defaults) > 0 {
+			answersJSON, err := json.Marshal(c.Defaults)
+			if err != nil {
+				return 0, err
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO survey_submissions (assignment_id, answers, status, collected_by)
+				VALUES ($1, $2::jsonb, 'draft', $3)
+				ON CONFLICT (assignment_id) DO NOTHING`,
+				assignmentID, answersJSON, uid,
+			); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -219,6 +285,7 @@ func (m *surveyModel) ListCampaigns(ctx context.Context, f SurveyCampaignFilter)
 	args = append(args, limit, offset)
 	rows, err := m.conn.Query(ctx, fmt.Sprintf(`
 		SELECT c.id, c.template_id, c.title, c.description, c.due_at, c.status, c.created_by, c.created_at, c.updated_at,
+		       COALESCE(c.defaults, '{}'::jsonb), COALESCE(c.locked_keys, '[]'::jsonb),
 		       COALESCE(t.code,''), COALESCE(t.title,''),
 		       (SELECT COUNT(*)::INT FROM survey_assignments a WHERE a.campaign_id = c.id)
 		FROM survey_campaigns c
@@ -232,28 +299,33 @@ func (m *surveyModel) ListCampaigns(ctx context.Context, f SurveyCampaignFilter)
 	defer rows.Close()
 	items := make([]SurveyCampaign, 0)
 	for rows.Next() {
-		var c SurveyCampaign
-		if err := rows.Scan(
-			&c.Id, &c.TemplateId, &c.Title, &c.Description, &c.DueAt, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
-			&c.TemplateCode, &c.TemplateTitle, &c.AssignmentCount,
-		); err != nil {
+		c, err := scanCampaign(rows)
+		if err != nil {
 			return nil, 0, err
 		}
-		items = append(items, c)
+		items = append(items, *c)
 	}
 	return items, total, rows.Err()
 }
 
 func (m *surveyModel) FindCampaignById(ctx context.Context, id int64) (*SurveyCampaign, error) {
-	var c SurveyCampaign
-	err := m.conn.QueryRow(ctx, `
+	row := m.conn.QueryRow(ctx, `
 		SELECT c.id, c.template_id, c.title, c.description, c.due_at, c.status, c.created_by, c.created_at, c.updated_at,
+		       COALESCE(c.defaults, '{}'::jsonb), COALESCE(c.locked_keys, '[]'::jsonb),
 		       COALESCE(t.code,''), COALESCE(t.title,''),
 		       (SELECT COUNT(*)::INT FROM survey_assignments a WHERE a.campaign_id = c.id)
 		FROM survey_campaigns c
 		LEFT JOIN survey_templates t ON t.id = c.template_id
-		WHERE c.id=$1`, id).Scan(
+		WHERE c.id=$1`, id)
+	return scanCampaign(row)
+}
+
+func scanCampaign(row pgx.Row) (*SurveyCampaign, error) {
+	var c SurveyCampaign
+	var defaultsRaw, lockedRaw []byte
+	err := row.Scan(
 		&c.Id, &c.TemplateId, &c.Title, &c.Description, &c.DueAt, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
+		&defaultsRaw, &lockedRaw,
 		&c.TemplateCode, &c.TemplateTitle, &c.AssignmentCount,
 	)
 	if err != nil {
@@ -262,7 +334,26 @@ func (m *surveyModel) FindCampaignById(ctx context.Context, id int64) (*SurveyCa
 		}
 		return nil, err
 	}
+	c.Defaults, err = decodeAnswers(defaultsRaw)
+	if err != nil {
+		return nil, err
+	}
+	c.LockedKeys, err = decodeStringSlice(lockedRaw)
+	if err != nil {
+		return nil, err
+	}
 	return &c, nil
+}
+
+func decodeStringSlice(raw []byte) ([]string, error) {
+	out := []string{}
+	if len(raw) == 0 {
+		return out, nil
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (m *surveyModel) ListAssignmentsByCampaign(ctx context.Context, campaignID int64) ([]SurveyAssignment, error) {
@@ -372,9 +463,11 @@ func (m *surveyModel) FindAssignmentById(ctx context.Context, id int64) (*Survey
 	var a SurveyAssignment
 	var schema []byte
 	var subID *int64
+	var defaultsRaw, lockedRaw []byte
 	err := m.conn.QueryRow(ctx, `
 		SELECT a.id, a.campaign_id, a.assignee_id, a.status, a.created_at, a.updated_at,
 		       COALESCE(c.title,''), COALESCE(c.status,''), c.due_at,
+		       COALESCE(c.defaults, '{}'::jsonb), COALESCE(c.locked_keys, '[]'::jsonb),
 		       COALESCE(u.name,''), COALESCE(u.email,''),
 		       COALESCE(t.id,0), COALESCE(t.code,''), COALESCE(t.title,''), COALESCE(t.schema, '{}'::jsonb),
 		       s.id, COALESCE(s.status,'')
@@ -386,6 +479,7 @@ func (m *surveyModel) FindAssignmentById(ctx context.Context, id int64) (*Survey
 		WHERE a.id=$1`, id).Scan(
 		&a.Id, &a.CampaignId, &a.AssigneeId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
 		&a.CampaignTitle, &a.CampaignStatus, &a.DueAt,
+		&defaultsRaw, &lockedRaw,
 		&a.AssigneeName, &a.AssigneeEmail,
 		&a.TemplateId, &a.TemplateCode, &a.TemplateTitle, &schema,
 		&subID, &a.SubmissionStatus,
@@ -398,6 +492,14 @@ func (m *surveyModel) FindAssignmentById(ctx context.Context, id int64) (*Survey
 	}
 	a.Schema = json.RawMessage(schema)
 	a.SubmissionId = subID
+	a.CampaignDefaults, err = decodeAnswers(defaultsRaw)
+	if err != nil {
+		return nil, err
+	}
+	a.LockedKeys, err = decodeStringSlice(lockedRaw)
+	if err != nil {
+		return nil, err
+	}
 	return &a, nil
 }
 

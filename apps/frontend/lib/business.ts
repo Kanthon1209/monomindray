@@ -361,6 +361,16 @@ export interface SurveyField {
   required?: boolean;
   type?: string;
   target?: string;
+  /** 模板级默认值；发放时可再覆盖 */
+  default?: string;
+  /** 模板级锁定：采集员不可改 */
+  locked?: boolean;
+}
+
+export interface SurveySchema {
+  fields: SurveyField[];
+  /** 分组顺序；可包含尚无字段的空组 */
+  sections?: string[];
 }
 
 export interface SurveyTemplate {
@@ -368,7 +378,7 @@ export interface SurveyTemplate {
   code: string;
   title: string;
   description?: string;
-  schema: { fields: SurveyField[] };
+  schema: SurveySchema;
   version: number;
   status: string;
 }
@@ -382,6 +392,8 @@ export interface SurveyCampaign {
   description?: string;
   dueAt?: string;
   status: string;
+  defaults?: Record<string, string>;
+  lockedKeys?: string[];
   assignmentCount: number;
   createdAt?: string;
   assignments?: {
@@ -405,10 +417,11 @@ export interface SurveyAssignment {
   templateId: string;
   templateCode?: string;
   templateTitle?: string;
-  schema?: { fields: SurveyField[] };
+  schema?: SurveySchema;
   submissionId?: string;
   submissionStatus?: string;
   answers?: Record<string, string>;
+  lockedKeys?: string[];
   reviewNote?: string;
 }
 
@@ -427,16 +440,20 @@ export interface SurveySubmission {
   reviewNote?: string;
 }
 
-function parseSchema(raw: any): { fields: SurveyField[] } {
-  if (!raw) return { fields: [] };
+function parseSchema(raw: any): SurveySchema {
+  if (!raw) return { fields: [], sections: [] };
   if (typeof raw === "string") {
     try {
       return parseSchema(JSON.parse(raw));
     } catch {
-      return { fields: [] };
+      return { fields: [], sections: [] };
     }
   }
-  return { fields: Array.isArray(raw.fields) ? raw.fields : [] };
+  const fields: SurveyField[] = Array.isArray(raw.fields) ? raw.fields : [];
+  const sections = Array.isArray(raw.sections)
+    ? raw.sections.filter((s: unknown) => typeof s === "string" && s.trim())
+    : undefined;
+  return { fields, sections };
 }
 
 function mapTemplate(raw: any): SurveyTemplate {
@@ -461,6 +478,8 @@ function mapCampaign(raw: any): SurveyCampaign {
     description: raw.description || undefined,
     dueAt: raw.dueAt || undefined,
     status: raw.status,
+    defaults: raw.defaults || undefined,
+    lockedKeys: Array.isArray(raw.lockedKeys) ? raw.lockedKeys : undefined,
     assignmentCount: raw.assignmentCount ?? 0,
     createdAt: raw.createdAt || undefined,
     assignments: (raw.assignments || []).map((a: any) => ({
@@ -490,6 +509,7 @@ function mapAssignment(raw: any): SurveyAssignment {
     submissionId: raw.submissionId != null ? String(raw.submissionId) : undefined,
     submissionStatus: raw.submissionStatus || undefined,
     answers: raw.answers || {},
+    lockedKeys: Array.isArray(raw.lockedKeys) ? raw.lockedKeys : undefined,
     reviewNote: raw.reviewNote || undefined,
   };
 }
@@ -517,6 +537,23 @@ export async function listSurveyTemplates() {
   return { items: (data?.items || []).map(mapTemplate) };
 }
 
+export async function updateSurveyTemplate(
+  id: string,
+  payload: {
+    title?: string;
+    description?: string;
+    schema: SurveySchema;
+    status?: string;
+  },
+) {
+  const { data, error } = await apiFetch<{ template: any }>(`/surveys/templates/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  if (error) return { error };
+  return { template: mapTemplate(data!.template) };
+}
+
 export async function listSurveyCampaigns(params?: { status?: string }) {
   const { data, error } = await apiFetch<{ total: number; items: any[] }>(
     `/surveys/campaigns${qs({ status: params?.status, page: 1, pageSize: 100 })}`,
@@ -539,6 +576,8 @@ export async function createSurveyCampaign(payload: {
   title: string;
   description?: string;
   dueAt?: string;
+  defaults?: Record<string, string>;
+  lockedKeys?: string[];
   assigneeIds: number[];
 }) {
   const body: Record<string, unknown> = {
@@ -548,6 +587,12 @@ export async function createSurveyCampaign(payload: {
   };
   if (payload.description) body.description = payload.description;
   if (payload.dueAt) body.dueAt = payload.dueAt;
+  if (payload.defaults && Object.keys(payload.defaults).length > 0) {
+    body.defaults = payload.defaults;
+  }
+  if (payload.lockedKeys && payload.lockedKeys.length > 0) {
+    body.lockedKeys = payload.lockedKeys;
+  }
   const { data, error } = await apiFetch<{ campaign: any }>("/surveys/campaigns", {
     method: "POST",
     body: JSON.stringify(body),

@@ -37,6 +37,27 @@ func GetSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+func UpdateSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var path types.IdPathRequest
+		var req types.UpdateSurveyTemplateRequest
+		if err := httpx.Parse(r, &path); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).UpdateTemplate(path.Id, &req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
 func CreateSurveyCampaignHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req types.CreateSurveyCampaignRequest

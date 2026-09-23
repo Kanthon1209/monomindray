@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 deploy/.env
+apps/backend/etc/*.local.yaml
 
 # Dependencies & build outputs
 node_modules/

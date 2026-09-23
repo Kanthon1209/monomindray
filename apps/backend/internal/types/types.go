@@ -236,6 +236,12 @@ type (
 	SurveyTemplateResponse struct {
 		Template SurveyTemplateInfo `json:"template"`
 	}
+	UpdateSurveyTemplateRequest struct {
+		Title       string          `json:"title,omitempty"`
+		Description string          `json:"description,omitempty"`
+		Schema      json.RawMessage `json:"schema"`
+		Status      string          `json:"status,omitempty"`
+	}
 
 	SurveyAssignmentBrief struct {
 		Id               int64  `json:"id"`
@@ -255,16 +261,20 @@ type (
 		Description     string                  `json:"description,omitempty"`
 		DueAt           string                  `json:"dueAt,omitempty"`
 		Status          string                  `json:"status"`
+		Defaults        map[string]string       `json:"defaults,omitempty"`
+		LockedKeys      []string                `json:"lockedKeys,omitempty"`
 		AssignmentCount int                     `json:"assignmentCount"`
 		CreatedAt       string                  `json:"createdAt,omitempty"`
 		Assignments     []SurveyAssignmentBrief `json:"assignments,omitempty"`
 	}
 	CreateSurveyCampaignRequest struct {
-		TemplateId  int64   `json:"templateId"`
-		Title       string  `json:"title"`
-		Description string  `json:"description,omitempty"`
-		DueAt       string  `json:"dueAt,omitempty"`
-		AssigneeIds []int64 `json:"assigneeIds"`
+		TemplateId  int64             `json:"templateId"`
+		Title       string            `json:"title"`
+		Description string            `json:"description,omitempty"`
+		DueAt       string            `json:"dueAt,omitempty"`
+		Defaults    map[string]string `json:"defaults,omitempty"`
+		LockedKeys  []string          `json:"lockedKeys,omitempty"`
+		AssigneeIds []int64           `json:"assigneeIds"`
 	}
 	ListSurveyCampaignsRequest struct {
 		Status   string `form:"status,optional"`
@@ -280,20 +290,21 @@ type (
 	}
 
 	SurveyAssignmentInfo struct {
-		Id               int64           `json:"id"`
-		CampaignId       int64           `json:"campaignId"`
-		CampaignTitle    string          `json:"campaignTitle,omitempty"`
-		CampaignStatus   string          `json:"campaignStatus,omitempty"`
-		DueAt            string          `json:"dueAt,omitempty"`
-		Status           string          `json:"status"`
-		TemplateId       int64           `json:"templateId"`
-		TemplateCode     string          `json:"templateCode,omitempty"`
-		TemplateTitle    string          `json:"templateTitle,omitempty"`
-		Schema           json.RawMessage `json:"schema,omitempty"`
-		SubmissionId     *int64          `json:"submissionId,omitempty"`
-		SubmissionStatus string          `json:"submissionStatus,omitempty"`
+		Id               int64             `json:"id"`
+		CampaignId       int64             `json:"campaignId"`
+		CampaignTitle    string            `json:"campaignTitle,omitempty"`
+		CampaignStatus   string            `json:"campaignStatus,omitempty"`
+		DueAt            string            `json:"dueAt,omitempty"`
+		Status           string            `json:"status"`
+		TemplateId       int64             `json:"templateId"`
+		TemplateCode     string            `json:"templateCode,omitempty"`
+		TemplateTitle    string            `json:"templateTitle,omitempty"`
+		Schema           json.RawMessage   `json:"schema,omitempty"`
+		SubmissionId     *int64            `json:"submissionId,omitempty"`
+		SubmissionStatus string            `json:"submissionStatus,omitempty"`
 		Answers          map[string]string `json:"answers,omitempty"`
-		ReviewNote       string          `json:"reviewNote,omitempty"`
+		LockedKeys       []string          `json:"lockedKeys,omitempty"`
+		ReviewNote       string            `json:"reviewNote,omitempty"`
 	}
 	ListMySurveyAssignmentsRequest struct {
 		Status   string `form:"status,optional"`

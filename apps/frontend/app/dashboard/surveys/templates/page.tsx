@@ -1,13 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState, Fragment } from "react";
+import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, LayoutTemplate, Loader2, RefreshCw } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  LayoutTemplate,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 import {
   listSurveyTemplates,
+  updateSurveyTemplate,
   type SurveyField,
+  type SurveySchema,
   type SurveyTemplate,
 } from "@/lib/business";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +30,23 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -27,6 +54,42 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+const TARGET_PRESETS = [
+  { value: "", label: "不映射（仅采集）" },
+  { value: "hospital.name", label: "hospital.name" },
+  { value: "hospital.province", label: "hospital.province" },
+  { value: "hospital.city", label: "hospital.city" },
+  { value: "hospital.district", label: "hospital.district" },
+  { value: "hospital.level", label: "hospital.level" },
+  { value: "hospital.type", label: "hospital.type" },
+  { value: "hospital.address", label: "hospital.address" },
+  { value: "hospital.archive.", label: "hospital.archive.（自定义后缀）" },
+];
+
+type FieldDraft = {
+  key: string;
+  label: string;
+  section: string;
+  required: boolean;
+  type: string;
+  target: string;
+  customArchiveKey: string;
+  defaultValue: string;
+  locked: boolean;
+};
+
+const emptyFieldDraft = (section: string): FieldDraft => ({
+  key: "",
+  label: "",
+  section,
+  required: false,
+  type: "text",
+  target: "",
+  customArchiveKey: "",
+  defaultValue: "",
+  locked: false,
+});
 
 function statusBadge(status: string) {
   switch (status) {
@@ -39,14 +102,74 @@ function statusBadge(status: string) {
   }
 }
 
-function groupFields(fields: SurveyField[]) {
-  const map = new Map<string, SurveyField[]>();
+function slugifyKey(label: string): string {
+  const ascii = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+  if (ascii) return ascii;
+  return `field_${Date.now().toString(36)}`;
+}
+
+function normalizeSchema(schema: SurveySchema | undefined): SurveySchema {
+  const fields = schema?.fields || [];
+  const fromFields: string[] = [];
   for (const f of fields) {
-    const section = f.section || "未分组";
-    if (!map.has(section)) map.set(section, []);
-    map.get(section)!.push(f);
+    const s = (f.section || "未分组").trim() || "未分组";
+    if (!fromFields.includes(s)) fromFields.push(s);
   }
-  return Array.from(map.entries());
+  const sections = (schema?.sections || []).map((s) => s.trim()).filter(Boolean);
+  const ordered = [...sections];
+  for (const s of fromFields) {
+    if (!ordered.includes(s)) ordered.push(s);
+  }
+  return { fields, sections: ordered };
+}
+
+function groupBySection(schema: SurveySchema): { section: string; fields: SurveyField[] }[] {
+  const normalized = normalizeSchema(schema);
+  return (normalized.sections || []).map((section) => ({
+    section,
+    fields: (normalized.fields || []).filter(
+      (f) => (f.section || "未分组").trim() === section,
+    ),
+  }));
+}
+
+function draftFromField(field: SurveyField): FieldDraft {
+  const target = field.target || "";
+  let preset = target;
+  let customArchiveKey = "";
+  if (target.startsWith("hospital.archive.")) {
+    preset = "hospital.archive.";
+    customArchiveKey = target.slice("hospital.archive.".length);
+  } else if (target && !TARGET_PRESETS.some((p) => p.value === target)) {
+    preset = "hospital.archive.";
+    customArchiveKey = target.startsWith("hospital.archive.")
+      ? target.slice("hospital.archive.".length)
+      : target;
+  }
+  return {
+    key: field.key,
+    label: field.label,
+    section: field.section || "未分组",
+    required: !!field.required,
+    type: field.type || "text",
+    target: preset,
+    customArchiveKey,
+    defaultValue: field.default || "",
+    locked: !!field.locked,
+  };
+}
+
+function resolveTarget(draft: FieldDraft): string | undefined {
+  if (!draft.target) return undefined;
+  if (draft.target === "hospital.archive.") {
+    const key = draft.customArchiveKey.trim();
+    return key ? `hospital.archive.${key}` : undefined;
+  }
+  return draft.target;
 }
 
 export default function SurveyTemplatesPage() {
@@ -54,8 +177,20 @@ export default function SurveyTemplatesPage() {
   const router = useRouter();
   const [items, setItems] = useState<SurveyTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
+  const [fieldMode, setFieldMode] = useState<"create" | "edit">("create");
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editingOriginalKey, setEditingOriginalKey] = useState<string | null>(null);
+  const [fieldDraft, setFieldDraft] = useState<FieldDraft>(emptyFieldDraft(""));
+
+  const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
+  const [sectionName, setSectionName] = useState("");
+  const [sectionTemplateId, setSectionTemplateId] = useState<string | null>(null);
+  const [renamingSection, setRenamingSection] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -77,6 +212,197 @@ export default function SurveyTemplatesPage() {
     if (user?.role === "admin") load();
   }, [user, load]);
 
+  const editingTemplate = useMemo(
+    () => items.find((t) => t.id === editingTemplateId) || null,
+    [items, editingTemplateId],
+  );
+
+  const sectionOptions = useMemo(() => {
+    if (!editingTemplate) return [] as string[];
+    return normalizeSchema(editingTemplate.schema).sections || [];
+  }, [editingTemplate]);
+
+  const persistSchema = async (
+    template: SurveyTemplate,
+    nextSchema: SurveySchema,
+    extras?: { title?: string; description?: string },
+  ) => {
+    const schema = normalizeSchema(nextSchema);
+    setSaving(true);
+    setError(null);
+    const res = await updateSurveyTemplate(template.id, {
+      title: extras?.title ?? template.title,
+      description: extras?.description ?? template.description ?? "",
+      schema,
+      status: template.status,
+    });
+    setSaving(false);
+    if (res.error) {
+      setError(res.error);
+      return false;
+    }
+    setItems((prev) =>
+      prev.map((t) => (t.id === template.id ? res.template! : t)),
+    );
+    return true;
+  };
+
+  const openCreateField = (template: SurveyTemplate, section: string) => {
+    setEditingTemplateId(template.id);
+    setFieldMode("create");
+    setEditingOriginalKey(null);
+    setFieldDraft(emptyFieldDraft(section));
+    setFieldDialogOpen(true);
+  };
+
+  const openEditField = (template: SurveyTemplate, field: SurveyField) => {
+    setEditingTemplateId(template.id);
+    setFieldMode("edit");
+    setEditingOriginalKey(field.key);
+    setFieldDraft(draftFromField(field));
+    setFieldDialogOpen(true);
+  };
+
+  const openCreateSection = (template: SurveyTemplate) => {
+    setSectionTemplateId(template.id);
+    setRenamingSection(null);
+    setSectionName("");
+    setSectionDialogOpen(true);
+  };
+
+  const openRenameSection = (template: SurveyTemplate, section: string) => {
+    setSectionTemplateId(template.id);
+    setRenamingSection(section);
+    setSectionName(section);
+    setSectionDialogOpen(true);
+  };
+
+  const onSaveField = async () => {
+    const template = items.find((t) => t.id === editingTemplateId);
+    if (!template) return;
+    const label = fieldDraft.label.trim();
+    let key = fieldDraft.key.trim();
+    if (!label) {
+      setError("请填写字段名称");
+      return;
+    }
+    if (!key) key = slugifyKey(label);
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
+      setError("字段 key 仅允许字母、数字、下划线，且不能以数字开头");
+      return;
+    }
+    const section = fieldDraft.section.trim() || "未分组";
+    const target = resolveTarget(fieldDraft);
+    if (fieldDraft.target === "hospital.archive." && !fieldDraft.customArchiveKey.trim()) {
+      setError("请填写 archive 字段后缀，例如 region");
+      return;
+    }
+
+    const schema = normalizeSchema(template.schema);
+    const nextField: SurveyField = {
+      key,
+      label,
+      section,
+      required: fieldDraft.required,
+      type: fieldDraft.type || "text",
+      ...(target ? { target } : {}),
+      ...(fieldDraft.defaultValue.trim()
+        ? { default: fieldDraft.defaultValue.trim() }
+        : {}),
+      ...(fieldDraft.locked ? { locked: true } : {}),
+    };
+
+    let fields = [...(schema.fields || [])];
+    if (fieldMode === "edit" && editingOriginalKey) {
+      const idx = fields.findIndex((f) => f.key === editingOriginalKey);
+      if (idx < 0) {
+        setError("原字段不存在");
+        return;
+      }
+      if (key !== editingOriginalKey && fields.some((f) => f.key === key)) {
+        setError("字段 key 已存在");
+        return;
+      }
+      fields[idx] = nextField;
+    } else {
+      if (fields.some((f) => f.key === key)) {
+        setError("字段 key 已存在");
+        return;
+      }
+      fields.push(nextField);
+    }
+
+    const sections = schema.sections || [];
+    if (!sections.includes(section)) sections.push(section);
+
+    const ok = await persistSchema(template, { fields, sections });
+    if (ok) setFieldDialogOpen(false);
+  };
+
+  const onDeleteField = async () => {
+    if (fieldMode !== "edit" || !editingOriginalKey) return;
+    const template = items.find((t) => t.id === editingTemplateId);
+    if (!template) return;
+    if (!window.confirm(`确定删除字段「${fieldDraft.label || editingOriginalKey}」？`)) {
+      return;
+    }
+    const schema = normalizeSchema(template.schema);
+    const fields = (schema.fields || []).filter((f) => f.key !== editingOriginalKey);
+    const ok = await persistSchema(template, { fields, sections: schema.sections });
+    if (ok) setFieldDialogOpen(false);
+  };
+
+  const onSaveSection = async () => {
+    const template = items.find((t) => t.id === sectionTemplateId);
+    if (!template) return;
+    const name = sectionName.trim();
+    if (!name) {
+      setError("请填写分组名称");
+      return;
+    }
+    const schema = normalizeSchema(template.schema);
+    const sections = [...(schema.sections || [])];
+    let fields = [...(schema.fields || [])];
+
+    if (renamingSection) {
+      if (name !== renamingSection && sections.includes(name)) {
+        setError("分组名称已存在");
+        return;
+      }
+      const idx = sections.indexOf(renamingSection);
+      if (idx >= 0) sections[idx] = name;
+      fields = fields.map((f) =>
+        (f.section || "未分组") === renamingSection ? { ...f, section: name } : f,
+      );
+    } else {
+      if (sections.includes(name)) {
+        setError("分组名称已存在");
+        return;
+      }
+      sections.push(name);
+    }
+
+    const ok = await persistSchema(template, { fields, sections });
+    if (ok) setSectionDialogOpen(false);
+  };
+
+  const onDeleteSection = async (template: SurveyTemplate, section: string) => {
+    const schema = normalizeSchema(template.schema);
+    const count = (schema.fields || []).filter(
+      (f) => (f.section || "未分组") === section,
+    ).length;
+    const msg =
+      count > 0
+        ? `确定删除分组「${section}」及其 ${count} 个字段？`
+        : `确定删除空分组「${section}」？`;
+    if (!window.confirm(msg)) return;
+    const fields = (schema.fields || []).filter(
+      (f) => (f.section || "未分组") !== section,
+    );
+    const sections = (schema.sections || []).filter((s) => s !== section);
+    await persistSchema(template, { fields, sections });
+  };
+
   if (!user || user.role !== "admin") return null;
 
   return (
@@ -91,12 +417,15 @@ export default function SurveyTemplatesPage() {
               <div>
                 <CardTitle>模板管理</CardTitle>
                 <CardDescription>
-                  查看采集表单模板与字段定义。当前共 {items.length} 个模板。
+                  点击字段可编辑；组末与字段末的加号可新建。当前共 {items.length}{" "}
+                  个模板。
                 </CardDescription>
               </div>
             </div>
-            <Button variant="outline" size="icon" onClick={load} disabled={loading}>
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <Button variant="outline" size="icon" onClick={load} disabled={loading || saving}>
+              <RefreshCw
+                className={`h-4 w-4 ${loading || saving ? "animate-spin" : ""}`}
+              />
             </Button>
           </div>
         </CardHeader>
@@ -131,7 +460,8 @@ export default function SurveyTemplatesPage() {
                 ) : (
                   items.map((item) => {
                     const open = expanded === item.id;
-                    const fields = item.schema?.fields || [];
+                    const schema = normalizeSchema(item.schema);
+                    const groups = groupBySection(schema);
                     return (
                       <Fragment key={item.id}>
                         <TableRow
@@ -150,7 +480,7 @@ export default function SurveyTemplatesPage() {
                           <TableCell className="font-medium">{item.title}</TableCell>
                           <TableCell className="font-mono text-xs">{item.code}</TableCell>
                           <TableCell>v{item.version}</TableCell>
-                          <TableCell>{fields.length}</TableCell>
+                          <TableCell>{schema.fields.length}</TableCell>
                           <TableCell>{statusBadge(item.status)}</TableCell>
                         </TableRow>
                         {open ? (
@@ -161,36 +491,101 @@ export default function SurveyTemplatesPage() {
                                   {item.description}
                                 </p>
                               ) : null}
-                              {fields.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">暂无字段</p>
-                              ) : (
-                                <div className="space-y-4">
-                                  {groupFields(fields).map(([section, sectionFields]) => (
-                                    <div key={section}>
-                                      <p className="mb-2 text-sm font-medium">{section}</p>
-                                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                                        {sectionFields.map((f) => (
-                                          <div
-                                            key={f.key}
-                                            className="rounded-md border bg-background px-3 py-2 text-sm"
-                                          >
+                              <div className="space-y-4">
+                                {groups.map(({ section, fields }) => (
+                                  <div key={section}>
+                                    <div className="mb-2 flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        className="text-sm font-medium hover:underline"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openRenameSection(item, section);
+                                        }}
+                                      >
+                                        {section}
+                                      </button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-muted-foreground"
+                                        title="删除分组"
+                                        disabled={saving}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onDeleteSection(item, section);
+                                        }}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                      {fields.map((f) => (
+                                        <button
+                                          key={f.key}
+                                          type="button"
+                                          className="rounded-md border bg-background px-3 py-2 text-left text-sm transition hover:border-primary/40 hover:bg-accent/40"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openEditField(item, f);
+                                          }}
+                                        >
                                             <div className="flex items-center justify-between gap-2">
                                               <span className="font-medium">{f.label}</span>
-                                              {f.required ? (
-                                                <Badge variant="outline">必填</Badge>
-                                              ) : null}
+                                              <div className="flex items-center gap-1">
+                                                {f.locked ? (
+                                                  <Badge variant="secondary">锁定</Badge>
+                                                ) : null}
+                                                {f.required ? (
+                                                  <Badge variant="outline">必填</Badge>
+                                                ) : null}
+                                              </div>
                                             </div>
                                             <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                                               {f.key}
                                               {f.target ? ` → ${f.target}` : ""}
                                             </p>
-                                          </div>
-                                        ))}
-                                      </div>
+                                            {f.default ? (
+                                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                                默认：{f.default}
+                                              </p>
+                                            ) : null}
+                                        </button>
+                                      ))}
+                                      <button
+                                        type="button"
+                                        className="flex min-h-[64px] items-center justify-center rounded-md border border-dashed bg-background/60 text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+                                        disabled={saving}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openCreateField(item, section);
+                                        }}
+                                        title="新建字段"
+                                      >
+                                        <Plus className="h-5 w-5" />
+                                      </button>
                                     </div>
-                                  ))}
+                                  </div>
+                                ))}
+                                <div>
+                                  <p className="mb-2 text-sm font-medium text-muted-foreground">
+                                    新建分组
+                                  </p>
+                                  <button
+                                    type="button"
+                                    className="flex min-h-[72px] w-full items-center justify-center rounded-md border border-dashed bg-background/60 text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:max-w-xs"
+                                    disabled={saving}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openCreateSection(item);
+                                    }}
+                                    title="新建分组"
+                                  >
+                                    <Plus className="h-5 w-5" />
+                                  </button>
                                 </div>
-                              )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ) : null}
@@ -203,6 +598,217 @@ export default function SurveyTemplatesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={fieldDialogOpen} onOpenChange={setFieldDialogOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <DialogHeader className="border-b px-5 py-4">
+            <DialogTitle>{fieldMode === "edit" ? "编辑字段" : "新建字段"}</DialogTitle>
+            <DialogDescription>
+              配置采集字段及其写入医院主数据 / archive 的映射。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 px-5 py-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>显示名称</Label>
+                <Input
+                  value={fieldDraft.label}
+                  onChange={(e) => {
+                    const label = e.target.value;
+                    setFieldDraft((d) => ({
+                      ...d,
+                      label,
+                      key:
+                        fieldMode === "create" && !d.key
+                          ? slugifyKey(label)
+                          : d.key,
+                    }));
+                  }}
+                  placeholder="例如：医院名称"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>字段 key</Label>
+                <Input
+                  value={fieldDraft.key}
+                  onChange={(e) =>
+                    setFieldDraft((d) => ({ ...d, key: e.target.value.trim() }))
+                  }
+                  placeholder="例如：name"
+                  className="font-mono"
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>所属分组</Label>
+                <Select
+                  value={fieldDraft.section}
+                  onValueChange={(v) => setFieldDraft((d) => ({ ...d, section: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择分组" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sectionOptions.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>类型</Label>
+                <Select
+                  value={fieldDraft.type}
+                  onValueChange={(v) => setFieldDraft((d) => ({ ...d, type: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text">文本</SelectItem>
+                    <SelectItem value="number">数字</SelectItem>
+                    <SelectItem value="date">日期</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>映射目标</Label>
+              <Select
+                value={fieldDraft.target || "__none__"}
+                onValueChange={(v) =>
+                  setFieldDraft((d) => ({
+                    ...d,
+                    target: v === "__none__" ? "" : v,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TARGET_PRESETS.map((p) => (
+                    <SelectItem key={p.value || "__none__"} value={p.value || "__none__"}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {fieldDraft.target === "hospital.archive." ? (
+                <Input
+                  className="mt-2 font-mono"
+                  value={fieldDraft.customArchiveKey}
+                  onChange={(e) =>
+                    setFieldDraft((d) => ({
+                      ...d,
+                      customArchiveKey: e.target.value.trim(),
+                    }))
+                  }
+                  placeholder="archive 键名，如 region"
+                />
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label>默认值（可选）</Label>
+              <Input
+                value={fieldDraft.defaultValue}
+                onChange={(e) =>
+                  setFieldDraft((d) => ({ ...d, defaultValue: e.target.value }))
+                }
+                placeholder="采集员打开表单时的预填值"
+              />
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={fieldDraft.required}
+                  onChange={(e) =>
+                    setFieldDraft((d) => ({ ...d, required: e.target.checked }))
+                  }
+                />
+                必填
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={fieldDraft.locked}
+                  onChange={(e) =>
+                    setFieldDraft((d) => ({ ...d, locked: e.target.checked }))
+                  }
+                />
+                锁定（采集员不可改）
+              </label>
+            </div>
+          </div>
+          <DialogFooter className="border-t px-5 py-3">
+            {fieldMode === "edit" ? (
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={saving}
+                onClick={onDeleteField}
+              >
+                删除
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex flex-1 justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setFieldDialogOpen(false)}
+              >
+                取消
+              </Button>
+              <Button type="button" disabled={saving} onClick={onSaveField}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                保存
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={sectionDialogOpen} onOpenChange={setSectionDialogOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="border-b px-5 py-4">
+            <DialogTitle>{renamingSection ? "重命名分组" : "新建分组"}</DialogTitle>
+            <DialogDescription>分组用于在采集表单中归类字段。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 px-5 py-4">
+            <Label>分组名称</Label>
+            <Input
+              value={sectionName}
+              onChange={(e) => setSectionName(e.target.value)}
+              placeholder="例如：设备信息"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onSaveSection();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter className="border-t px-5 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setSectionDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button type="button" disabled={saving} onClick={onSaveSection}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

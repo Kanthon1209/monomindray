@@ -69,6 +69,8 @@ export default function SurveyCampaignsPage() {
   const [dueAt, setDueAt] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  const [prefill, setPrefill] = useState<Record<string, string>>({});
+  const [lockedKeys, setLockedKeys] = useState<string[]>([]);
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -115,6 +117,41 @@ export default function SurveyCampaignsPage() {
     if (user?.role === "admin") load();
   }, [user, load]);
 
+  const selectedTemplate = useMemo(
+    () => templates.find((t) => t.id === templateId) || null,
+    [templates, templateId],
+  );
+
+  const prefillFields = useMemo(() => {
+    const fields = selectedTemplate?.schema?.fields || [];
+    // Prefer hospital master data first, then fields that already have defaults.
+    const hospital = fields.filter((f) => (f.section || "").includes("医院"));
+    const rest = fields.filter((f) => !(f.section || "").includes("医院"));
+    return [...hospital, ...rest].slice(0, 12);
+  }, [selectedTemplate]);
+
+  useEffect(() => {
+    if (!selectedTemplate) {
+      setPrefill({});
+      setLockedKeys([]);
+      return;
+    }
+    const next: Record<string, string> = {};
+    const locks: string[] = [];
+    for (const f of selectedTemplate.schema?.fields || []) {
+      if (f.default) next[f.key] = f.default;
+      if (f.locked) locks.push(f.key);
+    }
+    setPrefill(next);
+    setLockedKeys(locks);
+  }, [selectedTemplate]);
+
+  const toggleLock = (key: string) => {
+    setLockedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  };
+
   const toggleAssignee = (id: string) => {
     setSelectedAssignees((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -139,11 +176,18 @@ export default function SurveyCampaignsPage() {
       }
       dueAtIso = d.toISOString();
     }
+    const defaults: Record<string, string> = {};
+    for (const [k, v] of Object.entries(prefill)) {
+      const trimmed = v.trim();
+      if (trimmed) defaults[k] = trimmed;
+    }
     const res = await createSurveyCampaign({
       templateId: Number(templateId),
       title: title.trim(),
       description: description.trim() || undefined,
       dueAt: dueAtIso,
+      defaults,
+      lockedKeys: lockedKeys.filter((k) => defaults[k]),
       assigneeIds: selectedAssignees.map(Number),
     });
     setSaving(false);
@@ -156,6 +200,8 @@ export default function SurveyCampaignsPage() {
     setDescription("");
     setDueAt("");
     setSelectedAssignees([]);
+    setPrefill({});
+    setLockedKeys([]);
     await load();
   };
 
@@ -267,6 +313,43 @@ export default function SurveyCampaignsPage() {
                   />
                 </div>
               </div>
+              {prefillFields.length > 0 ? (
+                <div className="space-y-2">
+                  <Label>预填与锁定（可选）</Label>
+                  <p className="text-xs text-muted-foreground">
+                    例如固化医院名称后勾选「锁定」，采集员打开任务时已填好且不可改。
+                  </p>
+                  <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-3">
+                    {prefillFields.map((f) => (
+                      <div
+                        key={f.key}
+                        className="grid items-center gap-2 sm:grid-cols-[1fr_1.4fr_auto]"
+                      >
+                        <span className="truncate text-sm">{f.label}</span>
+                        <Input
+                          value={prefill[f.key] || ""}
+                          onChange={(e) =>
+                            setPrefill((prev) => ({
+                              ...prev,
+                              [f.key]: e.target.value,
+                            }))
+                          }
+                          placeholder={`预填 ${f.key}`}
+                        />
+                        <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={lockedKeys.includes(f.key)}
+                            disabled={!(prefill[f.key] || "").trim()}
+                            onChange={() => toggleLock(f.key)}
+                          />
+                          锁定
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label>采集员（已选 {selectedAssignees.length} 人）</Label>
                 <div className="max-h-48 overflow-auto rounded-md border p-2">
