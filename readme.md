@@ -63,7 +63,13 @@ cp .env.example .env   # 填真实密钥与 SITE_ADDRESS
 IMAGE_TAG=<sha> docker compose up -d
 ```
 
-之后由 GitHub Actions `deploy.yml` 自动：`build/push` → SSH → `git pull` → `compose pull && up -d`。
+之后由 GitHub Actions `ci-cd.yml` 自动：
+
+```text
+backend/frontend 检查通过 → 构建并推送 GHCR 镜像 → SSH → git pull → compose pull && up -d
+```
+
+PR 只跑检查，不部署；`push` 到 `main` 才会构建镜像并部署。
 
 ### GitHub Secrets
 
