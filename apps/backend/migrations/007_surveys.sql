@@ -101,6 +101,7 @@ CREATE TRIGGER trigger_survey_submissions_updated_at
     EXECUTE PROCEDURE update_updated_at_column();
 
 -- Seed: 化免客户档案模板（字段对齐 frontend hospital-archive ARCHIVE_FIELD_DEFS）
+-- +goose StatementBegin
 INSERT INTO survey_templates (code, title, description, schema, version, status)
 VALUES (
     'immuno_archive_v1',
@@ -149,6 +150,7 @@ VALUES (
     'active'
 )
 ON CONFLICT (code) DO NOTHING;
+-- +goose StatementEnd
 
 -- +goose Down
 -- Historical migration: prefer forward fixes over automatic rollback.

@@ -19,6 +19,18 @@ GOOSE_BIN="${GOOSE_BIN:-/tmp/goose-${GOOSE_VERSION}-linux-amd64}"
 MIGRATIONS_DIR="${ROOT}/apps/backend/migrations"
 ENV_FILE="${ROOT}/deploy/.env"
 
+if [[ "$CMD" == "-h" || "$CMD" == "--help" ]]; then
+  cat <<'HELP'
+Usage: ./scripts/goose-up.sh [up|status|clear-dirty|...]
+
+  up           Apply pending migrations (default)
+  status       Show migration status
+  clear-dirty  Drop goose_db_version so the next up can retry from scratch
+               (safe when SQL files are idempotent: IF NOT EXISTS / ON CONFLICT)
+HELP
+  exit 0
+fi
+
 if [[ ! -d "$MIGRATIONS_DIR" ]]; then
   echo "missing migrations dir: $MIGRATIONS_DIR" >&2
   exit 1
@@ -71,6 +83,15 @@ if [[ -z "$NET" ]]; then
 fi
 
 DSN="host=mindray-db user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=disable"
+
+if [[ "$CMD" == "clear-dirty" ]]; then
+  echo "==> clearing goose_db_version (allows retry of failed/dirty migrate)"
+  docker exec -i mindray-db \
+    psql -U "$DB_USER" -d "$DB_NAME" \
+    -c "DROP TABLE IF EXISTS goose_db_version;"
+  echo "done; run ./scripts/goose-up.sh up"
+  exit 0
+fi
 
 echo "==> goose ${CMD} (dir=${MIGRATIONS_DIR}, network=${NET})"
 docker run --rm \
