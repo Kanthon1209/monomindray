@@ -18,6 +18,7 @@ type ServiceContext struct {
 	DeviceModel   model.DeviceModel
 	CustomerModel model.CustomerModel
 	CaseModel     model.CaseModel
+	SurveyModel   model.SurveyModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -44,5 +45,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		DeviceModel:   model.NewDeviceModel(pool),
 		CustomerModel: model.NewCustomerModel(pool),
 		CaseModel:     model.NewCaseModel(pool),
+		SurveyModel:   model.NewSurveyModel(pool),
 	}
 }
