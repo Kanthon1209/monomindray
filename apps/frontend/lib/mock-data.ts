@@ -1,13 +1,9 @@
 export const filterOptions = {
   region: [
-    { label: "全国", value: "all" },
-    { label: "华北", value: "huabei" },
-    { label: "华东", value: "huadong" },
-    { label: "华南", value: "huanan" },
-    { label: "华中", value: "huazhong" },
-    { label: "西南", value: "xinan" },
-    { label: "西北", value: "xibei" },
-    { label: "东北", value: "dongbei" },
+    { label: "全省", value: "all" },
+    { label: "皖北", value: "wanbei" },
+    { label: "皖中", value: "wanzhong" },
+    { label: "皖南", value: "wannan" },
   ],
   hospitalLevel: [
     { label: "全部", value: "all" },

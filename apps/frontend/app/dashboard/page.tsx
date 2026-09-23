@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Map as MapIcon, List, Loader2 } from "lucide-react";
 import { FilterBar } from "../components/FilterBar";
-import { ChinaMap } from "../components/ChinaMap";
+import { AnhuiMap } from "../components/ChinaMap";
 import { HospitalPanel } from "../components/HospitalPanel";
 import { fetchDashboardHospitals, fetchProvinceStats } from "@/lib/business";
 import type { FilterOptions, Hospital, ProvinceData } from "@/lib/types";
@@ -20,7 +20,7 @@ type MobileTab = "map" | "list";
 
 export default function DashboardPage() {
   const [filters, setFilters] = useState<FilterOptions>(defaultFilters);
-  const [selectedProvince, setSelectedProvince] = useState<string | undefined>();
+  const [selectedCity, setSelectedCity] = useState<string | undefined>();
   const [mobileTab, setMobileTab] = useState<MobileTab>("map");
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [mapData, setMapData] = useState<ProvinceData[]>([]);
@@ -30,15 +30,13 @@ export default function DashboardPage() {
   const handleFilterChange = useCallback(
     (key: keyof FilterOptions, value: string) => {
       setFilters((prev) => ({ ...prev, [key]: value }));
-      setSelectedProvince(undefined);
+      setSelectedCity(undefined);
     },
     [],
   );
 
-  const handleProvinceClick = useCallback((provinceName: string) => {
-    setSelectedProvince((prev) =>
-      prev === provinceName ? undefined : provinceName,
-    );
+  const handleCityClick = useCallback((cityName: string) => {
+    setSelectedCity((prev) => (prev === cityName ? undefined : cityName));
     setMobileTab("list");
   }, []);
 
@@ -47,10 +45,11 @@ export default function DashboardPage() {
     const load = async () => {
       setLoading(true);
       setError(null);
-      const [hospRes, provRes] = await Promise.all([
+      const [hospRes, cityRes] = await Promise.all([
         fetchDashboardHospitals({
           region: filters.region,
-          province: selectedProvince,
+          province: "安徽省",
+          city: selectedCity,
           level: filters.hospitalLevel,
           type: filters.hospitalType,
           deviceCategory: filters.deviceCategory,
@@ -59,13 +58,13 @@ export default function DashboardPage() {
         fetchProvinceStats(filters.region),
       ]);
       if (cancelled) return;
-      if (hospRes.error || provRes.error) {
-        setError(hospRes.error || provRes.error || "加载失败");
+      if (hospRes.error || cityRes.error) {
+        setError(hospRes.error || cityRes.error || "加载失败");
         setHospitals([]);
         setMapData([]);
       } else {
         setHospitals(hospRes.items);
-        setMapData(provRes.items);
+        setMapData(cityRes.items);
       }
       setLoading(false);
     };
@@ -73,7 +72,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters, selectedProvince]);
+  }, [filters, selectedCity]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-zinc-900">
@@ -127,16 +126,16 @@ export default function DashboardPage() {
             mobileTab === "map" ? "block" : "hidden"
           }`}
         >
-          <ChinaMap
+          <AnhuiMap
             data={mapData}
-            onProvinceClick={handleProvinceClick}
-            selectedProvince={selectedProvince}
+            onCityClick={handleCityClick}
+            selectedCity={selectedCity}
           />
-          {selectedProvince && (
+          {selectedCity && (
             <div className="absolute left-4 top-4 z-20 rounded-md bg-white/90 px-3 py-1.5 text-xs font-medium shadow-md dark:bg-zinc-900/90">
-              已选择: {selectedProvince}
+              已选择: {selectedCity}
               <button
-                onClick={() => setSelectedProvince(undefined)}
+                onClick={() => setSelectedCity(undefined)}
                 className="ml-2 text-muted-foreground hover:text-foreground"
               >
                 ✕
@@ -152,7 +151,7 @@ export default function DashboardPage() {
         >
           <HospitalPanel
             hospitals={hospitals}
-            selectedProvince={selectedProvince}
+            selectedProvince={selectedCity}
           />
         </div>
       </div>
