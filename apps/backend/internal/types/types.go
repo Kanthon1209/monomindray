@@ -54,31 +54,39 @@ type (
 	}
 
 	HospitalInfo struct {
-		Id           int64             `json:"id"`
-		Name         string            `json:"name"`
-		Province     string            `json:"province"`
-		City         string            `json:"city"`
-		District     string            `json:"district,omitempty"`
-		Level        string            `json:"level"`
-		Type         string            `json:"type"`
-		Status       string            `json:"status"`
-		Address      string            `json:"address,omitempty"`
-		Remark       string            `json:"remark,omitempty"`
-		Archive      map[string]any    `json:"archive,omitempty"`
-		DeviceCount  int               `json:"deviceCount"`
-		DeviceModels []string          `json:"deviceModels"`
-		CreatedAt    string            `json:"createdAt,omitempty"`
+		Id            int64             `json:"id"`
+		Name          string            `json:"name"`
+		Province      string            `json:"province"`
+		City          string            `json:"city"`
+		District      string            `json:"district,omitempty"`
+		Level         string            `json:"level"`
+		Type          string            `json:"type"`
+		Status        string            `json:"status"`
+		Address       string            `json:"address,omitempty"`
+		Remark        string            `json:"remark,omitempty"`
+		CustomerCode  string            `json:"customerCode,omitempty"`
+		Region        string            `json:"region,omitempty"`
+		BranchOffice  string            `json:"branchOffice,omitempty"`
+		Archive       map[string]any    `json:"archive,omitempty"`
+		Attributes    map[string]string `json:"attributes,omitempty"`
+		Metrics       map[string]string `json:"metrics,omitempty"`
+		DeviceCount   int               `json:"deviceCount"`
+		DeviceModels  []string          `json:"deviceModels"`
+		CreatedAt     string            `json:"createdAt,omitempty"`
 	}
 	HospitalUpsertRequest struct {
-		Name     string `json:"name"`
-		Province string `json:"province"`
-		City     string `json:"city"`
-		District string `json:"district,omitempty"`
-		Level    string `json:"level"`
-		Type     string `json:"type"`
-		Status   string `json:"status,omitempty"`
-		Address  string `json:"address,omitempty"`
-		Remark   string `json:"remark,omitempty"`
+		Name         string `json:"name"`
+		Province     string `json:"province"`
+		City         string `json:"city"`
+		District     string `json:"district,omitempty"`
+		Level        string `json:"level"`
+		Type         string `json:"type"`
+		Status       string `json:"status,omitempty"`
+		Address      string `json:"address,omitempty"`
+		Remark       string `json:"remark,omitempty"`
+		CustomerCode string `json:"customerCode,optional"`
+		Region       string `json:"region,optional"`
+		BranchOffice string `json:"branchOffice,optional"`
 	}
 	IdPathRequest struct {
 		Id int64 `path:"id"`
@@ -215,17 +223,17 @@ type (
 		Template SurveyTemplateInfo `json:"template"`
 	}
 	CreateSurveyTemplateRequest struct {
-		Code        string          `json:"code"`
-		Title       string          `json:"title"`
-		Description string          `json:"description,optional"`
-		Schema      json.RawMessage `json:"schema,optional"`
-		Status      string          `json:"status,optional"`
+		Code        string         `json:"code"`
+		Title       string         `json:"title"`
+		Description string         `json:"description,optional"`
+		Schema      map[string]any `json:"schema,optional"`
+		Status      string         `json:"status,optional"`
 	}
 	UpdateSurveyTemplateRequest struct {
-		Title       string          `json:"title,optional"`
-		Description string          `json:"description,optional"`
-		Schema      json.RawMessage `json:"schema"`
-		Status      string          `json:"status,optional"`
+		Title       string         `json:"title,optional"`
+		Description string         `json:"description,optional"`
+		Schema      map[string]any `json:"schema"`
+		Status      string         `json:"status,optional"`
 	}
 
 	SurveyAssignmentBrief struct {

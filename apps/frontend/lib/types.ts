@@ -13,6 +13,11 @@ export interface Hospital {
   status: "active" | "pending" | "inactive" | string;
   address?: string;
   remark?: string;
+  customerCode?: string;
+  region?: string;
+  branchOffice?: string;
+  attributes?: Record<string, string>;
+  metrics?: Record<string, string>;
   archive?: Record<string, ArchiveValue>;
 }
 

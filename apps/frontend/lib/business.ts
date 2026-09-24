@@ -66,6 +66,11 @@ function mapHospital(raw: any): Hospital {
     status: raw.status,
     address: raw.address || undefined,
     remark: raw.remark || undefined,
+    customerCode: raw.customerCode || undefined,
+    region: raw.region || undefined,
+    branchOffice: raw.branchOffice || undefined,
+    attributes: raw.attributes || undefined,
+    metrics: raw.metrics || undefined,
     archive: raw.archive || {},
   };
 }

@@ -2,10 +2,18 @@
 
 import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
-import { Search, ClipboardList, Columns2 } from "lucide-react";
+import { Search, ClipboardList, Columns2, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { HospitalDetailSheet } from "./HospitalDetailSheet";
 import type { Hospital } from "@/lib/types";
 import {
@@ -37,6 +45,7 @@ export function HospitalPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [expandedCols, setExpandedCols] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const columns = useMemo(
     () =>
@@ -109,140 +118,162 @@ export function HospitalPanel({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-zinc-950">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-sm font-semibold">化免客户档案</h2>
-          <Badge variant="secondary" className="shrink-0 text-xs">
-            {summary.total} 家
-          </Badge>
-          {selectedProvince ? (
-            <Badge variant="outline" className="shrink-0 text-xs">
-              {selectedProvince}
-            </Badge>
-          ) : null}
+    <div className="flex h-full min-h-0 flex-col border-l bg-background">
+      <div className="shrink-0 space-y-3 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold tracking-tight">
+                医院列表
+              </h2>
+              <Badge variant="secondary">{summary.total}</Badge>
+              {selectedProvince ? (
+                <Badge variant="outline">{selectedProvince}</Badge>
+              ) : null}
+            </div>
+          </div>
+          <Button size="sm" variant="default" asChild>
+            <Link href="/dashboard/surveys/campaigns">
+              <ClipboardList className="h-4 w-4" />
+              去采集
+            </Link>
+          </Button>
         </div>
-        <div className="flex shrink-0 items-center gap-3 text-[11px] text-muted-foreground">
-          <span>
-            机型{" "}
-            <span className="font-semibold text-foreground">
+
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline" className="font-normal">
+            有机型{" "}
+            <span className="ml-1 font-medium text-foreground">
               {summary.withModel}
             </span>
-          </span>
-          <span>
-            配套率{" "}
-            <span className="font-semibold text-foreground">
+          </Badge>
+          <Badge variant="outline" className="font-normal">
+            均配套率{" "}
+            <span className="ml-1 font-medium text-foreground">
               {summary.avgRate}
             </span>
-          </span>
-          <span>
+          </Badge>
+          <Badge variant="outline" className="font-normal">
             标本量{" "}
-            <span className="font-semibold text-foreground">
+            <span className="ml-1 font-medium text-foreground">
               {summary.mindraySamples}
             </span>
-          </span>
+          </Badge>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="搜索名称、分公司、机型…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-9 pl-8"
+            />
+          </div>
+          <Button
+            size="sm"
+            variant={expandedCols ? "secondary" : "outline"}
+            className="h-9 shrink-0"
+            onClick={() => setExpandedCols((v) => !v)}
+          >
+            <Columns2 className="h-4 w-4" />
+            {expandedCols ? "收起" : "更多列"}
+          </Button>
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="搜索客户名称、分公司、机型"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 pl-7 text-xs"
-          />
-        </div>
-        <Button
-          size="sm"
-          variant={expandedCols ? "secondary" : "outline"}
-          className="h-8 shrink-0 px-2"
-          onClick={() => setExpandedCols((v) => !v)}
-          title={expandedCols ? "收起列" : "展开更多列"}
-        >
-          <Columns2 className="h-4 w-4" />
-          <span className="hidden sm:inline">
-            {expandedCols ? "收起列" : "更多列"}
-          </span>
-        </Button>
-        <Button size="sm" variant="default" className="h-8 shrink-0 px-2" asChild>
-          <Link href="/dashboard/surveys/campaigns">
-            <ClipboardList className="h-4 w-4" />
-            <span className="hidden sm:inline">去采集</span>
-          </Link>
-        </Button>
-      </div>
+      <Separator />
 
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0 overflow-auto">
           <table
             className={cn(
               "w-full caption-bottom text-sm",
-              expandedCols && "min-w-[880px]",
+              expandedCols && "min-w-[920px]",
             )}
           >
-            <thead className="sticky top-0 z-10 bg-white dark:bg-zinc-950 [&_tr]:border-b">
-              <tr className="border-b transition-colors">
+            <TableHeader className="sticky top-0 z-10 bg-background shadow-[0_1px_0_0_var(--border)]">
+              <TableRow className="hover:bg-transparent">
                 {columns.map((key) => (
-                  <th
+                  <TableHead
                     key={key}
-                    className="h-8 whitespace-nowrap px-2 text-left align-middle text-xs font-medium text-muted-foreground"
+                    className="h-10 whitespace-nowrap px-3 text-xs"
                   >
                     {archiveFieldLabel(key)}
-                  </th>
+                  </TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody className="[&_tr:last-child]:border-0">
+                <TableHead className="h-10 w-8 px-2" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="h-32 p-2 text-center align-middle text-muted-foreground"
+                <TableRow className="hover:bg-transparent">
+                  <TableCell
+                    colSpan={columns.length + 1}
+                    className="h-36 text-center text-sm text-muted-foreground"
                   >
-                    暂无匹配的化免客户档案
-                  </td>
-                </tr>
+                    暂无匹配医院
+                  </TableCell>
+                </TableRow>
               ) : (
-                filtered.map((hospital) => (
-                  <tr
-                    key={hospital.id}
-                    className={cn(
-                      "cursor-pointer border-b transition-colors hover:bg-muted/50",
-                      selectedId === hospital.id &&
-                        detailOpen &&
-                        "bg-muted/60",
-                    )}
-                    onClick={() => openDetail(hospital.id)}
-                  >
-                    {columns.map((key) => (
-                      <td
-                        key={key}
-                        className={cn(
-                          "max-w-[140px] truncate px-2 py-1.5 align-middle text-xs",
-                          key === "customerName" && "font-medium",
-                          (key === "matchingRate" ||
-                            key === "mindraySampleVolume" ||
-                            key === "totalSampleVolume") &&
-                            "text-primary",
-                        )}
-                        title={cellValue(hospital, key)}
-                      >
-                        {cellValue(hospital, key)}
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                filtered.map((hospital) => {
+                  const active =
+                    selectedId === hospital.id && detailOpen;
+                  const hovered = hoveredId === hospital.id;
+                  return (
+                    <TableRow
+                      key={hospital.id}
+                      data-state={active ? "selected" : undefined}
+                      className={cn(
+                        "group cursor-pointer border-b",
+                        "hover:bg-accent/60",
+                        active && "bg-muted",
+                      )}
+                      onClick={() => openDetail(hospital.id)}
+                      onMouseEnter={() => setHoveredId(hospital.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                    >
+                      {columns.map((key) => (
+                        <TableCell
+                          key={key}
+                          className={cn(
+                            "max-w-[160px] truncate px-3 py-3 text-sm",
+                            key === "customerName" && "font-medium",
+                            (key === "matchingRate" ||
+                              key === "mindraySampleVolume" ||
+                              key === "totalSampleVolume") &&
+                              "tabular-nums text-muted-foreground",
+                          )}
+                          title={cellValue(hospital, key)}
+                        >
+                          {cellValue(hospital, key)}
+                        </TableCell>
+                      ))}
+                      <TableCell className="w-8 px-2 py-3">
+                        <ChevronRight
+                          className={cn(
+                            "h-4 w-4 text-muted-foreground transition-opacity",
+                            hovered || active
+                              ? "opacity-100"
+                              : "opacity-0 group-hover:opacity-100",
+                          )}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
-            </tbody>
+            </TableBody>
           </table>
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t px-3 py-1.5">
+      <Separator />
+
+      <div className="flex shrink-0 items-center px-4 py-3">
         <span className="text-xs text-muted-foreground">
-          共 {filtered.length} 条客户档案
+          共 {filtered.length} 家
         </span>
       </div>
 

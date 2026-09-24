@@ -10,17 +10,22 @@ users
   ▼
 hospitals ──< devices
     │
-    ├──< customers
-    └── archive / hospital_project_items
+    ├──< customers (contacts)
+    ├── hospital_attributes / hospital_metrics
+    ├── hospital_assays → assay_projects
+    ├── hospital_supplies → suppliers
+    ├── hospital_role_assignments → org_staff
+    └── archive（过渡缓冲）
 
 survey_templates → survey_campaigns
        → survey_assignments (assignee × hospital)
-            → survey_submissions (answers 可为嵌套 JSON，含 devices[])
+            → survey_submissions
 ```
 
-化免 Excel 三子表对应模板：`chemilum_archive_v1`、`svip_archive_v1`、`dual_major_archive_v1`（字段映射 `hospital.*` / `hospital.archive.*`）。装机明细用 `chemilum_device_v1`（`devices[]`）。汇总模板 `immuno_archive_v1` 保留兼容。
+问卷审核发布双写：医院列 + archive（兼容）+ attributes / metrics / assays / supplies / roles。
+模板 target 支持 `hospital.*`、`hospital.attributes.*`、`hospital.metrics.*`、`hospital.archive.*`、`devices[]`。
 
-案例（cases）已移除，与竞品采集主题无关。
+案例（cases）已移除。
 
 ## 表说明
 

@@ -238,17 +238,88 @@ export function listKnownArchiveKeys(extraKeys: string[] = []): {
   return out;
 }
 
-export const HOSPITAL_COLUMN_TARGETS = [
-  { value: "hospital.name", label: "名称 name" },
-  { value: "hospital.province", label: "省份 province" },
-  { value: "hospital.city", label: "城市 city" },
-  { value: "hospital.district", label: "区县 district" },
-  { value: "hospital.level", label: "级别 level" },
-  { value: "hospital.type", label: "类型 type" },
-  { value: "hospital.status", label: "状态 status" },
-  { value: "hospital.address", label: "地址 address" },
-  { value: "hospital.remark", label: "备注 remark" },
+/** 医院表列（数据库列名 → 发布 target） */
+export const HOSPITAL_COLUMNS = [
+  { column: "name", target: "hospital.name" },
+  { column: "province", target: "hospital.province" },
+  { column: "city", target: "hospital.city" },
+  { column: "district", target: "hospital.district" },
+  { column: "level", target: "hospital.level" },
+  { column: "type", target: "hospital.type" },
+  { column: "status", target: "hospital.status" },
+  { column: "address", target: "hospital.address" },
+  { column: "remark", target: "hospital.remark" },
+  { column: "customer_code", target: "hospital.customerCode" },
+  { column: "region", target: "hospital.region" },
+  { column: "branch_office", target: "hospital.branchOffice" },
 ] as const;
+
+/** @deprecated 使用 HOSPITAL_COLUMNS */
+export const HOSPITAL_COLUMN_TARGETS = HOSPITAL_COLUMNS.map((c) => ({
+  value: c.target,
+  label: c.column,
+}));
+
+/** 可扩展标签（hospital_attributes） */
+export const HOSPITAL_ATTRIBUTE_KEYS = [
+  "svip_level",
+  "dual_major",
+  "sales_group",
+  "volume_direction",
+  "dual_major_type",
+  "dual_major_target",
+  "customer_segment",
+  "segment_category",
+] as const;
+
+/** 年度指标码（hospital_metrics） */
+export const HOSPITAL_METRIC_CODES = [
+  "sample_volume_own",
+  "sample_volume_total",
+  "matching_rate",
+  "qc_vendor",
+  "qc_levels",
+  "qc_cycle",
+  "hospital_annual_revenue",
+  "iot_stock",
+  "iot_forecast",
+  "iot_increment",
+  "iot_growth_rate",
+  "reagent_revenue",
+  "reagent_revenue_target",
+] as const;
+
+export type EntityAttrOption = {
+  /** 下拉展示值：列名或 archive.xxx / attributes.xxx / metrics.xxx 或 __new_archive__ */
+  value: string;
+  /** 写入 target；新建 archive 时为空，由 UI 拼 */
+  target?: string;
+};
+
+/** 某实体可选属性：表列 + attributes.* + metrics.* + archive.* + 新建 archive */
+export function listHospitalAttributeOptions(
+  extraArchiveKeys: string[] = [],
+): EntityAttrOption[] {
+  const cols: EntityAttrOption[] = HOSPITAL_COLUMNS.map((c) => ({
+    value: c.column,
+    target: c.target,
+  }));
+  const attrs: EntityAttrOption[] = HOSPITAL_ATTRIBUTE_KEYS.map((k) => ({
+    value: `attributes.${k}`,
+    target: `hospital.attributes.${k}`,
+  }));
+  const mets: EntityAttrOption[] = HOSPITAL_METRIC_CODES.map((k) => ({
+    value: `metrics.${k}`,
+    target: `hospital.metrics.${k}`,
+  }));
+  const archives: EntityAttrOption[] = listKnownArchiveKeys(extraArchiveKeys).map(
+    (opt) => ({
+      value: `archive.${opt.key}`,
+      target: `hospital.archive.${opt.key}`,
+    }),
+  );
+  return [...cols, ...attrs, ...mets, ...archives, { value: "__new_archive__" }];
+}
 
 export function splitProjectNames(raw: string): string[] {
   return raw

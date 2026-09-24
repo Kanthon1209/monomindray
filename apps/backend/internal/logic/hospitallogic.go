@@ -96,7 +96,14 @@ func (l *HospitalLogic) Get(id int64) (*types.HospitalResponse, error) {
 	if h == nil {
 		return nil, NewCodeError(404, "医院不存在")
 	}
-	return &types.HospitalResponse{Hospital: toHospitalInfo(h)}, nil
+	info := toHospitalInfo(h)
+	if attrs, err := l.svcCtx.MasterDataModel.ListAttributes(l.ctx, id); err == nil {
+		info.Attributes = attrs
+	}
+	if metrics, err := l.svcCtx.MasterDataModel.ListMetrics(l.ctx, id, model.CurrentMetricYear()); err == nil {
+		info.Metrics = metrics
+	}
+	return &types.HospitalResponse{Hospital: info}, nil
 }
 
 func (l *HospitalLogic) Create(req *types.HospitalUpsertRequest) (*types.HospitalResponse, error) {
@@ -113,6 +120,8 @@ func (l *HospitalLogic) Create(req *types.HospitalUpsertRequest) (*types.Hospita
 		City: strings.TrimSpace(req.City), District: strings.TrimSpace(req.District),
 		Level: req.Level, Type: req.Type, Status: status,
 		Address: strings.TrimSpace(req.Address), Remark: strings.TrimSpace(req.Remark),
+		CustomerCode: strings.TrimSpace(req.CustomerCode), Region: strings.TrimSpace(req.Region),
+		BranchOffice: strings.TrimSpace(req.BranchOffice),
 		CreatedBy: ptrInt64(uid), UpdatedBy: ptrInt64(uid),
 	}
 	id, err := l.svcCtx.HospitalModel.Insert(l.ctx, h)
@@ -145,7 +154,18 @@ func (l *HospitalLogic) Update(id int64, req *types.HospitalUpsertRequest) (*typ
 		City: strings.TrimSpace(req.City), District: strings.TrimSpace(req.District),
 		Level: req.Level, Type: req.Type, Status: status,
 		Address: strings.TrimSpace(req.Address), Remark: strings.TrimSpace(req.Remark),
+		CustomerCode: strings.TrimSpace(req.CustomerCode), Region: strings.TrimSpace(req.Region),
+		BranchOffice: strings.TrimSpace(req.BranchOffice),
 		Archive: existing.Archive, UpdatedBy: ptrInt64(uid),
+	}
+	if h.CustomerCode == "" {
+		h.CustomerCode = existing.CustomerCode
+	}
+	if h.Region == "" {
+		h.Region = existing.Region
+	}
+	if h.BranchOffice == "" {
+		h.BranchOffice = existing.BranchOffice
 	}
 	if err := l.svcCtx.HospitalModel.Update(l.ctx, h); err != nil {
 		l.Errorf("update hospital: %v", err)

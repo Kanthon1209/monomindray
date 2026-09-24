@@ -12,12 +12,13 @@ import (
 )
 
 type ServiceContext struct {
-	Config        config.Config
-	UserModel     model.UserModel
-	HospitalModel model.HospitalModel
-	DeviceModel   model.DeviceModel
-	CustomerModel model.CustomerModel
-	SurveyModel   model.SurveyModel
+	Config          config.Config
+	UserModel       model.UserModel
+	HospitalModel   model.HospitalModel
+	DeviceModel     model.DeviceModel
+	CustomerModel   model.CustomerModel
+	SurveyModel     model.SurveyModel
+	MasterDataModel model.MasterDataModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -38,11 +39,12 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	logx.Info("postgres connected successfully")
 
 	return &ServiceContext{
-		Config:        c,
-		UserModel:     model.NewUserModel(pool),
-		HospitalModel: model.NewHospitalModel(pool),
-		DeviceModel:   model.NewDeviceModel(pool),
-		CustomerModel: model.NewCustomerModel(pool),
-		SurveyModel:   model.NewSurveyModel(pool),
+		Config:          c,
+		UserModel:       model.NewUserModel(pool),
+		HospitalModel:   model.NewHospitalModel(pool),
+		DeviceModel:     model.NewDeviceModel(pool),
+		CustomerModel:   model.NewCustomerModel(pool),
+		SurveyModel:     model.NewSurveyModel(pool),
+		MasterDataModel: model.NewMasterDataModel(pool),
 	}
 }

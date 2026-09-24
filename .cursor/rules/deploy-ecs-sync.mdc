@@ -1,0 +1,10 @@
+---
+description: Deploy via ECS sync by default; only git push when user asks
+alwaysApply: true
+---
+
+# Deploy preference
+
+- When the user says **sync** (or wants the site updated), run `scripts/deploy-ecs.ps1` to ECS directly. Do **not** rely on GitHub Actions.
+- Do **not** `git push` unless the user explicitly says **push** (or asks to sync remote git).
+- Local commits are fine when the user asks to commit; push is separate and opt-in.

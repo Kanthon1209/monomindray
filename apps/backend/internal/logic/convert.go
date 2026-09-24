@@ -132,6 +132,7 @@ func toHospitalInfo(h *model.Hospital) types.HospitalInfo {
 	return types.HospitalInfo{
 		Id: h.Id, Name: h.Name, Province: h.Province, City: h.City, District: h.District,
 		Level: h.Level, Type: h.Type, Status: h.Status, Address: h.Address, Remark: h.Remark,
+		CustomerCode: h.CustomerCode, Region: h.Region, BranchOffice: h.BranchOffice,
 		Archive: archive, DeviceCount: h.DeviceCount, DeviceModels: models, CreatedAt: formatTime(h.CreatedAt),
 	}
 }

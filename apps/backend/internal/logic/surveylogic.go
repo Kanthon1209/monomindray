@@ -83,11 +83,12 @@ func (l *SurveyLogic) CreateTemplate(req *types.CreateSurveyTemplateRequest) (*t
 		return nil, NewCodeError(409, "模板编码已存在")
 	}
 
-	schemaBytes := []byte(req.Schema)
+	schemaBytes, err := marshalSchemaMap(req.Schema)
+	if err != nil {
+		return nil, NewCodeError(400, "schema 不是合法 JSON")
+	}
 	if len(schemaBytes) == 0 {
 		schemaBytes = []byte(`{"fields":[],"sections":["未分组"]}`)
-	} else if !json.Valid(schemaBytes) {
-		return nil, NewCodeError(400, "schema 不是合法 JSON")
 	}
 
 	status := strings.TrimSpace(req.Status)
@@ -130,11 +131,11 @@ func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRe
 	if title == "" {
 		title = existing.Title
 	}
-	if len(req.Schema) == 0 {
+	if req.Schema == nil {
 		return nil, NewCodeError(400, "请提供模板字段 schema")
 	}
-	schemaBytes := []byte(req.Schema)
-	if !json.Valid(schemaBytes) {
+	schemaBytes, err := marshalSchemaMap(req.Schema)
+	if err != nil {
 		return nil, NewCodeError(400, "schema 不是合法 JSON")
 	}
 	var parsed struct {
@@ -566,6 +567,8 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	cols := map[string]string{}
 	archive := map[string]any{}
+	attributes := map[string]string{}
+	metrics := map[string]string{}
 
 	applyTarget := func(target, key, value string) {
 		value = strings.TrimSpace(value)
@@ -577,17 +580,28 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 			archive[k] = model.NormalizeArchiveValue(k, v)
 		}
 		switch {
+		case strings.HasPrefix(target, "hospital.attributes."):
+			attributes[strings.TrimPrefix(target, "hospital.attributes.")] = value
+		case strings.HasPrefix(target, "hospital.metrics."):
+			metrics[strings.TrimPrefix(target, "hospital.metrics.")] = value
 		case strings.HasPrefix(target, "hospital.archive."):
 			setArchive(strings.TrimPrefix(target, "hospital.archive."), value)
 		case strings.HasPrefix(target, "hospital."):
 			cols[strings.TrimPrefix(target, "hospital.")] = value
 		case target == "":
 			switch key {
-			case "name", "province", "city", "district", "level", "type", "address", "remark":
+			case "name", "province", "city", "district", "level", "type", "address", "remark",
+				"customerCode", "region", "branchOffice":
 				cols[key] = value
 			case "devices":
 				// handled below
 			default:
+				if attrKey, ok := model.KnownAttributeKeys[key]; ok {
+					attributes[attrKey] = value
+				}
+				if metricKey, ok := model.KnownMetricKeys[key]; ok {
+					metrics[metricKey] = value
+				}
 				setArchive(key, value)
 			}
 		default:
@@ -699,12 +713,32 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 	if remark == "" {
 		remark = archiveString(mergedArchive, "archiveRemark")
 	}
+	customerCode := firstNonEmpty(cols["customerCode"], cols["customer_code"], archiveString(mergedArchive, "customerCode"))
+	region := firstNonEmpty(cols["region"], archiveString(mergedArchive, "region"))
+	branchOffice := firstNonEmpty(cols["branchOffice"], cols["branch_office"], archiveString(mergedArchive, "branchOffice"))
+
+	// Pull known attribute/metric keys from archive into dual-write maps (compat with old targets).
+	for archiveKey, attrKey := range model.KnownAttributeKeys {
+		if _, ok := attributes[attrKey]; !ok {
+			if v := archiveString(mergedArchive, archiveKey); v != "" {
+				attributes[attrKey] = v
+			}
+		}
+	}
+	for archiveKey, metricKey := range model.KnownMetricKeys {
+		if _, ok := metrics[metricKey]; !ok {
+			if v := archiveString(mergedArchive, archiveKey); v != "" {
+				metrics[metricKey] = v
+			}
+		}
+	}
 
 	var hospitalID int64
 	if existing == nil {
 		h := &model.Hospital{
 			Name: name, Province: province, City: city, District: district,
 			Level: level, Type: typ, Status: "active", Address: address, Remark: remark,
+			CustomerCode: customerCode, Region: region, BranchOffice: branchOffice,
 			Archive: mergedArchive, CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
 		}
 		hospitalID, err = l.svcCtx.HospitalModel.Insert(l.ctx, h)
@@ -728,6 +762,15 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		if remark != "" {
 			existing.Remark = remark
 		}
+		if customerCode != "" {
+			existing.CustomerCode = customerCode
+		}
+		if region != "" {
+			existing.Region = region
+		}
+		if branchOffice != "" {
+			existing.BranchOffice = branchOffice
+		}
 		existing.Name = name
 		existing.Province = province
 		existing.City = city
@@ -744,7 +787,57 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 	if err := l.publishDevices(reviewerID, hospitalID, deviceRows); err != nil {
 		return 0, err
 	}
+	if err := l.dualWriteMasterData(hospitalID, mergedArchive, attributes, metrics); err != nil {
+		l.Errorf("dual-write master data: %v", err)
+		// non-fatal for approve: hospital/devices already saved
+	}
 	return hospitalID, nil
+}
+
+func (l *SurveyLogic) dualWriteMasterData(hospitalID int64, archive map[string]any, attributes, metrics map[string]string) error {
+	md := l.svcCtx.MasterDataModel
+	if err := md.UpsertAttributes(l.ctx, hospitalID, attributes); err != nil {
+		return err
+	}
+	year := model.CurrentMetricYear()
+	if err := md.UpsertMetrics(l.ctx, hospitalID, year, metrics); err != nil {
+		return err
+	}
+	if err := md.SyncAssaysFromArchive(l.ctx, hospitalID, archive); err != nil {
+		return err
+	}
+	if s := archiveString(archive, "reagentSupplier"); s != "" {
+		if err := md.UpsertSupply(l.ctx, hospitalID, s, "reagent_vendor", "", "", ""); err != nil {
+			return err
+		}
+	}
+	if s := archiveString(archive, "supplyChannel"); s != "" {
+		if err := md.UpsertSupply(l.ctx, hospitalID, s, "channel", "", "", ""); err != nil {
+			return err
+		}
+	}
+	for fieldKey, role := range model.KnownRoleKeys {
+		name := archiveString(archive, fieldKey)
+		emp := ""
+		if empKey, ok := model.RoleEmployeeNoKeys[fieldKey]; ok {
+			emp = archiveString(archive, empKey)
+		}
+		if name != "" || emp != "" {
+			if err := md.UpsertRoleAssignment(l.ctx, hospitalID, role, name, emp); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[string]any) error {
@@ -1245,4 +1338,12 @@ func parseDueAt(raw string) (time.Time, error) {
 		lastErr = err
 	}
 	return time.Time{}, lastErr
+}
+
+// go-zero httpx cannot bind JSON objects into json.RawMessage; requests use map[string]any.
+func marshalSchemaMap(schema map[string]any) ([]byte, error) {
+	if schema == nil {
+		return nil, nil
+	}
+	return json.Marshal(schema)
 }

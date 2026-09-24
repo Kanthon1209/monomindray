@@ -261,8 +261,16 @@ func upsertHospital(ctx context.Context, hm model.HospitalModel, pool *pgxpool.P
 		h := &model.Hospital{
 			Name: name, Province: province, City: city, Level: level, Type: typ,
 			Status: "active", Archive: archive,
+			CustomerCode: str(archive["customerCode"]),
+			Region:       str(archive["region"]),
+			BranchOffice: str(archive["branchOffice"]),
 		}
-		return hm.Insert(ctx, h)
+		id, err := hm.Insert(ctx, h)
+		if err != nil {
+			return 0, err
+		}
+		_ = dualWriteImport(ctx, pool, id, archive)
+		return id, nil
 	}
 
 	merged := map[string]any{}
@@ -292,11 +300,63 @@ func upsertHospital(ctx context.Context, hm model.HospitalModel, pool *pgxpool.P
 	if level != "" && level != "二级甲等" {
 		existing.Level = level
 	}
+	if v := str(archive["customerCode"]); v != "" {
+		existing.CustomerCode = v
+	}
+	if v := str(archive["region"]); v != "" {
+		existing.Region = v
+	}
+	if v := str(archive["branchOffice"]); v != "" {
+		existing.BranchOffice = v
+	}
 	existing.Status = "active"
 	if err := hm.Update(ctx, existing); err != nil {
 		return 0, err
 	}
+	_ = dualWriteImport(ctx, pool, existing.Id, merged)
 	return existing.Id, nil
+}
+
+func dualWriteImport(ctx context.Context, pool *pgxpool.Pool, hospitalID int64, archive map[string]any) error {
+	md := model.NewMasterDataModel(pool)
+	attrs := map[string]string{}
+	for ak, attrKey := range model.KnownAttributeKeys {
+		if v := str(archive[ak]); v != "" {
+			attrs[attrKey] = v
+		}
+	}
+	if err := md.UpsertAttributes(ctx, hospitalID, attrs); err != nil {
+		return err
+	}
+	mets := map[string]string{}
+	for ak, code := range model.KnownMetricKeys {
+		if v := str(archive[ak]); v != "" {
+			mets[code] = v
+		}
+	}
+	if err := md.UpsertMetrics(ctx, hospitalID, model.CurrentMetricYear(), mets); err != nil {
+		return err
+	}
+	if err := md.SyncAssaysFromArchive(ctx, hospitalID, archive); err != nil {
+		return err
+	}
+	if s := str(archive["reagentSupplier"]); s != "" {
+		_ = md.UpsertSupply(ctx, hospitalID, s, "reagent_vendor", "", "", "")
+	}
+	if s := str(archive["supplyChannel"]); s != "" {
+		_ = md.UpsertSupply(ctx, hospitalID, s, "channel", "", "", "")
+	}
+	for fieldKey, role := range model.KnownRoleKeys {
+		name := str(archive[fieldKey])
+		emp := ""
+		if empKey, ok := model.RoleEmployeeNoKeys[fieldKey]; ok {
+			emp = str(archive[empKey])
+		}
+		if name != "" || emp != "" {
+			_ = md.UpsertRoleAssignment(ctx, hospitalID, role, name, emp)
+		}
+	}
+	return nil
 }
 
 func upsertDevice(ctx context.Context, pool *pgxpool.Pool, hospitalID int64, modelName, serial, installed string) error {

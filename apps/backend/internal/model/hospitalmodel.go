@@ -12,23 +12,26 @@ import (
 )
 
 type Hospital struct {
-	Id           int64          `db:"id"`
-	Name         string         `db:"name"`
-	Province     string         `db:"province"`
-	City         string         `db:"city"`
-	District     string         `db:"district"`
-	Level        string         `db:"level"`
-	Type         string         `db:"type"`
-	Status       string         `db:"status"`
-	Address      string         `db:"address"`
-	Remark       string         `db:"remark"`
-	Archive      map[string]any `db:"archive"`
-	CreatedBy    *int64         `db:"created_by"`
-	UpdatedBy    *int64         `db:"updated_by"`
-	CreatedAt    time.Time      `db:"created_at"`
-	UpdatedAt    time.Time      `db:"updated_at"`
-	DeviceCount  int            `db:"device_count"`
-	DeviceModels []string       `db:"device_models"`
+	Id            int64          `db:"id"`
+	Name          string         `db:"name"`
+	Province      string         `db:"province"`
+	City          string         `db:"city"`
+	District      string         `db:"district"`
+	Level         string         `db:"level"`
+	Type          string         `db:"type"`
+	Status        string         `db:"status"`
+	Address       string         `db:"address"`
+	Remark        string         `db:"remark"`
+	CustomerCode  string         `db:"customer_code"`
+	Region        string         `db:"region"`
+	BranchOffice  string         `db:"branch_office"`
+	Archive       map[string]any `db:"archive"`
+	CreatedBy     *int64         `db:"created_by"`
+	UpdatedBy     *int64         `db:"updated_by"`
+	CreatedAt     time.Time      `db:"created_at"`
+	UpdatedAt     time.Time      `db:"updated_at"`
+	DeviceCount   int            `db:"device_count"`
+	DeviceModels  []string       `db:"device_models"`
 }
 
 type HospitalFilter struct {
@@ -127,7 +130,8 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 	args = append(args, limit, offset)
 	listSQL := fmt.Sprintf(`
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
-		       h.address, h.remark, COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
+		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
 		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
@@ -147,7 +151,8 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 		var archiveRaw []byte
 		if err := rows.Scan(
 			&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
-			&h.Address, &h.Remark, &archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+			&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
+			&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
 			&h.DeviceCount, &h.DeviceModels,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan hospital: %w", err)
@@ -166,13 +171,15 @@ func (m *hospitalModel) FindById(ctx context.Context, id int64) (*Hospital, erro
 	var archiveRaw []byte
 	err := m.conn.QueryRow(ctx, `
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
-		       h.address, h.remark, COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
+		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
 		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
 		WHERE h.id = $1`, id).Scan(
 		&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
-		&h.Address, &h.Remark, &archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+		&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
+		&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
 		&h.DeviceCount, &h.DeviceModels,
 	)
 	if err != nil {
@@ -193,13 +200,15 @@ func (m *hospitalModel) FindByNameProvinceCity(ctx context.Context, name, provin
 	var archiveRaw []byte
 	err := m.conn.QueryRow(ctx, `
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
-		       h.address, h.remark, COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
+		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
 		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
 		WHERE h.name=$1 AND h.province=$2 AND h.city=$3`, name, province, city).Scan(
 		&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
-		&h.Address, &h.Remark, &archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+		&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
+		&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
 		&h.DeviceCount, &h.DeviceModels,
 	)
 	if err != nil {
@@ -238,9 +247,11 @@ func (m *hospitalModel) Insert(ctx context.Context, h *Hospital) (int64, error) 
 	}
 	var id int64
 	err = m.conn.QueryRow(ctx, `
-		INSERT INTO hospitals (name, province, city, district, level, type, status, address, remark, archive, created_by, updated_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12) RETURNING id`,
-		h.Name, h.Province, h.City, h.District, h.Level, h.Type, h.Status, h.Address, h.Remark, archiveJSON, h.CreatedBy, h.UpdatedBy,
+		INSERT INTO hospitals (name, province, city, district, level, type, status, address, remark,
+		                       customer_code, region, branch_office, archive, created_by, updated_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15) RETURNING id`,
+		h.Name, h.Province, h.City, h.District, h.Level, h.Type, h.Status, h.Address, h.Remark,
+		h.CustomerCode, h.Region, h.BranchOffice, archiveJSON, h.CreatedBy, h.UpdatedBy,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert hospital: %w", err)
@@ -262,8 +273,10 @@ func (m *hospitalModel) Update(ctx context.Context, h *Hospital) error {
 	}
 	_, err = m.conn.Exec(ctx, `
 		UPDATE hospitals SET name=$1, province=$2, city=$3, district=$4, level=$5, type=$6,
-		status=$7, address=$8, remark=$9, archive=$10::jsonb, updated_by=$11 WHERE id=$12`,
-		h.Name, h.Province, h.City, h.District, h.Level, h.Type, h.Status, h.Address, h.Remark, archiveJSON, h.UpdatedBy, h.Id,
+		status=$7, address=$8, remark=$9, customer_code=$10, region=$11, branch_office=$12,
+		archive=$13::jsonb, updated_by=$14 WHERE id=$15`,
+		h.Name, h.Province, h.City, h.District, h.Level, h.Type, h.Status, h.Address, h.Remark,
+		h.CustomerCode, h.Region, h.BranchOffice, archiveJSON, h.UpdatedBy, h.Id,
 	)
 	if err != nil {
 		return fmt.Errorf("update hospital: %w", err)
