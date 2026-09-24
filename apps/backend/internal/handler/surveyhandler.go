@@ -55,17 +55,17 @@ func CreateSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func UpdateSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		var req types.UpdateSurveyTemplateRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		id, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
+		var req types.UpdateSurveyTemplateRequest
 		if err := httpx.Parse(r, &req); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).UpdateTemplate(path.Id, &req)
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).UpdateTemplate(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
@@ -172,8 +172,8 @@ func GetMySurveyAssignmentHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func SaveSurveyDraftHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		id, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
@@ -182,7 +182,7 @@ func SaveSurveyDraftHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).SaveDraft(path.Id, &req)
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).SaveDraft(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
@@ -193,8 +193,8 @@ func SaveSurveyDraftHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func SubmitSurveyAssignmentHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		id, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
@@ -203,7 +203,7 @@ func SubmitSurveyAssignmentHandler(svcCtx *svc.ServiceContext) http.HandlerFunc 
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).Submit(path.Id, &req)
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).Submit(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
@@ -230,14 +230,14 @@ func ListSurveySubmissionsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func ApproveSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		id, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
 		var req types.ReviewSurveySubmissionRequest
 		_ = httpx.Parse(r, &req)
-		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).ApproveSubmission(path.Id, &req)
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).ApproveSubmission(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
@@ -248,8 +248,8 @@ func ApproveSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc
 
 func RejectSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		id, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
@@ -258,7 +258,7 @@ func RejectSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc 
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).RejectSubmission(path.Id, &req)
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).RejectSubmission(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {

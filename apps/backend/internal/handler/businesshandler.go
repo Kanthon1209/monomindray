@@ -92,17 +92,17 @@ func CreateHospitalHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func UpdateHospitalHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		var req types.HospitalUpsertRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		id, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
+		var req types.HospitalUpsertRequest
 		if err := httpx.Parse(r, &req); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewHospitalLogic(r.Context(), svcCtx).Update(path.Id, &req)
+		resp, err := logic.NewHospitalLogic(r.Context(), svcCtx).Update(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
@@ -176,17 +176,17 @@ func CreateDeviceGlobalHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func CreateDeviceHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		var req types.DeviceUpsertRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		hospitalID, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
+		var req types.DeviceUpsertRequest
 		if err := httpx.Parse(r, &req); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewDeviceLogic(r.Context(), svcCtx).Create(path.Id, &req)
+		resp, err := logic.NewDeviceLogic(r.Context(), svcCtx).Create(hospitalID, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
@@ -197,17 +197,17 @@ func CreateDeviceHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func UpdateDeviceHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		var req types.DeviceUpsertRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		id, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
+		var req types.DeviceUpsertRequest
 		if err := httpx.Parse(r, &req); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewDeviceLogic(r.Context(), svcCtx).Update(path.Id, &req)
+		resp, err := logic.NewDeviceLogic(r.Context(), svcCtx).Update(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
@@ -265,17 +265,17 @@ func CreateCustomerHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 func UpdateCustomerHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		var req types.CustomerUpsertRequest
-		if err := httpx.Parse(r, &path); err != nil {
+		id, err := parsePathID(r)
+		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
+		var req types.CustomerUpsertRequest
 		if err := httpx.Parse(r, &req); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
-		resp, err := logic.NewCustomerLogic(r.Context(), svcCtx).Update(path.Id, &req)
+		resp, err := logic.NewCustomerLogic(r.Context(), svcCtx).Update(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
