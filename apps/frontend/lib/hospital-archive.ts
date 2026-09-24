@@ -202,9 +202,53 @@ export const DASHBOARD_LIST_COLUMNS: ArchiveFieldKey[] = [
   ...DASHBOARD_EXTRA_COLUMNS,
 ];
 
-export function archiveFieldLabel(key: ArchiveFieldKey) {
+export function archiveFieldLabel(key: ArchiveFieldKey | string) {
   return ARCHIVE_FIELD_DEFS.find((f) => f.key === key)?.label || key;
 }
+
+/** 模板映射下拉：已知档案键（含中文标签） */
+export function listKnownArchiveKeys(extraKeys: string[] = []): {
+  key: string;
+  label: string;
+  section: string;
+  valueType?: ArchiveFieldDef["valueType"];
+}[] {
+  const seen = new Set<string>();
+  const out: {
+    key: string;
+    label: string;
+    section: string;
+    valueType?: ArchiveFieldDef["valueType"];
+  }[] = [];
+  for (const def of ARCHIVE_FIELD_DEFS) {
+    seen.add(def.key);
+    out.push({
+      key: def.key,
+      label: def.label,
+      section: def.section,
+      valueType: def.valueType,
+    });
+  }
+  for (const raw of extraKeys) {
+    const key = raw.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, label: key, section: "其他扩展" });
+  }
+  return out;
+}
+
+export const HOSPITAL_COLUMN_TARGETS = [
+  { value: "hospital.name", label: "名称 name" },
+  { value: "hospital.province", label: "省份 province" },
+  { value: "hospital.city", label: "城市 city" },
+  { value: "hospital.district", label: "区县 district" },
+  { value: "hospital.level", label: "级别 level" },
+  { value: "hospital.type", label: "类型 type" },
+  { value: "hospital.status", label: "状态 status" },
+  { value: "hospital.address", label: "地址 address" },
+  { value: "hospital.remark", label: "备注 remark" },
+] as const;
 
 export function splitProjectNames(raw: string): string[] {
   return raw

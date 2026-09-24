@@ -21,6 +21,11 @@ import {
   type SurveySchema,
   type SurveyTemplate,
 } from "@/lib/business";
+import {
+  ARCHIVE_FIELD_DEFS,
+  HOSPITAL_COLUMN_TARGETS,
+  listKnownArchiveKeys,
+} from "@/lib/hospital-archive";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,17 +61,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const TARGET_PRESETS = [
-  { value: "", label: "不映射（仅采集）" },
-  { value: "hospital.name", label: "hospital.name" },
-  { value: "hospital.province", label: "hospital.province" },
-  { value: "hospital.city", label: "hospital.city" },
-  { value: "hospital.district", label: "hospital.district" },
-  { value: "hospital.level", label: "hospital.level" },
-  { value: "hospital.type", label: "hospital.type" },
-  { value: "hospital.address", label: "hospital.address" },
-  { value: "hospital.archive.", label: "hospital.archive.（自定义后缀）" },
-];
+type TargetKind = "none" | "hospital_column" | "hospital_archive";
 
 type FieldDraft = {
   key: string;
@@ -74,8 +69,11 @@ type FieldDraft = {
   section: string;
   required: boolean;
   type: string;
-  target: string;
-  customArchiveKey: string;
+  targetKind: TargetKind;
+  hospitalColumn: string;
+  archiveKey: string;
+  archiveIsNew: boolean;
+  newArchiveKey: string;
   defaultValue: string;
   locked: boolean;
 };
@@ -86,11 +84,37 @@ const emptyFieldDraft = (section: string): FieldDraft => ({
   section,
   required: false,
   type: "text",
-  target: "",
-  customArchiveKey: "",
+  targetKind: "none",
+  hospitalColumn: "hospital.name",
+  archiveKey: "",
+  archiveIsNew: false,
+  newArchiveKey: "",
   defaultValue: "",
   locked: false,
 });
+
+const NEW_ARCHIVE_VALUE = "__new__";
+
+function collectArchiveKeysFromTemplates(templates: SurveyTemplate[]): string[] {
+  const keys: string[] = [];
+  for (const t of templates) {
+    for (const f of t.schema?.fields || []) {
+      const target = f.target || "";
+      if (target.startsWith("hospital.archive.")) {
+        const k = target.slice("hospital.archive.".length).trim();
+        if (k) keys.push(k);
+      }
+    }
+  }
+  return keys;
+}
+
+function fieldTypeFromArchive(
+  valueType: (typeof ARCHIVE_FIELD_DEFS)[number]["valueType"],
+): string {
+  if (valueType === "number") return "number";
+  return "text";
+}
 
 function statusBadge(status: string) {
   switch (status) {
@@ -139,38 +163,74 @@ function groupBySection(schema: SurveySchema): { section: string; fields: Survey
 }
 
 function draftFromField(field: SurveyField): FieldDraft {
-  const target = field.target || "";
-  let preset = target;
-  let customArchiveKey = "";
-  if (target.startsWith("hospital.archive.")) {
-    preset = "hospital.archive.";
-    customArchiveKey = target.slice("hospital.archive.".length);
-  } else if (target && !TARGET_PRESETS.some((p) => p.value === target)) {
-    preset = "hospital.archive.";
-    customArchiveKey = target.startsWith("hospital.archive.")
-      ? target.slice("hospital.archive.".length)
-      : target;
+  const target = (field.target || "").trim();
+  const base = emptyFieldDraft(field.section || "未分组");
+  base.key = field.key;
+  base.label = field.label;
+  base.required = !!field.required;
+  base.type = field.type || "text";
+  base.defaultValue = field.default || "";
+  base.locked = !!field.locked;
+
+  if (!target) {
+    base.targetKind = "none";
+    return base;
   }
-  return {
-    key: field.key,
-    label: field.label,
-    section: field.section || "未分组",
-    required: !!field.required,
-    type: field.type || "text",
-    target: preset,
-    customArchiveKey,
-    defaultValue: field.default || "",
-    locked: !!field.locked,
-  };
+  if (target.startsWith("hospital.archive.")) {
+    base.targetKind = "hospital_archive";
+    base.archiveKey = target.slice("hospital.archive.".length).trim();
+    base.archiveIsNew = false;
+    base.newArchiveKey = "";
+    return base;
+  }
+  if (
+    HOSPITAL_COLUMN_TARGETS.some((c) => c.value === target) ||
+    /^hospital\.[a-zA-Z_]+$/.test(target)
+  ) {
+    base.targetKind = "hospital_column";
+    base.hospitalColumn = target;
+    return base;
+  }
+  base.targetKind = "hospital_archive";
+  base.archiveIsNew = true;
+  base.newArchiveKey = target;
+  return base;
 }
 
 function resolveTarget(draft: FieldDraft): string | undefined {
-  if (!draft.target) return undefined;
-  if (draft.target === "hospital.archive.") {
-    const key = draft.customArchiveKey.trim();
+  if (draft.targetKind === "none") return undefined;
+  if (draft.targetKind === "hospital_column") {
+    return draft.hospitalColumn.trim() || undefined;
+  }
+  if (draft.targetKind === "hospital_archive") {
+    const key = draft.archiveIsNew
+      ? draft.newArchiveKey.trim()
+      : draft.archiveKey.trim();
     return key ? `hospital.archive.${key}` : undefined;
   }
-  return draft.target;
+  return undefined;
+}
+
+function applyArchiveKeyToDraft(
+  draft: FieldDraft,
+  archiveKey: string,
+  mode: "create" | "edit",
+): FieldDraft {
+  const def = ARCHIVE_FIELD_DEFS.find((d) => d.key === archiveKey);
+  const next: FieldDraft = {
+    ...draft,
+    targetKind: "hospital_archive",
+    archiveIsNew: false,
+    archiveKey,
+    newArchiveKey: "",
+  };
+  if (mode === "create" && def) {
+    if (!next.key) next.key = def.key;
+    if (!next.label) next.label = def.label;
+    next.type = fieldTypeFromArchive(def.valueType);
+    if (!next.section || next.section === "未分组") next.section = def.section;
+  }
+  return next;
 }
 
 export default function SurveyTemplatesPage() {
@@ -227,9 +287,18 @@ export default function SurveyTemplatesPage() {
   );
 
   const sectionOptions = useMemo(() => {
-    if (!editingTemplate) return [] as string[];
-    return normalizeSchema(editingTemplate.schema).sections || [];
-  }, [editingTemplate]);
+    const base = editingTemplate
+      ? normalizeSchema(editingTemplate.schema).sections || []
+      : [];
+    if (fieldDraft.section && !base.includes(fieldDraft.section)) {
+      return [...base, fieldDraft.section];
+    }
+    return base;
+  }, [editingTemplate, fieldDraft.section]);
+
+  const archiveKeyOptions = useMemo(() => {
+    return listKnownArchiveKeys(collectArchiveKeysFromTemplates(items));
+  }, [items]);
 
   const persistSchema = async (
     template: SurveyTemplate,
@@ -332,9 +401,22 @@ export default function SurveyTemplatesPage() {
     }
     const section = fieldDraft.section.trim() || "未分组";
     const target = resolveTarget(fieldDraft);
-    if (fieldDraft.target === "hospital.archive." && !fieldDraft.customArchiveKey.trim()) {
-      setError("请填写 archive 字段后缀，例如 region");
+    if (fieldDraft.targetKind === "hospital_column" && !fieldDraft.hospitalColumn) {
+      setError("请选择医院列字段");
       return;
+    }
+    if (fieldDraft.targetKind === "hospital_archive") {
+      const archiveKey = fieldDraft.archiveIsNew
+        ? fieldDraft.newArchiveKey.trim()
+        : fieldDraft.archiveKey.trim();
+      if (!archiveKey) {
+        setError("请选择或填写 archive 键名");
+        return;
+      }
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(archiveKey)) {
+        setError("archive 键名仅允许字母、数字、下划线，且不能以数字开头");
+        return;
+      }
     }
 
     const schema = normalizeSchema(template.schema);
@@ -716,7 +798,8 @@ export default function SurveyTemplatesPage() {
           <DialogHeader className="border-b px-5 py-4">
             <DialogTitle>{fieldMode === "edit" ? "编辑字段" : "新建字段"}</DialogTitle>
             <DialogDescription>
-              配置采集字段及其写入医院主数据 / archive 的映射。
+              映射写入医院列或 hospital.archive。设备装机请用带 devices[] 的层级模板，不在此做
+              device.* 字段映射。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-5 py-4">
@@ -788,13 +871,13 @@ export default function SurveyTemplatesPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>映射目标</Label>
+              <Label>写入目标</Label>
               <Select
-                value={fieldDraft.target || "__none__"}
+                value={fieldDraft.targetKind}
                 onValueChange={(v) =>
                   setFieldDraft((d) => ({
                     ...d,
-                    target: v === "__none__" ? "" : v,
+                    targetKind: v as TargetKind,
                   }))
                 }
               >
@@ -802,27 +885,113 @@ export default function SurveyTemplatesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TARGET_PRESETS.map((p) => (
-                    <SelectItem key={p.value || "__none__"} value={p.value || "__none__"}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="none">不映射（仅采集）</SelectItem>
+                  <SelectItem value="hospital_column">医院表列字段</SelectItem>
+                  <SelectItem value="hospital_archive">医院档案 archive</SelectItem>
                 </SelectContent>
               </Select>
-              {fieldDraft.target === "hospital.archive." ? (
-                <Input
-                  className="mt-2 font-mono"
-                  value={fieldDraft.customArchiveKey}
-                  onChange={(e) =>
-                    setFieldDraft((d) => ({
-                      ...d,
-                      customArchiveKey: e.target.value.trim(),
-                    }))
-                  }
-                  placeholder="archive 键名，如 region"
-                />
-              ) : null}
+              <p className="text-xs text-muted-foreground">
+                化免 Excel 扩展列走 archive；名称/省市区等走医院表列。
+              </p>
             </div>
+            {fieldDraft.targetKind === "hospital_column" ? (
+              <div className="space-y-2">
+                <Label>医院列</Label>
+                <Select
+                  value={fieldDraft.hospitalColumn}
+                  onValueChange={(v) =>
+                    setFieldDraft((d) => ({ ...d, hospitalColumn: v }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HOSPITAL_COLUMN_TARGETS.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                    {!HOSPITAL_COLUMN_TARGETS.some(
+                      (c) => c.value === fieldDraft.hospitalColumn,
+                    ) && fieldDraft.hospitalColumn ? (
+                      <SelectItem value={fieldDraft.hospitalColumn}>
+                        {fieldDraft.hospitalColumn}
+                      </SelectItem>
+                    ) : null}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            {fieldDraft.targetKind === "hospital_archive" ? (
+              <div className="space-y-2">
+                <Label>archive 键</Label>
+                <Select
+                  value={
+                    fieldDraft.archiveIsNew
+                      ? NEW_ARCHIVE_VALUE
+                      : fieldDraft.archiveKey || undefined
+                  }
+                  onValueChange={(v) => {
+                    if (v === NEW_ARCHIVE_VALUE) {
+                      setFieldDraft((d) => ({
+                        ...d,
+                        archiveIsNew: true,
+                        archiveKey: "",
+                        newArchiveKey: d.newArchiveKey || d.archiveKey || "",
+                      }));
+                      return;
+                    }
+                    setFieldDraft((d) => applyArchiveKeyToDraft(d, v, fieldMode));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择已有档案键" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {archiveKeyOptions.map((opt) => (
+                      <SelectItem key={opt.key} value={opt.key}>
+                        {opt.label}（{opt.key}）· {opt.section}
+                      </SelectItem>
+                    ))}
+                    {fieldDraft.archiveKey &&
+                    !archiveKeyOptions.some(
+                      (o) => o.key === fieldDraft.archiveKey,
+                    ) ? (
+                      <SelectItem value={fieldDraft.archiveKey}>
+                        {fieldDraft.archiveKey}（当前）
+                      </SelectItem>
+                    ) : null}
+                    <SelectItem value={NEW_ARCHIVE_VALUE}>
+                      新建 archive 键…
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {fieldDraft.archiveIsNew ? (
+                  <Input
+                    className="font-mono"
+                    value={fieldDraft.newArchiveKey}
+                    onChange={(e) =>
+                      setFieldDraft((d) => ({
+                        ...d,
+                        newArchiveKey: e.target.value.trim(),
+                      }))
+                    }
+                    placeholder="新键名，如 customMetric"
+                  />
+                ) : null}
+                {!fieldDraft.archiveIsNew && fieldDraft.archiveKey ? (
+                  <p className="font-mono text-xs text-muted-foreground">
+                    → hospital.archive.{fieldDraft.archiveKey}
+                  </p>
+                ) : null}
+                {fieldDraft.archiveIsNew && fieldDraft.newArchiveKey ? (
+                  <p className="font-mono text-xs text-muted-foreground">
+                    → hospital.archive.{fieldDraft.newArchiveKey}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label>默认值（可选）</Label>
               <Input

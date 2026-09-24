@@ -18,6 +18,8 @@ survey_templates → survey_campaigns
             → survey_submissions (answers 可为嵌套 JSON，含 devices[])
 ```
 
+化免 Excel 三子表对应模板：`chemilum_archive_v1`、`svip_archive_v1`、`dual_major_archive_v1`（字段映射 `hospital.*` / `hospital.archive.*`）。装机明细用 `chemilum_device_v1`（`devices[]`）。汇总模板 `immuno_archive_v1` 保留兼容。
+
 案例（cases）已移除，与竞品采集主题无关。
 
 ## 表说明
