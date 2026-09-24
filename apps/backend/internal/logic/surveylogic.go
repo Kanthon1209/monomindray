@@ -50,6 +50,69 @@ func (l *SurveyLogic) GetTemplate(id int64) (*types.SurveyTemplateResponse, erro
 	return &types.SurveyTemplateResponse{Template: toSurveyTemplateInfo(t)}, nil
 }
 
+func (l *SurveyLogic) CreateTemplate(req *types.CreateSurveyTemplateRequest) (*types.SurveyTemplateResponse, error) {
+	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
+		return nil, err
+	}
+	uid, err := authx.UserIDFromCtx(l.ctx)
+	if err != nil {
+		return nil, ErrUnauthorized
+	}
+
+	code := strings.TrimSpace(req.Code)
+	title := strings.TrimSpace(req.Title)
+	if code == "" || title == "" {
+		return nil, NewCodeError(400, "请填写模板编码与标题")
+	}
+	for _, r := range code {
+		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
+		if !ok {
+			return nil, NewCodeError(400, "编码仅支持字母、数字、下划线与短横线")
+		}
+	}
+	if len(code) > 64 {
+		return nil, NewCodeError(400, "编码最长 64 字符")
+	}
+
+	existing, err := l.svcCtx.SurveyModel.FindTemplateByCode(l.ctx, code)
+	if err != nil {
+		return nil, ErrInternal
+	}
+	if existing != nil {
+		return nil, NewCodeError(409, "模板编码已存在")
+	}
+
+	schemaBytes := []byte(req.Schema)
+	if len(schemaBytes) == 0 {
+		schemaBytes = []byte(`{"fields":[],"sections":["未分组"]}`)
+	} else if !json.Valid(schemaBytes) {
+		return nil, NewCodeError(400, "schema 不是合法 JSON")
+	}
+
+	status := strings.TrimSpace(req.Status)
+	if status == "" {
+		status = "active"
+	}
+	if status != "active" && status != "archived" {
+		return nil, NewCodeError(400, "状态无效")
+	}
+
+	createdBy := uid
+	created, err := l.svcCtx.SurveyModel.CreateTemplate(l.ctx, &model.SurveyTemplate{
+		Code:        code,
+		Title:       title,
+		Description: strings.TrimSpace(req.Description),
+		Schema:      json.RawMessage(schemaBytes),
+		Status:      status,
+		CreatedBy:   &createdBy,
+	})
+	if err != nil {
+		l.Errorf("create template: %v", err)
+		return nil, ErrInternal
+	}
+	return &types.SurveyTemplateResponse{Template: toSurveyTemplateInfo(created)}, nil
+}
+
 func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRequest) (*types.SurveyTemplateResponse, error) {
 	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
 		return nil, err

@@ -67,6 +67,131 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "archiveRemark", label: "备注", section: "其他" },
 ];
 
+/** 看板默认列（关键指标，适配窄侧栏） */
+export const DASHBOARD_PRIMARY_COLUMNS: ArchiveFieldKey[] = [
+  "customerName",
+  "region",
+  "model",
+  "matchingRate",
+  "mindraySampleVolume",
+];
+
+/** 展开后追加列 */
+export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
+  "branchOffice",
+  "customerLevel",
+  "totalSampleVolume",
+  "projectCount",
+  "mindrayReagentCount",
+  "contactName",
+];
+
+/** @deprecated 使用 PRIMARY + EXTRA */
+export const DASHBOARD_LIST_COLUMNS: ArchiveFieldKey[] = [
+  ...DASHBOARD_PRIMARY_COLUMNS,
+  ...DASHBOARD_EXTRA_COLUMNS,
+];
+
+export function archiveFieldLabel(key: ArchiveFieldKey) {
+  return ARCHIVE_FIELD_DEFS.find((f) => f.key === key)?.label || key;
+}
+
+/** 从医院主数据 + archive 解析单个化免字段展示值 */
+export function resolveArchiveField(
+  hospital: {
+    name?: string;
+    city?: string;
+    province?: string;
+    level?: string;
+    remark?: string;
+    deviceModels?: string[];
+    archive?: Record<string, string>;
+  },
+  key: ArchiveFieldKey,
+): string {
+  const archive = hospital.archive || {};
+  switch (key) {
+    case "region":
+      return (
+        archive.region ||
+        regionLabelFromCity(hospital.city) ||
+        regionLabelFromProvince(hospital.province) ||
+        ""
+      );
+    case "branchOffice":
+      return archive.branchOffice || hospital.city || "";
+    case "customerName":
+      return archive.customerName || hospital.name || "";
+    case "customerCode":
+      return archive.customerCode || "";
+    case "customerLevel":
+      return archive.customerLevel || hospital.level || "";
+    case "model":
+      return archive.model || hospital.deviceModels?.[0] || "";
+    case "serialNo":
+      return archive.serialNo || "";
+    case "contactName":
+      return archive.contactName || "";
+    case "contactPhone":
+      return archive.contactPhone || "";
+    case "installedAt":
+      return archive.installedAt || "";
+    case "enabledAt":
+      return archive.enabledAt || "";
+    case "annualRevenue":
+      return archive.annualRevenue || "";
+    case "usageLocation":
+      return archive.usageLocation || "";
+    case "projectCount":
+      return archive.projectCount || "";
+    case "mindrayReagentCount":
+      return archive.mindrayReagentCount || "";
+    case "matchingRate":
+      return archive.matchingRate || "";
+    case "otherAnalyzers":
+      return archive.otherAnalyzers || "";
+    case "mindraySampleVolume":
+      return archive.mindraySampleVolume || "";
+    case "totalSampleVolume":
+      return archive.totalSampleVolume || "";
+    case "qcVendor":
+      return archive.qcVendor || "";
+    case "qcLevels":
+      return archive.qcLevels || "";
+    case "qcCycle":
+      return archive.qcCycle || "";
+    case "reagentSupplier":
+      return archive.reagentSupplier || "";
+    case "mindrayProjects":
+      return archive.mindrayProjects || "";
+    case "newProjects":
+      return archive.newProjects || "";
+    case "unusedProjects":
+      return archive.unusedProjects || "";
+    case "missingProjects":
+      return archive.missingProjects || "";
+    case "archiveRemark":
+      return archive.archiveRemark || hospital.remark || "";
+    default:
+      return archive[key] || "";
+  }
+}
+
+export function parseNumericField(raw?: string) {
+  if (!raw) return null;
+  const cleaned = String(raw).replace(/%/g, "").trim();
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function formatMatchingRate(raw?: string) {
+  const n = parseNumericField(raw);
+  if (n == null) return displayValue(raw);
+  if (n <= 1) return `${(n * 100).toFixed(1)}%`;
+  return `${n}%`;
+}
+
 const regionLabelByCode: Record<string, string> = {
   wanbei: "皖北",
   wanzhong: "皖中",

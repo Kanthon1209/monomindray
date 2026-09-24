@@ -82,7 +82,7 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
           trigger: "item",
           formatter: (params: { name: string; value?: number }) => {
             const val = params.value ?? 0;
-            return `${params.name}<br/>医院数量：${Number.isFinite(val) ? val : 0}`;
+            return `${params.name}<br/>档案客户：${Number.isFinite(val) ? val : 0}`;
           },
         },
         visualMap: {
@@ -107,7 +107,7 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
         },
         series: [
           {
-            name: "医院分布",
+            name: "化免客户分布",
             type: "map",
             map: "anhui",
             roam: false,

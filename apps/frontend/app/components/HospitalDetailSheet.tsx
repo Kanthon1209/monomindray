@@ -13,8 +13,8 @@ import {
 import {
   ARCHIVE_FIELD_DEFS,
   displayValue,
-  regionLabelFromProvince,
-  regionLabelFromCity,
+  formatMatchingRate,
+  resolveArchiveField,
   type ArchiveFieldKey,
 } from "@/lib/hospital-archive";
 import type { Hospital } from "@/lib/types";
@@ -75,39 +75,39 @@ export function HospitalDetailSheet({
   }, [open, hospitalId]);
 
   const values = useMemo(() => {
-    const archive = hospital?.archive || {};
-    const device = devices[0];
-    const customer = customers[0];
-    const map: Partial<Record<ArchiveFieldKey, string>> = {
-      region: regionLabelFromCity(hospital?.city) || regionLabelFromProvince(hospital?.province),
-      branchOffice: archive.branchOffice || hospital?.city || "",
-      customerName: hospital?.name || "",
-      customerCode: archive.customerCode || "",
-      customerLevel: hospital?.level || "",
-      model: device?.model || hospital?.deviceModels?.[0] || archive.model || "",
-      serialNo: device?.serialNo || archive.serialNo || "",
-      contactName: customer?.name || archive.contactName || "",
-      contactPhone: customer?.phone || archive.contactPhone || "",
-      installedAt: device?.installedAt || archive.installedAt || "",
-      enabledAt: archive.enabledAt || "",
-      annualRevenue: archive.annualRevenue || "",
-      usageLocation: archive.usageLocation || "",
-      projectCount: archive.projectCount || "",
-      mindrayReagentCount: archive.mindrayReagentCount || "",
-      matchingRate: archive.matchingRate || "",
-      otherAnalyzers: archive.otherAnalyzers || "",
-      mindraySampleVolume: archive.mindraySampleVolume || "",
-      totalSampleVolume: archive.totalSampleVolume || "",
-      qcVendor: archive.qcVendor || "",
-      qcLevels: archive.qcLevels || "",
-      qcCycle: archive.qcCycle || "",
-      reagentSupplier: archive.reagentSupplier || "",
-      mindrayProjects: archive.mindrayProjects || "",
-      newProjects: archive.newProjects || "",
-      unusedProjects: archive.unusedProjects || "",
-      missingProjects: archive.missingProjects || "",
-      archiveRemark: archive.archiveRemark || hospital?.remark || "",
-    };
+    const map: Partial<Record<ArchiveFieldKey, string>> = {};
+    for (const field of ARCHIVE_FIELD_DEFS) {
+      map[field.key] = hospital
+        ? resolveArchiveField(
+            {
+              name: hospital.name,
+              city: hospital.city,
+              province: hospital.province,
+              level: hospital.level,
+              remark: hospital.remark,
+              deviceModels: hospital.deviceModels,
+              archive: {
+                ...(hospital.archive || {}),
+                // prefer live device/customer when archive empty
+                model:
+                  hospital.archive?.model ||
+                  devices[0]?.model ||
+                  hospital.deviceModels?.[0] ||
+                  "",
+                serialNo:
+                  hospital.archive?.serialNo || devices[0]?.serialNo || "",
+                contactName:
+                  hospital.archive?.contactName || customers[0]?.name || "",
+                contactPhone:
+                  hospital.archive?.contactPhone || customers[0]?.phone || "",
+                installedAt:
+                  hospital.archive?.installedAt || devices[0]?.installedAt || "",
+              },
+            },
+            field.key,
+          )
+        : "";
+    }
     return map;
   }, [hospital, devices, customers]);
 
@@ -169,7 +169,9 @@ export function HospitalDetailSheet({
                     >
                       <div className="text-muted-foreground">{field.label}</div>
                       <div className="break-words whitespace-pre-wrap text-foreground">
-                        {displayValue(values[field.key])}
+                        {field.key === "matchingRate"
+                          ? formatMatchingRate(values[field.key])
+                          : displayValue(values[field.key])}
                       </div>
                     </div>
                   ))}

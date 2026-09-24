@@ -236,6 +236,13 @@ type (
 	SurveyTemplateResponse struct {
 		Template SurveyTemplateInfo `json:"template"`
 	}
+	CreateSurveyTemplateRequest struct {
+		Code        string          `json:"code"`
+		Title       string          `json:"title"`
+		Description string          `json:"description,optional"`
+		Schema      json.RawMessage `json:"schema,optional"`
+		Status      string          `json:"status,optional"`
+	}
 	UpdateSurveyTemplateRequest struct {
 		Title       string          `json:"title,optional"`
 		Description string          `json:"description,optional"`

@@ -537,6 +537,21 @@ export async function listSurveyTemplates() {
   return { items: (data?.items || []).map(mapTemplate) };
 }
 
+export async function createSurveyTemplate(payload: {
+  code: string;
+  title: string;
+  description?: string;
+  schema?: SurveySchema;
+  status?: string;
+}) {
+  const { data, error } = await apiFetch<{ template: any }>("/surveys/templates", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (error) return { error };
+  return { template: mapTemplate(data!.template) };
+}
+
 export async function updateSurveyTemplate(
   id: string,
   payload: {

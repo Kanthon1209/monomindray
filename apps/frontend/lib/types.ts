@@ -14,10 +14,8 @@ export interface Hospital {
 
 export interface FilterOptions {
   region: string;
-  hospitalLevel: string;
-  hospitalType: string;
-  deviceCategory: string;
-  deviceModel: string;
+  customerLevel: string;
+  model: string;
 }
 
 export interface ProvinceData {

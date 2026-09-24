@@ -2,215 +2,248 @@
 
 import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
-import { Search, Plus } from "lucide-react";
+import { Search, ClipboardList, Columns2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { HospitalDetailSheet } from "./HospitalDetailSheet";
 import type { Hospital } from "@/lib/types";
-import { regionLabelFromCity } from "@/lib/hospital-archive";
+import {
+  DASHBOARD_EXTRA_COLUMNS,
+  DASHBOARD_PRIMARY_COLUMNS,
+  archiveFieldLabel,
+  displayValue,
+  formatMatchingRate,
+  parseNumericField,
+  resolveArchiveField,
+  type ArchiveFieldKey,
+} from "@/lib/hospital-archive";
 import { cn } from "@/lib/utils";
 
 interface HospitalPanelProps {
   hospitals: Hospital[];
   selectedProvince?: string;
+  modelFilter?: string;
+  levelFilter?: string;
 }
 
-const PAGE_SIZE = 10;
-
-const statusConfig: Record<
-  string,
-  { label: string; variant: "success" | "warning" | "secondary" }
-> = {
-  active: { label: "运营中", variant: "success" },
-  pending: { label: "待确认", variant: "warning" },
-  inactive: { label: "未激活", variant: "secondary" },
-};
-
-export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProps) {
+export function HospitalPanel({
+  hospitals,
+  selectedProvince,
+  modelFilter = "all",
+  levelFilter = "all",
+}: HospitalPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [expandedCols, setExpandedCols] = useState(false);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [hospitals, selectedProvince]);
+  const columns = useMemo(
+    () =>
+      expandedCols
+        ? [...DASHBOARD_PRIMARY_COLUMNS, ...DASHBOARD_EXTRA_COLUMNS]
+        : DASHBOARD_PRIMARY_COLUMNS,
+    [expandedCols],
+  );
 
   const filtered = useMemo(() => {
     const lower = searchQuery.trim().toLowerCase();
-    if (!lower) return hospitals;
-    return hospitals.filter(
-      (h) =>
+    return hospitals.filter((h) => {
+      const customerName = resolveArchiveField(h, "customerName");
+      const model = resolveArchiveField(h, "model");
+      const level = resolveArchiveField(h, "customerLevel");
+      if (modelFilter !== "all" && model !== modelFilter) return false;
+      if (levelFilter !== "all" && level !== levelFilter) return false;
+      if (!lower) return true;
+      return (
+        customerName.toLowerCase().includes(lower) ||
         h.name.toLowerCase().includes(lower) ||
-        h.province.toLowerCase().includes(lower) ||
-        h.city.toLowerCase().includes(lower),
-    );
-  }, [hospitals, searchQuery]);
+        h.city.toLowerCase().includes(lower) ||
+        model.toLowerCase().includes(lower) ||
+        resolveArchiveField(h, "branchOffice").toLowerCase().includes(lower)
+      );
+    });
+  }, [hospitals, searchQuery, modelFilter, levelFilter]);
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
-  const safePage = Math.min(currentPage, totalPages);
-  const pageData = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  useEffect(() => {
+    if (selectedId && !filtered.some((h) => h.id === selectedId)) {
+      setSelectedId(null);
+      setDetailOpen(false);
+    }
+  }, [filtered, selectedId]);
 
-  const handleSearch = (value: string) => {
-    setSearchQuery(value);
-    setCurrentPage(1);
-  };
+  const summary = useMemo(() => {
+    let withModel = 0;
+    let rateSum = 0;
+    let rateCount = 0;
+    let mindraySamples = 0;
+    for (const h of filtered) {
+      if (resolveArchiveField(h, "model")) withModel += 1;
+      const rate = parseNumericField(resolveArchiveField(h, "matchingRate"));
+      if (rate != null) {
+        rateSum += rate <= 1 ? rate * 100 : rate;
+        rateCount += 1;
+      }
+      const ms = parseNumericField(resolveArchiveField(h, "mindraySampleVolume"));
+      if (ms != null) mindraySamples += ms;
+    }
+    return {
+      total: filtered.length,
+      withModel,
+      avgRate: rateCount ? `${(rateSum / rateCount).toFixed(1)}%` : "—",
+      mindraySamples: mindraySamples
+        ? Math.round(mindraySamples).toLocaleString()
+        : "—",
+    };
+  }, [filtered]);
 
   const openDetail = (id: string) => {
     setSelectedId(id);
     setDetailOpen(true);
   };
 
+  const cellValue = (h: Hospital, key: ArchiveFieldKey) => {
+    const raw = resolveArchiveField(h, key);
+    if (key === "matchingRate") return formatMatchingRate(raw);
+    return displayValue(raw);
+  };
+
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-zinc-950">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">医院清单</h2>
-          <Badge variant="secondary" className="text-xs">
-            {filtered.length} 家
+    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-zinc-950">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="truncate text-sm font-semibold">化免客户档案</h2>
+          <Badge variant="secondary" className="shrink-0 text-xs">
+            {summary.total} 家
           </Badge>
+          {selectedProvince ? (
+            <Badge variant="outline" className="shrink-0 text-xs">
+              {selectedProvince}
+            </Badge>
+          ) : null}
         </div>
-        {selectedProvince && (
-          <Badge variant="outline" className="text-xs">
-            {selectedProvince}
-          </Badge>
-        )}
+        <div className="flex shrink-0 items-center gap-3 text-[11px] text-muted-foreground">
+          <span>
+            机型{" "}
+            <span className="font-semibold text-foreground">
+              {summary.withModel}
+            </span>
+          </span>
+          <span>
+            配套率{" "}
+            <span className="font-semibold text-foreground">
+              {summary.avgRate}
+            </span>
+          </span>
+          <span>
+            标本量{" "}
+            <span className="font-semibold text-foreground">
+              {summary.mindraySamples}
+            </span>
+          </span>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2 border-b px-4 py-2.5">
-        <div className="relative flex-1">
-          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="搜索医院名称、省市"
+            placeholder="搜索客户名称、分公司、机型"
             value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="h-8 pl-8"
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-8 pl-7 text-xs"
           />
         </div>
-        <Button size="sm" variant="default" className="shrink-0" asChild>
-          <Link href="/dashboard/cases">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">案例维护</span>
+        <Button
+          size="sm"
+          variant={expandedCols ? "secondary" : "outline"}
+          className="h-8 shrink-0 px-2"
+          onClick={() => setExpandedCols((v) => !v)}
+          title={expandedCols ? "收起列" : "展开更多列"}
+        >
+          <Columns2 className="h-4 w-4" />
+          <span className="hidden sm:inline">
+            {expandedCols ? "收起列" : "更多列"}
+          </span>
+        </Button>
+        <Button size="sm" variant="default" className="h-8 shrink-0 px-2" asChild>
+          <Link href="/dashboard/surveys/campaigns">
+            <ClipboardList className="h-4 w-4" />
+            <span className="hidden sm:inline">去采集</span>
           </Link>
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <Table className="min-w-[480px]">
-          <TableHeader className="sticky top-0 z-10 bg-white dark:bg-zinc-950">
-            <TableRow className="border-b">
-              <TableHead className="w-16">地市</TableHead>
-              <TableHead className="w-14">区域</TableHead>
-              <TableHead>医院名称</TableHead>
-              <TableHead className="w-20">级别</TableHead>
-              <TableHead className="w-20">设备数</TableHead>
-              <TableHead className="w-20">状态</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageData.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
-                  暂无匹配的医院数据
-                </TableCell>
-              </TableRow>
-            ) : (
-              pageData.map((hospital) => (
-                <TableRow
-                  key={hospital.id}
-                  className={cn(
-                    "cursor-pointer hover:bg-muted/50",
-                    selectedId === hospital.id && detailOpen && "bg-muted/60",
-                  )}
-                  onClick={() => openDetail(hospital.id)}
-                >
-                  <TableCell className="truncate text-xs text-muted-foreground">
-                    {hospital.city}
-                  </TableCell>
-                  <TableCell className="truncate text-xs text-muted-foreground">
-                    {regionLabelFromCity(hospital.city) || "—"}
-                  </TableCell>
-                  <TableCell className="text-xs font-medium">{hospital.name}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {hospital.level}
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    <span className="font-medium text-primary">{hospital.deviceCount}</span>
-                    <span className="text-muted-foreground"> 台</span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={(statusConfig[hospital.status] || statusConfig.pending).variant}
-                      className="text-[10px]"
-                    >
-                      {(statusConfig[hospital.status] || statusConfig.pending).label}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))
+      <div className="relative min-h-0 flex-1">
+        <div className="absolute inset-0 overflow-auto">
+          <table
+            className={cn(
+              "w-full caption-bottom text-sm",
+              expandedCols && "min-w-[880px]",
             )}
-          </TableBody>
-        </Table>
+          >
+            <thead className="sticky top-0 z-10 bg-white dark:bg-zinc-950 [&_tr]:border-b">
+              <tr className="border-b transition-colors">
+                {columns.map((key) => (
+                  <th
+                    key={key}
+                    className="h-8 whitespace-nowrap px-2 text-left align-middle text-xs font-medium text-muted-foreground"
+                  >
+                    {archiveFieldLabel(key)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="[&_tr:last-child]:border-0">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={columns.length}
+                    className="h-32 p-2 text-center align-middle text-muted-foreground"
+                  >
+                    暂无匹配的化免客户档案
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((hospital) => (
+                  <tr
+                    key={hospital.id}
+                    className={cn(
+                      "cursor-pointer border-b transition-colors hover:bg-muted/50",
+                      selectedId === hospital.id &&
+                        detailOpen &&
+                        "bg-muted/60",
+                    )}
+                    onClick={() => openDetail(hospital.id)}
+                  >
+                    {columns.map((key) => (
+                      <td
+                        key={key}
+                        className={cn(
+                          "max-w-[140px] truncate px-2 py-1.5 align-middle text-xs",
+                          key === "customerName" && "font-medium",
+                          (key === "matchingRate" ||
+                            key === "mindraySampleVolume" ||
+                            key === "totalSampleVolume") &&
+                            "text-primary",
+                        )}
+                        title={cellValue(hospital, key)}
+                      >
+                        {cellValue(hospital, key)}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between border-t px-4 py-2">
+      <div className="flex shrink-0 items-center justify-between border-t px-3 py-1.5">
         <span className="text-xs text-muted-foreground">
-          共 {filtered.length} 条，第 {safePage}/{totalPages} 页
+          共 {filtered.length} 条客户档案
         </span>
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={safePage <= 1}
-            onClick={() => setCurrentPage(safePage - 1)}
-            className="h-7 px-2 text-xs"
-          >
-            上一页
-          </Button>
-          <div className="hidden items-center gap-1 sm:flex">
-            {generatePageNumbers(safePage, totalPages).map((page, idx) =>
-              page === "..." ? (
-                <span key={`ellipsis-${idx}`} className="px-1 text-xs text-muted-foreground">
-                  ...
-                </span>
-              ) : (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page as number)}
-                  className={cn(
-                    "h-7 min-w-7 rounded-md px-2 text-xs transition-colors",
-                    page === safePage
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted",
-                  )}
-                >
-                  {page}
-                </button>
-              ),
-            )}
-          </div>
-          <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-primary px-2 text-xs text-primary-foreground sm:hidden">
-            {safePage}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={safePage >= totalPages}
-            onClick={() => setCurrentPage(safePage + 1)}
-            className="h-7 px-2 text-xs"
-          >
-            下一页
-          </Button>
-        </div>
       </div>
 
       <HospitalDetailSheet
@@ -220,17 +253,4 @@ export function HospitalPanel({ hospitals, selectedProvince }: HospitalPanelProp
       />
     </div>
   );
-}
-
-function generatePageNumbers(current: number, total: number): (number | string)[] {
-  if (total <= 7) {
-    return Array.from({ length: total }, (_, i) => i + 1);
-  }
-  if (current <= 4) {
-    return [1, 2, 3, 4, 5, "...", total];
-  }
-  if (current >= total - 3) {
-    return [1, "...", total - 4, total - 3, total - 2, total - 1, total];
-  }
-  return [1, "...", current - 1, current, current + 1, "...", total];
 }

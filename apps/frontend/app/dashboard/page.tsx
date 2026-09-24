@@ -1,19 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Map as MapIcon, List, Loader2 } from "lucide-react";
 import { FilterBar } from "../components/FilterBar";
 import { AnhuiMap } from "../components/ChinaMap";
 import { HospitalPanel } from "../components/HospitalPanel";
 import { fetchDashboardHospitals, fetchProvinceStats } from "@/lib/business";
+import { resolveArchiveField } from "@/lib/hospital-archive";
 import type { FilterOptions, Hospital, ProvinceData } from "@/lib/types";
 
 const defaultFilters: FilterOptions = {
   region: "all",
-  hospitalLevel: "all",
-  hospitalType: "all",
-  deviceCategory: "all",
-  deviceModel: "all",
+  customerLevel: "all",
+  model: "all",
 };
 
 type MobileTab = "map" | "list";
@@ -30,7 +29,7 @@ export default function DashboardPage() {
   const handleFilterChange = useCallback(
     (key: keyof FilterOptions, value: string) => {
       setFilters((prev) => ({ ...prev, [key]: value }));
-      setSelectedCity(undefined);
+      if (key === "region") setSelectedCity(undefined);
     },
     [],
   );
@@ -50,10 +49,6 @@ export default function DashboardPage() {
           region: filters.region,
           province: "安徽省",
           city: selectedCity,
-          level: filters.hospitalLevel,
-          type: filters.hospitalType,
-          deviceCategory: filters.deviceCategory,
-          deviceModel: filters.deviceModel,
         }),
         fetchProvinceStats(filters.region),
       ]);
@@ -72,11 +67,34 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters, selectedCity]);
+  }, [filters.region, selectedCity]);
+
+  const modelOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of hospitals) {
+      const model = resolveArchiveField(h, "model").trim();
+      if (model) set.add(model);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }, [hospitals]);
+
+  const levelOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of hospitals) {
+      const level = resolveArchiveField(h, "customerLevel").trim();
+      if (level) set.add(level);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }, [hospitals]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-zinc-900">
-      <FilterBar filters={filters} onFilterChange={handleFilterChange} />
+      <FilterBar
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        modelOptions={modelOptions}
+        levelOptions={levelOptions}
+      />
 
       {error ? (
         <div className="border-b bg-destructive/10 px-4 py-2 text-sm text-destructive">
@@ -105,7 +123,7 @@ export default function DashboardPage() {
           }`}
         >
           <List className="h-4 w-4" />
-          医院清单
+          客户档案
           {hospitals.length > 0 && (
             <span className="ml-0.5 rounded bg-muted px-1 text-xs">
               {hospitals.length}
@@ -114,7 +132,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      <div className="relative min-h-0 flex-1 md:grid md:grid-cols-[minmax(0,7fr)_minmax(360px,3fr)]">
+      <div className="relative min-h-0 flex-1 md:grid md:grid-cols-[minmax(0,6fr)_minmax(420px,4fr)]">
         {loading ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -145,13 +163,17 @@ export default function DashboardPage() {
         </div>
 
         <div
-          className={`min-h-0 md:block ${
-            mobileTab === "list" ? "block" : "hidden"
+          className={`min-h-0 overflow-hidden ${
+            mobileTab === "list"
+              ? "absolute inset-0 md:relative md:inset-auto md:h-full"
+              : "hidden md:relative md:block md:h-full"
           }`}
         >
           <HospitalPanel
             hospitals={hospitals}
             selectedProvince={selectedCity}
+            modelFilter={filters.model}
+            levelFilter={filters.customerLevel}
           />
         </div>
       </div>

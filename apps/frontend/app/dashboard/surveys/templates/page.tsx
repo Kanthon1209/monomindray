@@ -15,6 +15,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import {
   listSurveyTemplates,
+  createSurveyTemplate,
   updateSurveyTemplate,
   type SurveyField,
   type SurveySchema,
@@ -192,6 +193,14 @@ export default function SurveyTemplatesPage() {
   const [sectionTemplateId, setSectionTemplateId] = useState<string | null>(null);
   const [renamingSection, setRenamingSection] = useState<string | null>(null);
 
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createDraft, setCreateDraft] = useState({
+    title: "",
+    code: "",
+    description: "",
+  });
+  const [creating, setCreating] = useState(false);
+
   useEffect(() => {
     if (user && user.role !== "admin") {
       router.replace("/dashboard/surveys/tasks");
@@ -245,6 +254,36 @@ export default function SurveyTemplatesPage() {
       prev.map((t) => (t.id === template.id ? res.template! : t)),
     );
     return true;
+  };
+
+  const openCreateTemplate = () => {
+    setCreateDraft({ title: "", code: "", description: "" });
+    setCreateOpen(true);
+  };
+
+  const onCreateTemplate = async () => {
+    const title = createDraft.title.trim();
+    const code = createDraft.code.trim();
+    if (!title || !code) {
+      setError("请填写模板标题与编码");
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    const res = await createSurveyTemplate({
+      title,
+      code,
+      description: createDraft.description.trim() || undefined,
+      schema: { fields: [], sections: ["未分组"] },
+    });
+    setCreating(false);
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+    setCreateOpen(false);
+    setItems((prev) => [...prev, res.template!]);
+    setExpanded(res.template!.id);
   };
 
   const openCreateField = (template: SurveyTemplate, section: string) => {
@@ -416,17 +455,25 @@ export default function SurveyTemplatesPage() {
               </div>
               <div>
                 <CardTitle>模板管理</CardTitle>
-                <CardDescription>
-                  点击字段可编辑；组末与字段末的加号可新建。当前共 {items.length}{" "}
-                  个模板。
-                </CardDescription>
+                <CardDescription>当前共 {items.length} 个模板</CardDescription>
               </div>
             </div>
-            <Button variant="outline" size="icon" onClick={load} disabled={loading || saving}>
-              <RefreshCw
-                className={`h-4 w-4 ${loading || saving ? "animate-spin" : ""}`}
-              />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={load}
+                disabled={loading || saving || creating}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${loading || saving || creating ? "animate-spin" : ""}`}
+                />
+              </Button>
+              <Button onClick={openCreateTemplate} disabled={creating}>
+                <Plus className="mr-1 h-4 w-4" />
+                新建模板
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
@@ -598,6 +645,71 @@ export default function SurveyTemplatesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="border-b px-5 py-4">
+            <DialogTitle>新建模板</DialogTitle>
+            <DialogDescription>
+              创建后可展开模板，用加号添加分组与字段。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 px-5 py-4">
+            <div className="space-y-2">
+              <Label>标题</Label>
+              <Input
+                value={createDraft.title}
+                onChange={(e) => {
+                  const title = e.target.value;
+                  setCreateDraft((d) => ({
+                    ...d,
+                    title,
+                    code: d.code || slugifyKey(title),
+                  }));
+                }}
+                placeholder="例如：化免客户档案采集"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>编码</Label>
+              <Input
+                value={createDraft.code}
+                onChange={(e) =>
+                  setCreateDraft((d) => ({ ...d, code: e.target.value.trim() }))
+                }
+                placeholder="例如：immuno_archive_v2"
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                仅字母、数字、下划线与短横线，全局唯一。
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>说明（可选）</Label>
+              <Input
+                value={createDraft.description}
+                onChange={(e) =>
+                  setCreateDraft((d) => ({ ...d, description: e.target.value }))
+                }
+                placeholder="模板用途简述"
+              />
+            </div>
+          </div>
+          <DialogFooter className="border-t px-5 py-3">
+            <Button
+              variant="outline"
+              onClick={() => setCreateOpen(false)}
+              disabled={creating}
+            >
+              取消
+            </Button>
+            <Button onClick={onCreateTemplate} disabled={creating}>
+              {creating ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              创建
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={fieldDialogOpen} onOpenChange={setFieldDialogOpen}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">

@@ -104,6 +104,8 @@ type SurveySubmissionFilter struct {
 type SurveyModel interface {
 	ListTemplates(ctx context.Context, activeOnly bool) ([]SurveyTemplate, error)
 	FindTemplateById(ctx context.Context, id int64) (*SurveyTemplate, error)
+	FindTemplateByCode(ctx context.Context, code string) (*SurveyTemplate, error)
+	CreateTemplate(ctx context.Context, t *SurveyTemplate) (*SurveyTemplate, error)
 	UpdateTemplate(ctx context.Context, id int64, title, description, status string, schema json.RawMessage, bumpVersion bool) (*SurveyTemplate, error)
 
 	CreateCampaignWithAssignments(ctx context.Context, c *SurveyCampaign, assigneeIDs []int64) (int64, error)
@@ -160,6 +162,30 @@ func (m *surveyModel) FindTemplateById(ctx context.Context, id int64) (*SurveyTe
 	row := m.conn.QueryRow(ctx, `
 		SELECT id, code, title, description, schema, version, status, created_by, created_at, updated_at
 		FROM survey_templates WHERE id=$1`, id)
+	return scanTemplate(row)
+}
+
+func (m *surveyModel) FindTemplateByCode(ctx context.Context, code string) (*SurveyTemplate, error) {
+	row := m.conn.QueryRow(ctx, `
+		SELECT id, code, title, description, schema, version, status, created_by, created_at, updated_at
+		FROM survey_templates WHERE code=$1`, code)
+	return scanTemplate(row)
+}
+
+func (m *surveyModel) CreateTemplate(ctx context.Context, t *SurveyTemplate) (*SurveyTemplate, error) {
+	if len(t.Schema) == 0 {
+		t.Schema = json.RawMessage(`{"fields":[],"sections":["未分组"]}`)
+	}
+	status := t.Status
+	if status == "" {
+		status = "active"
+	}
+	row := m.conn.QueryRow(ctx, `
+		INSERT INTO survey_templates (code, title, description, schema, version, status, created_by)
+		VALUES ($1, $2, $3, $4::jsonb, 1, $5, $6)
+		RETURNING id, code, title, description, schema, version, status, created_by, created_at, updated_at`,
+		t.Code, t.Title, t.Description, []byte(t.Schema), status, t.CreatedBy,
+	)
 	return scanTemplate(row)
 }
 
