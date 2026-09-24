@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Hospital,
   Users,
-  FileText,
   Settings,
   LogOut,
   Activity,
@@ -19,6 +18,7 @@ import {
   Send,
   Inbox,
   LayoutTemplate,
+  Cpu,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -57,8 +57,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 const navItems = [
   { title: "数据看板", href: "/dashboard", icon: LayoutDashboard },
   { title: "医院管理", href: "/dashboard/hospitals", icon: Hospital },
+  { title: "设备管理", href: "/dashboard/devices", icon: Cpu },
   { title: "客户管理", href: "/dashboard/customers", icon: Users },
-  { title: "案例维护", href: "/dashboard/cases", icon: FileText },
   { title: "系统设置", href: "/dashboard/settings", icon: Settings },
 ];
 

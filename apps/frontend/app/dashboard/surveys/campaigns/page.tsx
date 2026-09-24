@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import {
   closeSurveyCampaign,
   createSurveyCampaign,
+  listHospitals,
   listSurveyCampaigns,
   listSurveyTemplates,
   type SurveyCampaign,
@@ -59,6 +60,9 @@ export default function SurveyCampaignsPage() {
   const [items, setItems] = useState<SurveyCampaign[]>([]);
   const [templates, setTemplates] = useState<SurveyTemplate[]>([]);
   const [collectors, setCollectors] = useState<User[]>([]);
+  const [hospitals, setHospitals] = useState<
+    { id: string; name: string; province: string; city: string }[]
+  >([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,9 +72,9 @@ export default function SurveyCampaignsPage() {
   const [description, setDescription] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [templateId, setTemplateId] = useState("");
-  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
-  const [prefill, setPrefill] = useState<Record<string, string>>({});
-  const [lockedKeys, setLockedKeys] = useState<string[]>([]);
+  const [assigneeId, setAssigneeId] = useState("");
+  const [selectedHospitals, setSelectedHospitals] = useState<string[]>([]);
+  const [hospitalKeyword, setHospitalKeyword] = useState("");
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -81,15 +85,24 @@ export default function SurveyCampaignsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [campRes, tplRes] = await Promise.all([
+    const [campRes, tplRes, hospRes] = await Promise.all([
       listSurveyCampaigns(),
       listSurveyTemplates(),
+      listHospitals({ page: 1, pageSize: 200 }),
     ]);
     if (campRes.error) setError(campRes.error);
     setItems(campRes.items);
     setTotal(campRes.total);
     setTemplates(tplRes.items);
     setTemplateId((prev) => prev || tplRes.items[0]?.id || "");
+    setHospitals(
+      (hospRes.items || []).map((h) => ({
+        id: h.id,
+        name: h.name,
+        province: h.province,
+        city: h.city,
+      })),
+    );
 
     const token = getAuthToken();
     if (token) {
@@ -117,51 +130,29 @@ export default function SurveyCampaignsPage() {
     if (user?.role === "admin") load();
   }, [user, load]);
 
-  const selectedTemplate = useMemo(
-    () => templates.find((t) => t.id === templateId) || null,
-    [templates, templateId],
-  );
+  const filteredHospitals = useMemo(() => {
+    const kw = hospitalKeyword.trim();
+    if (!kw) return hospitals.slice(0, 80);
+    return hospitals
+      .filter(
+        (h) =>
+          h.name.includes(kw) ||
+          h.province.includes(kw) ||
+          h.city.includes(kw),
+      )
+      .slice(0, 80);
+  }, [hospitals, hospitalKeyword]);
 
-  const prefillFields = useMemo(() => {
-    const fields = selectedTemplate?.schema?.fields || [];
-    // Prefer hospital master data first, then fields that already have defaults.
-    const hospital = fields.filter((f) => (f.section || "").includes("医院"));
-    const rest = fields.filter((f) => !(f.section || "").includes("医院"));
-    return [...hospital, ...rest].slice(0, 12);
-  }, [selectedTemplate]);
-
-  useEffect(() => {
-    if (!selectedTemplate) {
-      setPrefill({});
-      setLockedKeys([]);
-      return;
-    }
-    const next: Record<string, string> = {};
-    const locks: string[] = [];
-    for (const f of selectedTemplate.schema?.fields || []) {
-      if (f.default) next[f.key] = f.default;
-      if (f.locked) locks.push(f.key);
-    }
-    setPrefill(next);
-    setLockedKeys(locks);
-  }, [selectedTemplate]);
-
-  const toggleLock = (key: string) => {
-    setLockedKeys((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-    );
-  };
-
-  const toggleAssignee = (id: string) => {
-    setSelectedAssignees((prev) =>
+  const toggleHospital = (id: string) => {
+    setSelectedHospitals((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !templateId || selectedAssignees.length === 0) {
-      setError("请填写标题、选择模板，并至少选择一名采集员");
+    if (!title.trim() || !templateId || !assigneeId || selectedHospitals.length === 0) {
+      setError("请填写标题、选择模板、采集员，并至少选择一家医院");
       return;
     }
     setSaving(true);
@@ -176,19 +167,13 @@ export default function SurveyCampaignsPage() {
       }
       dueAtIso = d.toISOString();
     }
-    const defaults: Record<string, string> = {};
-    for (const [k, v] of Object.entries(prefill)) {
-      const trimmed = v.trim();
-      if (trimmed) defaults[k] = trimmed;
-    }
     const res = await createSurveyCampaign({
       templateId: Number(templateId),
       title: title.trim(),
       description: description.trim() || undefined,
       dueAt: dueAtIso,
-      defaults,
-      lockedKeys: lockedKeys.filter((k) => defaults[k]),
-      assigneeIds: selectedAssignees.map(Number),
+      assigneeId: Number(assigneeId),
+      hospitalIds: selectedHospitals.map(Number),
     });
     setSaving(false);
     if (res.error) {
@@ -199,9 +184,8 @@ export default function SurveyCampaignsPage() {
     setTitle("");
     setDescription("");
     setDueAt("");
-    setSelectedAssignees([]);
-    setPrefill({});
-    setLockedKeys([]);
+    setAssigneeId("");
+    setSelectedHospitals([]);
     await load();
   };
 
@@ -232,7 +216,7 @@ export default function SurveyCampaignsPage() {
               <div>
                 <CardTitle>问卷发放</CardTitle>
                 <CardDescription>
-                  选择模板并分发给采集员。当前共 {total} 次发放。
+                  按「采集员 × 医院」派发任务。当前共 {total} 次发放。
                 </CardDescription>
               </div>
             </div>
@@ -275,7 +259,7 @@ export default function SurveyCampaignsPage() {
                   <Input
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="例如：2026 安徽化免摸底"
+                    placeholder="例如：2024 化学发光装机盘点"
                     required
                   />
                 </div>
@@ -288,21 +272,26 @@ export default function SurveyCampaignsPage() {
                     <SelectContent>
                       {templates.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
-                          {t.title}（{t.code}）
+                          {t.title} ({t.code})
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>说明（可选）</Label>
-                  <Input
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="给采集员的补充说明"
-                  />
+                  <Label>采集员</Label>
+                  <Select value={assigneeId} onValueChange={setAssigneeId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择采集员" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {collectors.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} ({c.email})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>截止时间（可选）</Label>
@@ -313,129 +302,101 @@ export default function SurveyCampaignsPage() {
                   />
                 </div>
               </div>
-              {prefillFields.length > 0 ? (
-                <div className="space-y-2">
-                  <Label>预填与锁定（可选）</Label>
-                  <p className="text-xs text-muted-foreground">
-                    例如固化医院名称后勾选「锁定」，采集员打开任务时已填好且不可改。
-                  </p>
-                  <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-3">
-                    {prefillFields.map((f) => (
-                      <div
-                        key={f.key}
-                        className="grid items-center gap-2 sm:grid-cols-[1fr_1.4fr_auto]"
-                      >
-                        <span className="truncate text-sm">{f.label}</span>
-                        <Input
-                          value={prefill[f.key] || ""}
-                          onChange={(e) =>
-                            setPrefill((prev) => ({
-                              ...prev,
-                              [f.key]: e.target.value,
-                            }))
-                          }
-                          placeholder={`预填 ${f.key}`}
-                        />
-                        <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            checked={lockedKeys.includes(f.key)}
-                            disabled={!(prefill[f.key] || "").trim()}
-                            onChange={() => toggleLock(f.key)}
-                          />
-                          锁定
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
               <div className="space-y-2">
-                <Label>采集员（已选 {selectedAssignees.length} 人）</Label>
+                <Label>说明（可选）</Label>
+                <Input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  医院（已选 {selectedHospitals.length} 家，每家生成一条任务）
+                </Label>
+                <Input
+                  placeholder="搜索医院名称/省/市"
+                  value={hospitalKeyword}
+                  onChange={(e) => setHospitalKeyword(e.target.value)}
+                />
                 <div className="max-h-48 overflow-auto rounded-md border p-2">
-                  {collectors.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      暂无已通过审核的采集员
-                    </p>
-                  ) : (
-                    collectors.map((c) => {
-                      const checked = selectedAssignees.includes(c.id);
-                      return (
-                        <label
-                          key={c.id}
-                          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleAssignee(c.id)}
-                          />
-                          <span className="font-medium">{c.name}</span>
-                          <span className="text-muted-foreground">{c.email}</span>
-                        </label>
-                      );
-                    })
-                  )}
+                  {filteredHospitals.map((h) => (
+                    <label
+                      key={h.id}
+                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedHospitals.includes(h.id)}
+                        onChange={() => toggleHospital(h.id)}
+                      />
+                      <span>
+                        {h.name}
+                        <span className="ml-2 text-muted-foreground">
+                          {h.province} {h.city}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                  {filteredHospitals.length === 0 ? (
+                    <p className="p-2 text-sm text-muted-foreground">无匹配医院</p>
+                  ) : null}
                 </div>
               </div>
               <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                创建并发放
+                {saving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                创建发放
               </Button>
             </form>
           ) : null}
 
-          <div className="rounded-lg border">
+          <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>标题</TableHead>
                   <TableHead>模板</TableHead>
                   <TableHead>任务数</TableHead>
-                  <TableHead>截止</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>创建时间</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead className="w-[100px]">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       加载中…
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
-                      暂无发放记录
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      暂无发放
                     </TableCell>
                   </TableRow>
                 ) : (
-                  items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.title}</TableCell>
+                  items.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-medium">{c.title}</TableCell>
                       <TableCell>
-                        {item.templateTitle ||
-                          templateLabel(item.templateId, item.templateCode)}
+                        {templateLabel(c.templateId, c.templateTitle)}
                       </TableCell>
-                      <TableCell>{item.assignmentCount}</TableCell>
-                      <TableCell>{formatTime(item.dueAt)}</TableCell>
-                      <TableCell>{campaignStatusBadge(item.status)}</TableCell>
-                      <TableCell>{formatTime(item.createdAt)}</TableCell>
-                      <TableCell className="text-right">
-                        {item.status === "active" ? (
+                      <TableCell>{c.assignmentCount}</TableCell>
+                      <TableCell>{campaignStatusBadge(c.status)}</TableCell>
+                      <TableCell>{formatTime(c.createdAt)}</TableCell>
+                      <TableCell>
+                        {c.status === "active" ? (
                           <Button
                             variant="outline"
                             size="sm"
                             disabled={saving}
-                            onClick={() => onClose(item.id)}
+                            onClick={() => onClose(c.id)}
                           >
                             关闭
                           </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   ))

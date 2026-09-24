@@ -68,7 +68,7 @@ $needWeb = $Target -eq "all" -or $Target -eq "web"
 $services = switch ($Target) {
   "api" { "api" }
   "web" { "web" }
-  default { "api web" }
+  default { "api web pgadmin" }
 }
 
 $ArtifactsDir = Join-Path $RepoRoot "deploy\artifacts"
@@ -136,6 +136,7 @@ $packList = @(
   "deploy/Dockerfile.web",
   "deploy/docker-compose.ecs.yml",
   "deploy/Caddyfile",
+  "deploy/pgadmin",
   "apps/backend/migrations",
   "apps/backend/etc",
   "scripts/goose-up.sh"
@@ -167,6 +168,12 @@ $remoteLines = @(
   "rm -f '$tgzRemote'",
   "if [ -f deploy/artifacts/mindray-api ]; then chmod +x deploy/artifacts/mindray-api; fi",
   "chmod +x scripts/goose-up.sh",
+  "mkdir -p deploy/pgadmin",
+  'set -a; . <(sed ''s/\r$//'' deploy/.env); set +a',
+  'printf ''%s\n'' "postgres:5432:${DB_NAME:-mindray}:${DB_USER:-mindray}:${DB_PASSWORD:-mindray_secret}" > deploy/pgadmin/pgpass',
+  # pgAdmin runs as uid 5050; PassFile must be readable by that user
+  "chown 5050:0 deploy/pgadmin/pgpass || true",
+  "chmod 600 deploy/pgadmin/pgpass",
   "cd deploy",
   "docker compose -f docker-compose.ecs.yml --env-file .env up -d postgres",
   "sleep 2"
@@ -188,10 +195,12 @@ $remoteLines += @(
   "echo DONE"
 )
 
-$remoteScript = ($remoteLines -join "`n") + "`n"
-$remoteScript | & ssh $SshHost "bash -s"
+$remoteScript = (($remoteLines -join "`n") + "`n") -replace "`r", ""
+# Windows PowerShell pipes CRLF; strip on the remote before bash.
+$remoteScript | & ssh $SshHost "sed 's/\r$//' | bash -s"
 if ($LASTEXITCODE -ne 0) { throw "remote apply failed ($LASTEXITCODE)" }
 
 Remove-Item $tgzLocal -Force -ErrorAction SilentlyContinue
 Write-Step "Done (goose up + services; for production push main -> Actions)"
 Write-Host "Public: http://115.29.235.41/dashboard"
+Write-Host "pgAdmin: http://115.29.235.41/pgadmin  (or :5050)"

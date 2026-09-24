@@ -68,10 +68,39 @@ services:
     networks:
       - mindray
 
+  # Ops UI — http://<host>/pgadmin  (also :5050). Set strong PGADMIN_PASSWORD.
+  # ERD: 右键数据库 → ERD For Database
+  pgadmin:
+    image: dpage/pgadmin4:8.14
+    container_name: mindray-pgadmin
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mindray.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-mindray_pgadmin}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "False"
+      PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS: "['local','mindray']"
+      # Required when served under http://host/pgadmin via Caddy
+      SCRIPT_NAME: /pgadmin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin/pgpass:/tmp/pgpass:ro
+    networks:
+      - mindray
+
 volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  pgadmin_data:
 
 networks:
   mindray:

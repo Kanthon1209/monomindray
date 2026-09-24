@@ -1,19 +1,24 @@
 # 业务数据模型（看板采集）
 
-目标：采集员录入医院 / 设备 / 客户 / 案例 → 汇聚到数据看板（地图 + 筛选 + 清单）。
+目标：采集员按医院任务录入装机/竞品等结构化数据 → 汇聚到数据看板（地图 + 筛选 + 清单）。
 
 ## ER 关系
 
 ```text
 users
-  │ created_by / collected_by
+  │
   ▼
 hospitals ──< devices
-    │            │
-    │            └──< cases (optional device_id)
+    │
     ├──< customers
-    └──< cases
+    └── archive / hospital_project_items
+
+survey_templates → survey_campaigns
+       → survey_assignments (assignee × hospital)
+            → survey_submissions (answers 可为嵌套 JSON，含 devices[])
 ```
+
+案例（cases）已移除，与竞品采集主题无关。
 
 ## 表说明
 
@@ -27,13 +32,50 @@ hospitals ──< devices
 | type | `综合医院` / `专科医院` / `中医医院` / `妇幼保健院` |
 | status | `active` 运营中 / `pending` 待确认 / `inactive` 停用 |
 | created_by | 录入人（采集员） |
-| archive | JSONB，对齐《化免客户档案》Excel 扩展字段（大区/分公司/机型/标本量/质控等） |
+| archive | JSONB，对齐《2024年化免客户档案》三张表全部列；支持标量 / 字符串数组 / 对象数组 |
 
 唯一约束：`(name, province, city)` 防重复建档。
 
-`archive` 常用键：`branchOffice`、`customerCode`、`contactName`、`contactPhone`、`enabledAt`、`usageLocation`、`projectCount`、`mindrayReagentCount`、`matchingRate`、`otherAnalyzers`、`mindraySampleVolume`、`totalSampleVolume`、`qcVendor`、`qcLevels`、`qcCycle`、`reagentSupplier`、`mindrayProjects`、`newProjects`、`unusedProjects`、`missingProjects`、`archiveRemark`。
+#### `archive` 约定（可查询）
 
-区域（华北/华东…）**不落库**，由省份映射得出（与现前端 `provinceRegionMap` 一致）。
+**化学发光（标量）**：`region`、`branchOffice`、`customerName`、`customerCode`、`customerLevel`、`model`、`serialNo`、`contactName`、`contactPhone`、`installedAt`、`enabledAt`、`annualRevenue`、`usageLocation`、`projectCount`、`mindrayReagentCount`、`matchingRate`、`otherAnalyzers`、`mindraySampleVolume`、`totalSampleVolume`、`qcVendor`、`qcLevels`、`qcCycle`、`reagentSupplier`、`unusedProjects`、`missingProjects`、`archiveRemark`。
+
+**结构化（统计友好）**：
+
+| 键 | 形态 | 说明 |
+|----|------|------|
+| `mindrayProjects` | `string[]` | 如 `["AFP","CEA","CA125"]` |
+| `newProjects` | `string[]` | 主导新增项目 |
+| `competitorProjectDistribution` | `object[]` | `{line,brand,instrument,projects[],note}` |
+
+**SVIP / 双大（标量）**：`svipLevel`、`dualMajorCustomer`、`groupName`、`volumeDirection`、`iotStock23`、`iotForecast24`、`iotIncrement24`、`iotGrowthRate24`、责任人工号字段、`dualMajorType`、`dualMajorTarget`、产出目标、`competitorDevicesProjects`、`mindrayDevicesProjectsVolume`、`supplyChannel`、`labDirector`、`workContact`、`customerSegment`、`segmentCategory` 等。
+
+查询示例：
+
+```sql
+-- 按迈瑞项目覆盖医院数
+SELECT project_name, COUNT(DISTINCT hospital_id)
+FROM hospital_project_items
+WHERE kind = 'mindray' AND project_name <> ''
+GROUP BY project_name ORDER BY 2 DESC;
+
+-- archive JSON 直查
+SELECT name, archive->'mindrayProjects'
+FROM hospitals
+WHERE archive @> '{"svipLevel":"SVIP1"}';
+```
+
+### `hospital_project_items`（项目展开表）
+
+从 `mindrayProjects` / `competitorProjectDistribution` 同步展开，便于按项目名、品牌、产线 `GROUP BY`。写入/更新医院档案时由后端自动刷新。
+
+| 字段 | 说明 |
+|------|------|
+| kind | `mindray` / `competitor` |
+| line_category | 生化 / 发光 / 凝血 等 |
+| brand / instrument / project_name | 品牌、仪器、项目名 |
+
+区域（华北/华东…）仍可由省份映射得出；安徽市内大区可写在 `archive.region`。
 
 ### `devices`（设备）
 
@@ -45,20 +87,11 @@ hospitals ──< devices
 | model | 如 `BS-2000M`、`CL-8000` |
 | status | `active` / `inactive` / `maintenance` |
 
-医院列表上的 `deviceCount` / `deviceModels` 由设备表聚合（见视图）。
+医院列表上的 `deviceCount` / `deviceModels` 由设备表聚合（见视图）。问卷「化学发光」模板中的 `devices[]` 审核通过后 upsert 到此表。
 
 ### `customers`（客户联系人）
 
 可选挂靠医院，对应「客户管理」页。
-
-### `cases`（案例）
-
-产品应用价值案例，对应「案例维护」。
-
-| 字段 | 说明 |
-|------|------|
-| status | `draft` 草稿 / `submitted` 已提交 / `approved` 已通过 / `rejected` 已驳回 |
-| collected_by / collected_at | 采集人、采集时间 |
 
 ## 视图
 
@@ -73,7 +106,7 @@ hospitals ──< devices
 | 医院 CRUD | `/api/v1/hospitals` |
 | 设备 CRUD | `/api/v1/hospitals/:id/devices`、`/api/v1/devices/:id` |
 | 客户 CRUD | `/api/v1/customers` |
-| 案例 CRUD | `/api/v1/cases` |
+| 问卷模板/发放/任务/审核 | `/api/v1/surveys/*`、`/api/v1/me/survey-assignments/*` |
 | 看板聚合 | `/api/v1/dashboard/hospitals`、`/api/v1/dashboard/provinces` |
 
 ## 迁移文件
@@ -81,10 +114,14 @@ hospitals ──< devices
 - `001_create_users.sql` — 用户
 - `002_user_status.sql` — 用户审核状态（存量库）
 - `003_create_business_tables.sql` — 本模型
-- `004_seed_demo.sql` — 演示数据（医院/设备/客户/案例）
+- `004_seed_demo.sql` — 演示数据（医院/设备/客户）
 - `005_hospital_archive.sql` — 化免档案 archive JSONB + 演示回填
 - `006_anhui_city_seed.sql` — 安徽地市演示医院
 - `007_surveys.sql` — 问卷模板/发放/任务/答卷 + 化免种子模板 `immuno_archive_v1`
+- `008_campaign_defaults.sql` — 发放默认值 / 锁定字段
+- `009_archive_project_items.sql` — 全表列可查询约定、项目展开表、GIN 索引
+- `010_drop_cases.sql` — 删除案例表
+- `011_survey_assignment_hospital.sql` — 任务绑定医院 + `chemilum_device_v1` 层级模板
 
 迁移由 [goose](https://github.com/pressly/goose) 管理（文件含 `-- +goose Up/Down`）。  
 存量库与空库均通过 `scripts/goose-up.sh` 应用；`docker-entrypoint-initdb.d` 仅作全新 volume 的兜底。

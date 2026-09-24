@@ -142,6 +142,38 @@ func ListDevicesHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+func ListAllDevicesHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.ListDevicesRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewDeviceLogic(r.Context(), svcCtx).ListAll(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
+func CreateDeviceGlobalHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.DeviceUpsertRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewDeviceLogic(r.Context(), svcCtx).Create(req.HospitalId, &req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
 func CreateDeviceHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var path types.IdPathRequest
@@ -260,74 +292,6 @@ func DeleteCustomerHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		if err := logic.NewCustomerLogic(r.Context(), svcCtx).Delete(req.Id); err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-		} else {
-			httpx.OkJsonCtx(r.Context(), w, map[string]any{"ok": true})
-		}
-	}
-}
-
-func ListCasesHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req types.ListCasesRequest
-		if err := httpx.Parse(r, &req); err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-			return
-		}
-		resp, err := logic.NewCaseLogic(r.Context(), svcCtx).List(&req)
-		if err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-		} else {
-			httpx.OkJsonCtx(r.Context(), w, resp)
-		}
-	}
-}
-
-func CreateCaseHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req types.CaseUpsertRequest
-		if err := httpx.Parse(r, &req); err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-			return
-		}
-		resp, err := logic.NewCaseLogic(r.Context(), svcCtx).Create(&req)
-		if err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-		} else {
-			httpx.OkJsonCtx(r.Context(), w, resp)
-		}
-	}
-}
-
-func UpdateCaseHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var path types.IdPathRequest
-		var req types.CaseUpsertRequest
-		if err := httpx.Parse(r, &path); err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-			return
-		}
-		if err := httpx.Parse(r, &req); err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-			return
-		}
-		resp, err := logic.NewCaseLogic(r.Context(), svcCtx).Update(path.Id, &req)
-		if err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-		} else {
-			httpx.OkJsonCtx(r.Context(), w, resp)
-		}
-	}
-}
-
-func DeleteCaseHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req types.IdPathRequest
-		if err := httpx.Parse(r, &req); err != nil {
-			httpx.ErrorCtx(r.Context(), w, err)
-			return
-		}
-		if err := logic.NewCaseLogic(r.Context(), svcCtx).Delete(req.Id); err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
 			httpx.OkJsonCtx(r.Context(), w, map[string]any{"ok": true})

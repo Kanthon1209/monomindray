@@ -45,6 +45,8 @@ type SurveyAssignment struct {
 	Id               int64
 	CampaignId       int64
 	AssigneeId       int64
+	HospitalId       *int64
+	HospitalName     string
 	Status           string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -67,7 +69,8 @@ type SurveySubmission struct {
 	Id             int64
 	AssignmentId   int64
 	HospitalId     *int64
-	Answers        map[string]string
+	HospitalName   string
+	Answers        map[string]any
 	Status         string
 	CollectedBy    *int64
 	SubmittedAt    *time.Time
@@ -80,6 +83,12 @@ type SurveySubmission struct {
 	AssigneeName   string
 	AssigneeEmail  string
 	CollectorName  string
+}
+
+type SurveyAssignmentSpec struct {
+	AssigneeID int64
+	HospitalID int64
+	Prefill    map[string]any
 }
 
 type SurveyCampaignFilter struct {
@@ -108,7 +117,7 @@ type SurveyModel interface {
 	CreateTemplate(ctx context.Context, t *SurveyTemplate) (*SurveyTemplate, error)
 	UpdateTemplate(ctx context.Context, id int64, title, description, status string, schema json.RawMessage, bumpVersion bool) (*SurveyTemplate, error)
 
-	CreateCampaignWithAssignments(ctx context.Context, c *SurveyCampaign, assigneeIDs []int64) (int64, error)
+	CreateCampaignWithAssignments(ctx context.Context, c *SurveyCampaign, specs []SurveyAssignmentSpec) (int64, error)
 	ListCampaigns(ctx context.Context, f SurveyCampaignFilter) ([]SurveyCampaign, int64, error)
 	FindCampaignById(ctx context.Context, id int64) (*SurveyCampaign, error)
 	ListAssignmentsByCampaign(ctx context.Context, campaignID int64) ([]SurveyAssignment, error)
@@ -119,8 +128,8 @@ type SurveyModel interface {
 	UpdateAssignmentStatus(ctx context.Context, id int64, status string) error
 
 	FindSubmissionByAssignment(ctx context.Context, assignmentID int64) (*SurveySubmission, error)
-	UpsertDraft(ctx context.Context, assignmentID, collectorID int64, answers map[string]string, hospitalID *int64) (*SurveySubmission, error)
-	Submit(ctx context.Context, assignmentID, collectorID int64, answers map[string]string, hospitalID *int64) (*SurveySubmission, error)
+	UpsertDraft(ctx context.Context, assignmentID, collectorID int64, answers map[string]any, hospitalID *int64) (*SurveySubmission, error)
+	Submit(ctx context.Context, assignmentID, collectorID int64, answers map[string]any, hospitalID *int64) (*SurveySubmission, error)
 	ListSubmissions(ctx context.Context, f SurveySubmissionFilter) ([]SurveySubmission, int64, error)
 	FindSubmissionById(ctx context.Context, id int64) (*SurveySubmission, error)
 	ReviewSubmission(ctx context.Context, id, reviewerID int64, status, note string) error
@@ -232,7 +241,7 @@ func scanTemplate(row pgx.Row) (*SurveyTemplate, error) {
 	return &t, nil
 }
 
-func (m *surveyModel) CreateCampaignWithAssignments(ctx context.Context, c *SurveyCampaign, assigneeIDs []int64) (int64, error) {
+func (m *surveyModel) CreateCampaignWithAssignments(ctx context.Context, c *SurveyCampaign, specs []SurveyAssignmentSpec) (int64, error) {
 	tx, err := m.conn.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -263,29 +272,39 @@ func (m *surveyModel) CreateCampaignWithAssignments(ctx context.Context, c *Surv
 	if err != nil {
 		return 0, err
 	}
-	for _, uid := range assigneeIDs {
+	for _, spec := range specs {
+		if spec.AssigneeID <= 0 || spec.HospitalID <= 0 {
+			return 0, fmt.Errorf("invalid assignment spec")
+		}
 		var assignmentID int64
 		err := tx.QueryRow(ctx, `
-			INSERT INTO survey_assignments (campaign_id, assignee_id, status)
-			VALUES ($1,$2,'todo')
-			ON CONFLICT (campaign_id, assignee_id) DO UPDATE SET updated_at = NOW()
-			RETURNING id`, id, uid).Scan(&assignmentID)
+			INSERT INTO survey_assignments (campaign_id, assignee_id, hospital_id, status)
+			VALUES ($1,$2,$3,'todo')
+			RETURNING id`, id, spec.AssigneeID, spec.HospitalID).Scan(&assignmentID)
 		if err != nil {
 			return 0, err
 		}
-		if len(c.Defaults) > 0 {
-			answersJSON, err := json.Marshal(c.Defaults)
-			if err != nil {
-				return 0, err
-			}
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO survey_submissions (assignment_id, answers, status, collected_by)
-				VALUES ($1, $2::jsonb, 'draft', $3)
-				ON CONFLICT (assignment_id) DO NOTHING`,
-				assignmentID, answersJSON, uid,
-			); err != nil {
-				return 0, err
-			}
+		prefill := map[string]any{}
+		for k, v := range c.Defaults {
+			prefill[k] = v
+		}
+		for k, v := range spec.Prefill {
+			prefill[k] = v
+		}
+		if _, ok := prefill["devices"]; !ok {
+			prefill["devices"] = []any{}
+		}
+		answersJSON, err := json.Marshal(prefill)
+		if err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO survey_submissions (assignment_id, hospital_id, answers, status, collected_by)
+			VALUES ($1, $2, $3::jsonb, 'draft', $4)
+			ON CONFLICT (assignment_id) DO NOTHING`,
+			assignmentID, spec.HospitalID, answersJSON, spec.AssigneeID,
+		); err != nil {
+			return 0, err
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -360,7 +379,7 @@ func scanCampaign(row pgx.Row) (*SurveyCampaign, error) {
 		}
 		return nil, err
 	}
-	c.Defaults, err = decodeAnswers(defaultsRaw)
+	c.Defaults, err = decodeStringMap(defaultsRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -384,11 +403,12 @@ func decodeStringSlice(raw []byte) ([]string, error) {
 
 func (m *surveyModel) ListAssignmentsByCampaign(ctx context.Context, campaignID int64) ([]SurveyAssignment, error) {
 	rows, err := m.conn.Query(ctx, `
-		SELECT a.id, a.campaign_id, a.assignee_id, a.status, a.created_at, a.updated_at,
-		       COALESCE(u.name,''), COALESCE(u.email,''),
+		SELECT a.id, a.campaign_id, a.assignee_id, a.hospital_id, a.status, a.created_at, a.updated_at,
+		       COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(h.name,''),
 		       COALESCE(s.id, 0), COALESCE(s.status, '')
 		FROM survey_assignments a
 		LEFT JOIN users u ON u.id = a.assignee_id
+		LEFT JOIN hospitals h ON h.id = a.hospital_id
 		LEFT JOIN survey_submissions s ON s.assignment_id = a.id
 		WHERE a.campaign_id=$1
 		ORDER BY a.id`, campaignID)
@@ -402,8 +422,8 @@ func (m *surveyModel) ListAssignmentsByCampaign(ctx context.Context, campaignID 
 		var subID int64
 		var subStatus string
 		if err := rows.Scan(
-			&a.Id, &a.CampaignId, &a.AssigneeId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
-			&a.AssigneeName, &a.AssigneeEmail, &subID, &subStatus,
+			&a.Id, &a.CampaignId, &a.AssigneeId, &a.HospitalId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
+			&a.AssigneeName, &a.AssigneeEmail, &a.HospitalName, &subID, &subStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -447,15 +467,16 @@ func (m *surveyModel) ListAssignments(ctx context.Context, f SurveyAssignmentFil
 	}
 	args = append(args, limit, offset)
 	rows, err := m.conn.Query(ctx, fmt.Sprintf(`
-		SELECT a.id, a.campaign_id, a.assignee_id, a.status, a.created_at, a.updated_at,
+		SELECT a.id, a.campaign_id, a.assignee_id, a.hospital_id, a.status, a.created_at, a.updated_at,
 		       COALESCE(c.title,''), COALESCE(c.status,''), c.due_at,
-		       COALESCE(u.name,''), COALESCE(u.email,''),
+		       COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(h.name,''),
 		       COALESCE(t.id,0), COALESCE(t.code,''), COALESCE(t.title,''), COALESCE(t.schema, '{}'::jsonb),
 		       s.id, COALESCE(s.status,'')
 		FROM survey_assignments a
 		JOIN survey_campaigns c ON c.id = a.campaign_id
 		JOIN survey_templates t ON t.id = c.template_id
 		LEFT JOIN users u ON u.id = a.assignee_id
+		LEFT JOIN hospitals h ON h.id = a.hospital_id
 		LEFT JOIN survey_submissions s ON s.assignment_id = a.id
 		WHERE %s
 		ORDER BY a.id DESC
@@ -470,9 +491,9 @@ func (m *surveyModel) ListAssignments(ctx context.Context, f SurveyAssignmentFil
 		var schema []byte
 		var subID *int64
 		if err := rows.Scan(
-			&a.Id, &a.CampaignId, &a.AssigneeId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
+			&a.Id, &a.CampaignId, &a.AssigneeId, &a.HospitalId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
 			&a.CampaignTitle, &a.CampaignStatus, &a.DueAt,
-			&a.AssigneeName, &a.AssigneeEmail,
+			&a.AssigneeName, &a.AssigneeEmail, &a.HospitalName,
 			&a.TemplateId, &a.TemplateCode, &a.TemplateTitle, &schema,
 			&subID, &a.SubmissionStatus,
 		); err != nil {
@@ -491,22 +512,23 @@ func (m *surveyModel) FindAssignmentById(ctx context.Context, id int64) (*Survey
 	var subID *int64
 	var defaultsRaw, lockedRaw []byte
 	err := m.conn.QueryRow(ctx, `
-		SELECT a.id, a.campaign_id, a.assignee_id, a.status, a.created_at, a.updated_at,
+		SELECT a.id, a.campaign_id, a.assignee_id, a.hospital_id, a.status, a.created_at, a.updated_at,
 		       COALESCE(c.title,''), COALESCE(c.status,''), c.due_at,
 		       COALESCE(c.defaults, '{}'::jsonb), COALESCE(c.locked_keys, '[]'::jsonb),
-		       COALESCE(u.name,''), COALESCE(u.email,''),
+		       COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(h.name,''),
 		       COALESCE(t.id,0), COALESCE(t.code,''), COALESCE(t.title,''), COALESCE(t.schema, '{}'::jsonb),
 		       s.id, COALESCE(s.status,'')
 		FROM survey_assignments a
 		JOIN survey_campaigns c ON c.id = a.campaign_id
 		JOIN survey_templates t ON t.id = c.template_id
 		LEFT JOIN users u ON u.id = a.assignee_id
+		LEFT JOIN hospitals h ON h.id = a.hospital_id
 		LEFT JOIN survey_submissions s ON s.assignment_id = a.id
 		WHERE a.id=$1`, id).Scan(
-		&a.Id, &a.CampaignId, &a.AssigneeId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
+		&a.Id, &a.CampaignId, &a.AssigneeId, &a.HospitalId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
 		&a.CampaignTitle, &a.CampaignStatus, &a.DueAt,
 		&defaultsRaw, &lockedRaw,
-		&a.AssigneeName, &a.AssigneeEmail,
+		&a.AssigneeName, &a.AssigneeEmail, &a.HospitalName,
 		&a.TemplateId, &a.TemplateCode, &a.TemplateTitle, &schema,
 		&subID, &a.SubmissionStatus,
 	)
@@ -518,7 +540,7 @@ func (m *surveyModel) FindAssignmentById(ctx context.Context, id int64) (*Survey
 	}
 	a.Schema = json.RawMessage(schema)
 	a.SubmissionId = subID
-	a.CampaignDefaults, err = decodeAnswers(defaultsRaw)
+	a.CampaignDefaults, err = decodeStringMap(defaultsRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -534,22 +556,53 @@ func (m *surveyModel) UpdateAssignmentStatus(ctx context.Context, id int64, stat
 	return err
 }
 
-func decodeAnswers(raw []byte) (map[string]string, error) {
+func decodeStringMap(raw []byte) (map[string]string, error) {
 	out := map[string]string{}
 	if len(raw) == 0 {
 		return out, nil
 	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		// tolerate non-string values by decoding to map[string]any
-		generic := map[string]any{}
-		if err2 := json.Unmarshal(raw, &generic); err2 != nil {
-			return nil, err
-		}
-		for k, v := range generic {
-			out[k] = fmt.Sprint(v)
-		}
+	generic := map[string]any{}
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return nil, err
+	}
+	for k, v := range generic {
+		out[k] = anyToTrimmedString(v)
 	}
 	return out, nil
+}
+
+func decodeAnswers(raw []byte) (map[string]any, error) {
+	out := map[string]any{}
+	if len(raw) == 0 {
+		return out, nil
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func anyToTrimmedString(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case float64:
+		return strings.TrimSpace(fmt.Sprintf("%v", t))
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	default:
+		s := strings.TrimSpace(fmt.Sprint(t))
+		if s == "<nil>" {
+			return ""
+		}
+		return s
+	}
 }
 
 func (m *surveyModel) FindSubmissionByAssignment(ctx context.Context, assignmentID int64) (*SurveySubmission, error) {
@@ -600,7 +653,7 @@ func (m *surveyModel) scanSubmission(row pgx.Row) (*SurveySubmission, error) {
 	return &s, nil
 }
 
-func (m *surveyModel) UpsertDraft(ctx context.Context, assignmentID, collectorID int64, answers map[string]string, hospitalID *int64) (*SurveySubmission, error) {
+func (m *surveyModel) UpsertDraft(ctx context.Context, assignmentID, collectorID int64, answers map[string]any, hospitalID *int64) (*SurveySubmission, error) {
 	raw, err := json.Marshal(answers)
 	if err != nil {
 		return nil, err
@@ -643,7 +696,7 @@ func (m *surveyModel) UpsertDraft(ctx context.Context, assignmentID, collectorID
 	return m.FindSubmissionById(ctx, id)
 }
 
-func (m *surveyModel) Submit(ctx context.Context, assignmentID, collectorID int64, answers map[string]string, hospitalID *int64) (*SurveySubmission, error) {
+func (m *surveyModel) Submit(ctx context.Context, assignmentID, collectorID int64, answers map[string]any, hospitalID *int64) (*SurveySubmission, error) {
 	raw, err := json.Marshal(answers)
 	if err != nil {
 		return nil, err

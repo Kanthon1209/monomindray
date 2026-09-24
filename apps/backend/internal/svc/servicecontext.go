@@ -17,7 +17,6 @@ type ServiceContext struct {
 	HospitalModel model.HospitalModel
 	DeviceModel   model.DeviceModel
 	CustomerModel model.CustomerModel
-	CaseModel     model.CaseModel
 	SurveyModel   model.SurveyModel
 }
 
@@ -44,7 +43,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		HospitalModel: model.NewHospitalModel(pool),
 		DeviceModel:   model.NewDeviceModel(pool),
 		CustomerModel: model.NewCustomerModel(pool),
-		CaseModel:     model.NewCaseModel(pool),
 		SurveyModel:   model.NewSurveyModel(pool),
 	}
 }

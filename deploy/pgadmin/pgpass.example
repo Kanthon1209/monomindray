@@ -1,0 +1,3 @@
+# pgAdmin → Postgres password file (chmod 600). Format: host:port:db:user:password
+# Copied to container as /tmp/pgpass; do not commit real secrets — use pgpass.local on ECS.
+postgres:5432:mindray:mindray:mindray_secret

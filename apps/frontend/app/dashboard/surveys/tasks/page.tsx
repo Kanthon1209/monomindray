@@ -90,6 +90,7 @@ export default function SurveyTasksPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>发放标题</TableHead>
+                  <TableHead>医院</TableHead>
                   <TableHead>模板</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>截止</TableHead>
@@ -99,13 +100,13 @@ export default function SurveyTasksPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       暂无任务
                     </TableCell>
                   </TableRow>
@@ -115,6 +116,7 @@ export default function SurveyTasksPage() {
                       <TableCell className="font-medium">
                         {item.campaignTitle || "—"}
                       </TableCell>
+                      <TableCell>{item.hospitalName || "—"}</TableCell>
                       <TableCell>{item.templateTitle || item.templateCode}</TableCell>
                       <TableCell>{assignmentStatusBadge(item.status)}</TableCell>
                       <TableCell>{formatTime(item.dueAt)}</TableCell>

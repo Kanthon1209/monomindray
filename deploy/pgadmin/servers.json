@@ -1,0 +1,15 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "mindray-postgres",
+      "Group": "Mindray",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "mindray",
+      "Username": "mindray",
+      "PassFile": "/tmp/pgpass",
+      "SSLMode": "prefer",
+      "Comment": "IVD 看板业务库（hospitals / archive / surveys / project_items）"
+    }
+  }
+}

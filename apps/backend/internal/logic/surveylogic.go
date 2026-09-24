@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -191,8 +192,17 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 	if title == "" || req.TemplateId <= 0 {
 		return nil, NewCodeError(400, "请填写标题并选择模板")
 	}
-	if len(req.AssigneeIds) == 0 {
-		return nil, NewCodeError(400, "请至少选择一名采集员")
+
+	assigneeID := req.AssigneeId
+	hospitalIDs := uniqueInt64(req.HospitalIds)
+	if assigneeID <= 0 && len(req.AssigneeIds) == 1 {
+		assigneeID = req.AssigneeIds[0]
+	}
+	if assigneeID <= 0 {
+		return nil, NewCodeError(400, "请选择一名采集员")
+	}
+	if len(hospitalIDs) == 0 {
+		return nil, NewCodeError(400, "请至少选择一家医院")
 	}
 
 	tpl, err := l.svcCtx.SurveyModel.FindTemplateById(l.ctx, req.TemplateId)
@@ -203,15 +213,12 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 		return nil, NewCodeError(400, "模板不可用")
 	}
 
-	assignees := uniqueInt64(req.AssigneeIds)
-	for _, id := range assignees {
-		u, err := l.svcCtx.UserModel.FindById(l.ctx, id)
-		if err != nil {
-			return nil, ErrInternal
-		}
-		if u == nil || u.Status != model.StatusApproved {
-			return nil, NewCodeError(400, "采集员不存在或未通过审核")
-		}
+	u, err := l.svcCtx.UserModel.FindById(l.ctx, assigneeID)
+	if err != nil {
+		return nil, ErrInternal
+	}
+	if u == nil || u.Status != model.StatusApproved {
+		return nil, NewCodeError(400, "采集员不存在或未通过审核")
 	}
 
 	var dueAt *time.Time
@@ -230,14 +237,29 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 		DueAt:       dueAt,
 		Status:      "active",
 		CreatedBy:   ptrInt64(uid),
-		Defaults:    normalizeAnswers(req.Defaults),
+		Defaults:    normalizeStringMap(req.Defaults),
 		LockedKeys:  uniqueStrings(req.LockedKeys),
 	}
-	// Merge template field defaults when campaign did not override.
 	c.Defaults = mergeTemplateDefaults(tpl.Schema, c.Defaults)
 	c.LockedKeys = mergeTemplateLocked(tpl.Schema, c.LockedKeys)
 
-	id, err := l.svcCtx.SurveyModel.CreateCampaignWithAssignments(l.ctx, c, assignees)
+	specs := make([]model.SurveyAssignmentSpec, 0, len(hospitalIDs))
+	for _, hid := range hospitalIDs {
+		h, err := l.svcCtx.HospitalModel.FindById(l.ctx, hid)
+		if err != nil {
+			return nil, ErrInternal
+		}
+		if h == nil {
+			return nil, NewCodeError(400, fmt.Sprintf("医院不存在: %d", hid))
+		}
+		specs = append(specs, model.SurveyAssignmentSpec{
+			AssigneeID: assigneeID,
+			HospitalID: hid,
+			Prefill:    hospitalPrefillAnswers(h),
+		})
+	}
+
+	id, err := l.svcCtx.SurveyModel.CreateCampaignWithAssignments(l.ctx, c, specs)
 	if err != nil {
 		l.Errorf("create campaign: %v", err)
 		return nil, ErrInternal
@@ -289,6 +311,7 @@ func (l *SurveyLogic) GetCampaign(id int64) (*types.SurveyCampaignResponse, erro
 		briefs = append(briefs, types.SurveyAssignmentBrief{
 			Id: assigns[i].Id, AssigneeId: assigns[i].AssigneeId,
 			AssigneeName: assigns[i].AssigneeName, AssigneeEmail: assigns[i].AssigneeEmail,
+			HospitalId: assigns[i].HospitalId, HospitalName: assigns[i].HospitalName,
 			Status: assigns[i].Status, SubmissionId: assigns[i].SubmissionId,
 			SubmissionStatus: assigns[i].SubmissionStatus,
 		})
@@ -349,7 +372,7 @@ func (l *SurveyLogic) GetMyAssignment(id int64) (*types.SurveyAssignmentResponse
 	if a.AssigneeId != uid && authx.RoleFromCtx(l.ctx) != "admin" {
 		return nil, ErrForbidden
 	}
-	var answers map[string]string
+	var answers map[string]any
 	var note string
 	if sub, err := l.svcCtx.SurveyModel.FindSubmissionByAssignment(l.ctx, id); err != nil {
 		return nil, ErrInternal
@@ -375,7 +398,11 @@ func (l *SurveyLogic) SaveDraft(id int64, req *types.SaveSurveyAnswersRequest) (
 		return nil, err
 	}
 	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, normalizeAnswers(req.Answers))
-	sub, err := l.svcCtx.SurveyModel.UpsertDraft(l.ctx, id, uid, answers, req.HospitalId)
+	hid := req.HospitalId
+	if hid == nil {
+		hid = a.HospitalId
+	}
+	sub, err := l.svcCtx.SurveyModel.UpsertDraft(l.ctx, id, uid, answers, hid)
 	if err != nil {
 		if strings.Contains(err.Error(), "locked") {
 			return nil, NewCodeError(409, "答卷已提交或已通过，无法再存草稿")
@@ -402,7 +429,11 @@ func (l *SurveyLogic) Submit(id int64, req *types.SaveSurveyAnswersRequest) (*ty
 	if err := validateRequiredAnswers(a.Schema, answers); err != nil {
 		return nil, err
 	}
-	sub, err := l.svcCtx.SurveyModel.Submit(l.ctx, id, uid, answers, req.HospitalId)
+	hid := req.HospitalId
+	if hid == nil {
+		hid = a.HospitalId
+	}
+	sub, err := l.svcCtx.SurveyModel.Submit(l.ctx, id, uid, answers, hid)
 	if err != nil {
 		if strings.Contains(err.Error(), "locked") {
 			return nil, NewCodeError(409, "答卷已审核通过，无法再次提交")
@@ -520,13 +551,6 @@ func (l *SurveyLogic) review(id int64, status, note string) (*types.SurveySubmis
 	return &types.SurveySubmissionResponse{Submission: toSurveySubmissionInfo(sub)}, nil
 }
 
-type surveySchemaField struct {
-	Key      string `json:"key"`
-	Label    string `json:"label"`
-	Required bool   `json:"required"`
-	Target   string `json:"target"`
-}
-
 func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.SurveyAssignment, sub *model.SurveySubmission) (int64, error) {
 	var schema struct {
 		Fields []surveySchemaField `json:"fields"`
@@ -537,11 +561,11 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	answers := sub.Answers
 	if answers == nil {
-		answers = map[string]string{}
+		answers = map[string]any{}
 	}
 
 	cols := map[string]string{}
-	archive := map[string]string{}
+	archive := map[string]any{}
 
 	applyTarget := func(target, key, value string) {
 		value = strings.TrimSpace(value)
@@ -549,66 +573,98 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 			return
 		}
 		target = strings.TrimSpace(target)
+		setArchive := func(k string, v string) {
+			archive[k] = model.NormalizeArchiveValue(k, v)
+		}
 		switch {
 		case strings.HasPrefix(target, "hospital.archive."):
-			archive[strings.TrimPrefix(target, "hospital.archive.")] = value
+			setArchive(strings.TrimPrefix(target, "hospital.archive."), value)
 		case strings.HasPrefix(target, "hospital."):
 			cols[strings.TrimPrefix(target, "hospital.")] = value
 		case target == "":
 			switch key {
 			case "name", "province", "city", "district", "level", "type", "address", "remark":
 				cols[key] = value
+			case "devices":
+				// handled below
 			default:
-				archive[key] = value
+				setArchive(key, value)
 			}
 		default:
-			archive[key] = value
+			setArchive(key, value)
 		}
 	}
 
 	if len(schema.Fields) > 0 {
 		for _, f := range schema.Fields {
-			applyTarget(f.Target, f.Key, answers[f.Key])
+			if strings.EqualFold(f.Type, "repeat") {
+				continue
+			}
+			applyTarget(f.Target, f.Key, answerString(answers, f.Key))
 		}
 	} else {
 		for k, v := range answers {
-			applyTarget("", k, v)
+			if k == "devices" {
+				continue
+			}
+			applyTarget("", k, anyToString(v))
 		}
 	}
 
-	// Prefer explicit hospital name; fall back to customerName in archive.
 	name := strings.TrimSpace(cols["name"])
 	if name == "" {
-		name = strings.TrimSpace(archive["customerName"])
+		name = archiveString(archive, "customerName")
 	}
 	province := strings.TrimSpace(cols["province"])
 	city := strings.TrimSpace(cols["city"])
-	if name == "" || province == "" || city == "" {
-		return 0, NewCodeError(400, "答卷缺少医院名称/省份/城市，无法写入看板")
-	}
-
-	level := strings.TrimSpace(cols["level"])
-	typ := strings.TrimSpace(cols["type"])
-	if level == "" {
-		level = "二级甲等"
-	}
-	if typ == "" {
-		typ = "综合医院"
-	}
 
 	var existing *model.Hospital
 	var err error
-	if sub.HospitalId != nil && *sub.HospitalId > 0 {
+	if a.HospitalId != nil && *a.HospitalId > 0 {
+		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *a.HospitalId)
+	} else if sub.HospitalId != nil && *sub.HospitalId > 0 {
 		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *sub.HospitalId)
-	} else {
+	} else if name != "" && province != "" && city != "" {
 		existing, err = l.svcCtx.HospitalModel.FindByNameProvinceCity(l.ctx, name, province, city)
 	}
 	if err != nil {
 		l.Errorf("find hospital for publish: %v", err)
 		return 0, ErrInternal
 	}
+	if existing == nil {
+		if name == "" || province == "" || city == "" {
+			return 0, NewCodeError(400, "答卷缺少医院名称/省份/城市，且未绑定医院，无法写入看板")
+		}
+	} else {
+		if name == "" {
+			name = existing.Name
+		}
+		if province == "" {
+			province = existing.Province
+		}
+		if city == "" {
+			city = existing.City
+		}
+	}
 
-	mergedArchive := map[string]string{}
+	level := strings.TrimSpace(cols["level"])
+	typ := strings.TrimSpace(cols["type"])
+	if level == "" {
+		if existing != nil {
+			level = existing.Level
+		} else {
+			level = "二级甲等"
+		}
+	}
+	if typ == "" {
+		if existing != nil {
+			typ = existing.Type
+		} else {
+			typ = "综合医院"
+		}
+	}
+
+	mergedArchive := map[string]any{}
 	if existing != nil && existing.Archive != nil {
 		for k, v := range existing.Archive {
 			mergedArchive[k] = v
@@ -618,53 +674,151 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		mergedArchive[k] = v
 	}
 
+	// Merge device-level mindray projects / analyzers into hospital archive.
+	deviceRows := extractDeviceAnswers(answers["devices"])
+	allProjects := model.ToStringSlice(mergedArchive["mindrayProjects"])
+	otherAnalyzers := []string{}
+	if s := archiveString(mergedArchive, "otherAnalyzers"); s != "" {
+		otherAnalyzers = append(otherAnalyzers, s)
+	}
+	for _, drow := range deviceRows {
+		allProjects = append(allProjects, model.ToStringSlice(drow["mindrayProjects"])...)
+		if oa := anyToString(drow["otherAnalyzers"]); oa != "" {
+			otherAnalyzers = append(otherAnalyzers, oa)
+		}
+	}
+	mergedArchive["mindrayProjects"] = uniquePreserve(allProjects)
+	if len(otherAnalyzers) > 0 {
+		mergedArchive["otherAnalyzers"] = strings.Join(uniquePreserve(otherAnalyzers), "；")
+	}
+	mergedArchive = model.NormalizeArchive(mergedArchive)
+
 	district := strings.TrimSpace(cols["district"])
 	address := strings.TrimSpace(cols["address"])
 	remark := strings.TrimSpace(cols["remark"])
 	if remark == "" {
-		remark = strings.TrimSpace(archive["archiveRemark"])
+		remark = archiveString(mergedArchive, "archiveRemark")
 	}
 
+	var hospitalID int64
 	if existing == nil {
 		h := &model.Hospital{
 			Name: name, Province: province, City: city, District: district,
 			Level: level, Type: typ, Status: "active", Address: address, Remark: remark,
 			Archive: mergedArchive, CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
 		}
-		id, err := l.svcCtx.HospitalModel.Insert(l.ctx, h)
+		hospitalID, err = l.svcCtx.HospitalModel.Insert(l.ctx, h)
 		if err != nil {
 			l.Errorf("insert hospital from survey: %v", err)
 			return 0, NewCodeError(400, "写入医院失败，可能已存在同名医院或字段不合法")
 		}
-		return id, nil
+	} else {
+		if district != "" {
+			existing.District = district
+		}
+		if level != "" {
+			existing.Level = level
+		}
+		if typ != "" {
+			existing.Type = typ
+		}
+		if address != "" {
+			existing.Address = address
+		}
+		if remark != "" {
+			existing.Remark = remark
+		}
+		existing.Name = name
+		existing.Province = province
+		existing.City = city
+		existing.Status = "active"
+		existing.Archive = mergedArchive
+		existing.UpdatedBy = ptrInt64(reviewerID)
+		if err := l.svcCtx.HospitalModel.Update(l.ctx, existing); err != nil {
+			l.Errorf("update hospital from survey: %v", err)
+			return 0, NewCodeError(400, "更新医院失败，请检查字段是否合法")
+		}
+		hospitalID = existing.Id
 	}
 
-	if district != "" {
-		existing.District = district
+	if err := l.publishDevices(reviewerID, hospitalID, deviceRows); err != nil {
+		return 0, err
 	}
-	if level != "" {
-		existing.Level = level
+	return hospitalID, nil
+}
+
+func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[string]any) error {
+	for _, row := range rows {
+		modelName := anyToString(row["model"])
+		serial := anyToString(row["serialNo"])
+		if modelName == "" && serial == "" {
+			continue
+		}
+		if modelName == "" {
+			modelName = "未知机型"
+		}
+		remarkParts := []string{}
+		if loc := anyToString(row["usageLocation"]); loc != "" {
+			remarkParts = append(remarkParts, "位置:"+loc)
+		}
+		if vol := anyToString(row["mindraySampleVolume"]); vol != "" {
+			remarkParts = append(remarkParts, "迈瑞标本量:"+vol)
+		}
+		if oa := anyToString(row["otherAnalyzers"]); oa != "" {
+			remarkParts = append(remarkParts, "其它发光仪:"+oa)
+		}
+		if r := anyToString(row["remark"]); r != "" {
+			remarkParts = append(remarkParts, r)
+		}
+		remark := strings.Join(remarkParts, "；")
+
+		var installedAt *time.Time
+		if raw := anyToString(row["installedAt"]); raw != "" {
+			if t, err := parseFlexibleDate(raw); err == nil {
+				installedAt = &t
+			}
+		}
+
+		existing, err := l.svcCtx.DeviceModel.FindByHospitalSerial(l.ctx, hospitalID, serial)
+		if err != nil {
+			l.Errorf("find device: %v", err)
+			return ErrInternal
+		}
+		if existing == nil {
+			_, err = l.svcCtx.DeviceModel.Insert(l.ctx, &model.Device{
+				HospitalId: hospitalID, Brand: "迈瑞", Category: "immuno", Model: modelName, SerialNo: serial,
+				Status: "active", InstalledAt: installedAt, Remark: remark,
+				CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
+			})
+			if err != nil {
+				l.Errorf("insert device: %v", err)
+				return NewCodeError(400, "写入设备失败："+modelName)
+			}
+			continue
+		}
+		existing.Model = modelName
+		if installedAt != nil {
+			existing.InstalledAt = installedAt
+		}
+		if remark != "" {
+			existing.Remark = remark
+		}
+		existing.Status = "active"
+		existing.UpdatedBy = ptrInt64(reviewerID)
+		if err := l.svcCtx.DeviceModel.Update(l.ctx, existing); err != nil {
+			l.Errorf("update device: %v", err)
+			return NewCodeError(400, "更新设备失败："+modelName)
+		}
 	}
-	if typ != "" {
-		existing.Type = typ
-	}
-	if address != "" {
-		existing.Address = address
-	}
-	if remark != "" {
-		existing.Remark = remark
-	}
-	existing.Name = name
-	existing.Province = province
-	existing.City = city
-	existing.Status = "active"
-	existing.Archive = mergedArchive
-	existing.UpdatedBy = ptrInt64(reviewerID)
-	if err := l.svcCtx.HospitalModel.Update(l.ctx, existing); err != nil {
-		l.Errorf("update hospital from survey: %v", err)
-		return 0, NewCodeError(400, "更新医院失败，请检查字段是否合法")
-	}
-	return existing.Id, nil
+	return nil
+}
+
+type surveySchemaField struct {
+	Key      string `json:"key"`
+	Label    string `json:"label"`
+	Required bool   `json:"required"`
+	Target   string `json:"target"`
+	Type     string `json:"type"`
 }
 
 func (l *SurveyLogic) ensureAssignee(assignmentID, uid int64) (*model.SurveyAssignment, error) {
@@ -706,14 +860,15 @@ func toSurveyCampaignInfo(c *model.SurveyCampaign, assigns []types.SurveyAssignm
 	return info
 }
 
-func toSurveyAssignmentInfo(a *model.SurveyAssignment, answers map[string]string, note string) types.SurveyAssignmentInfo {
+func toSurveyAssignmentInfo(a *model.SurveyAssignment, answers map[string]any, note string) types.SurveyAssignmentInfo {
 	schema := a.Schema
 	if len(schema) == 0 {
 		schema = json.RawMessage(`{"fields":[]}`)
 	}
 	info := types.SurveyAssignmentInfo{
 		Id: a.Id, CampaignId: a.CampaignId, CampaignTitle: a.CampaignTitle, CampaignStatus: a.CampaignStatus,
-		Status: a.Status, TemplateId: a.TemplateId, TemplateCode: a.TemplateCode, TemplateTitle: a.TemplateTitle,
+		Status: a.Status, HospitalId: a.HospitalId, HospitalName: a.HospitalName,
+		TemplateId: a.TemplateId, TemplateCode: a.TemplateCode, TemplateTitle: a.TemplateTitle,
 		Schema: schema, SubmissionId: a.SubmissionId, SubmissionStatus: a.SubmissionStatus,
 		Answers: answers, ReviewNote: note,
 	}
@@ -727,7 +882,7 @@ func toSurveySubmissionInfo(s *model.SurveySubmission) types.SurveySubmissionInf
 	info := types.SurveySubmissionInfo{
 		Id: s.Id, AssignmentId: s.AssignmentId, CampaignTitle: s.CampaignTitle,
 		AssigneeName: s.AssigneeName, AssigneeEmail: s.AssigneeEmail, CollectorName: s.CollectorName,
-		HospitalId: s.HospitalId, Answers: s.Answers, Status: s.Status, ReviewNote: s.ReviewNote,
+		HospitalId: s.HospitalId, HospitalName: s.HospitalName, Answers: s.Answers, Status: s.Status, ReviewNote: s.ReviewNote,
 	}
 	if s.SubmittedAt != nil {
 		info.SubmittedAt = formatTime(*s.SubmittedAt)
@@ -736,12 +891,12 @@ func toSurveySubmissionInfo(s *model.SurveySubmission) types.SurveySubmissionInf
 		info.ReviewedAt = formatTime(*s.ReviewedAt)
 	}
 	if info.Answers == nil {
-		info.Answers = map[string]string{}
+		info.Answers = map[string]any{}
 	}
 	return info
 }
 
-func normalizeAnswers(in map[string]string) map[string]string {
+func normalizeStringMap(in map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range in {
 		k = strings.TrimSpace(k)
@@ -753,12 +908,35 @@ func normalizeAnswers(in map[string]string) map[string]string {
 	return out
 }
 
-func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]string) error {
+func normalizeAnswers(in map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range in {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		switch t := v.(type) {
+		case string:
+			out[k] = strings.TrimSpace(t)
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any) error {
 	var schema struct {
 		Fields []struct {
 			Key      string `json:"key"`
 			Label    string `json:"label"`
 			Required bool   `json:"required"`
+			Type     string `json:"type"`
+			Fields   []struct {
+				Key      string `json:"key"`
+				Label    string `json:"label"`
+				Required bool   `json:"required"`
+			} `json:"fields"`
 		} `json:"fields"`
 	}
 	if len(schemaJSON) > 0 {
@@ -769,11 +947,33 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]stri
 		if !f.Required {
 			continue
 		}
-		if strings.TrimSpace(answers[f.Key]) == "" {
-			label := f.Label
-			if label == "" {
-				label = f.Key
+		label := f.Label
+		if label == "" {
+			label = f.Key
+		}
+		if strings.EqualFold(f.Type, "repeat") {
+			rows := extractDeviceAnswers(answers[f.Key])
+			if len(rows) == 0 {
+				missing = append(missing, label)
+				continue
 			}
+			for i, row := range rows {
+				for _, child := range f.Fields {
+					if !child.Required {
+						continue
+					}
+					if anyToString(row[child.Key]) == "" {
+						cl := child.Label
+						if cl == "" {
+							cl = child.Key
+						}
+						missing = append(missing, fmt.Sprintf("%s#%d.%s", label, i+1, cl))
+					}
+				}
+			}
+			continue
+		}
+		if answerString(answers, f.Key) == "" {
 			missing = append(missing, label)
 		}
 	}
@@ -781,6 +981,123 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]stri
 		return NewCodeError(400, "请填写必填项："+strings.Join(missing, "、"))
 	}
 	return nil
+}
+
+func hospitalPrefillAnswers(h *model.Hospital) map[string]any {
+	out := map[string]any{
+		"name":     h.Name,
+		"province": h.Province,
+		"city":     h.City,
+		"level":    h.Level,
+		"type":     h.Type,
+		"devices":  []any{},
+	}
+	if h.District != "" {
+		out["district"] = h.District
+	}
+	if h.Address != "" {
+		out["address"] = h.Address
+	}
+	if h.Archive != nil {
+		for _, k := range []string{"region", "branchOffice", "customerCode", "customerName", "contactName", "contactPhone"} {
+			if v := archiveString(h.Archive, k); v != "" {
+				out[k] = v
+			}
+		}
+	}
+	return out
+}
+
+func extractDeviceAnswers(raw any) []map[string]any {
+	out := []map[string]any{}
+	if raw == nil {
+		return out
+	}
+	switch t := raw.(type) {
+	case []any:
+		for _, item := range t {
+			if m, ok := item.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+	case []map[string]any:
+		return t
+	}
+	return out
+}
+
+func answerString(answers map[string]any, key string) string {
+	if answers == nil {
+		return ""
+	}
+	return anyToString(answers[key])
+}
+
+func anyToString(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case float64:
+		return strings.TrimSpace(fmt.Sprintf("%v", t))
+	case json.Number:
+		return strings.TrimSpace(t.String())
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	default:
+		s := strings.TrimSpace(fmt.Sprint(t))
+		if s == "<nil>" {
+			return ""
+		}
+		return s
+	}
+}
+
+func uniquePreserve(in []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+func parseFlexibleDate(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	layouts := []string{"2006-01-02", "2006/01/02", time.RFC3339, "2006-01-02T15:04:05"}
+	var last error
+	for _, layout := range layouts {
+		t, err := time.ParseInLocation(layout, raw, time.Local)
+		if err == nil {
+			return t, nil
+		}
+		last = err
+	}
+	return time.Time{}, last
+}
+
+func archiveString(archive map[string]any, key string) string {
+	if archive == nil {
+		return ""
+	}
+	v, ok := archive[key]
+	if !ok || v == nil {
+		return ""
+	}
+	return anyToString(v)
 }
 
 func uniqueInt64(ids []int64) []int64 {
@@ -876,21 +1193,27 @@ func effectiveLockedKeys(schemaJSON json.RawMessage, campaignLocked []string) []
 }
 
 // mergePrefillAnswers: template default < campaign default < saved answers.
-func mergePrefillAnswers(schemaJSON json.RawMessage, campaignDefaults, saved map[string]string) map[string]string {
-	out := mergeTemplateDefaults(schemaJSON, campaignDefaults)
+func mergePrefillAnswers(schemaJSON json.RawMessage, campaignDefaults map[string]string, saved map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range mergeTemplateDefaults(schemaJSON, campaignDefaults) {
+		out[k] = v
+	}
 	for k, v := range saved {
 		out[k] = v
+	}
+	if _, ok := out["devices"]; !ok {
+		out["devices"] = []any{}
 	}
 	return out
 }
 
-func applyLockedAnswers(schemaJSON json.RawMessage, campaignDefaults map[string]string, campaignLocked []string, answers map[string]string) map[string]string {
+func applyLockedAnswers(schemaJSON json.RawMessage, campaignDefaults map[string]string, campaignLocked []string, answers map[string]any) map[string]any {
 	prefill := mergeTemplateDefaults(schemaJSON, campaignDefaults)
 	lockedSet := map[string]struct{}{}
 	for _, k := range effectiveLockedKeys(schemaJSON, campaignLocked) {
 		lockedSet[k] = struct{}{}
 	}
-	out := map[string]string{}
+	out := map[string]any{}
 	for k, v := range answers {
 		out[k] = v
 	}

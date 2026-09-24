@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Save, Send } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
 
 import {
   getMySurveyAssignment,
@@ -37,6 +37,7 @@ const TYPE_OPTIONS = ["综合医院", "专科医院", "中医医院", "妇幼保
 function groupBySection(fields: SurveyField[]) {
   const map = new Map<string, SurveyField[]>();
   for (const f of fields) {
+    if (f.type === "repeat") continue;
     const section = f.section || "其他";
     if (!map.has(section)) map.set(section, []);
     map.get(section)!.push(f);
@@ -44,12 +45,21 @@ function groupBySection(fields: SurveyField[]) {
   return Array.from(map.entries());
 }
 
+function emptyDevice(fields: SurveyField[]): Record<string, any> {
+  const row: Record<string, any> = {};
+  for (const f of fields) {
+    if (f.type === "string_array") row[f.key] = [];
+    else row[f.key] = "";
+  }
+  return row;
+}
+
 export default function SurveyTaskFillPage() {
   const params = useParams();
   const id = String(params.id || "");
   const router = useRouter();
   const [assignment, setAssignment] = useState<SurveyAssignment | null>(null);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +75,9 @@ export default function SurveyTaskFillPage() {
       setAssignment(null);
     } else if (res.assignment) {
       setAssignment(res.assignment);
-      setAnswers(res.assignment.answers || {});
+      const next = { ...(res.assignment.answers || {}) };
+      if (!Array.isArray(next.devices)) next.devices = [];
+      setAnswers(next);
     }
     setLoading(false);
   }, [id]);
@@ -74,10 +86,16 @@ export default function SurveyTaskFillPage() {
     load();
   }, [load]);
 
-  const sections = useMemo(
-    () => groupBySection(assignment?.schema?.fields || []),
+  const flatFields = useMemo(
+    () => (assignment?.schema?.fields || []).filter((f) => f.type !== "repeat"),
     [assignment],
   );
+  const repeatFields = useMemo(
+    () => (assignment?.schema?.fields || []).filter((f) => f.type === "repeat"),
+    [assignment],
+  );
+  const sections = useMemo(() => groupBySection(flatFields), [flatFields]);
+  const devicesField = repeatFields.find((f) => f.key === "devices") || repeatFields[0];
 
   const readOnly = assignment?.status === "submitted";
   const lockedSet = useMemo(
@@ -85,16 +103,52 @@ export default function SurveyTaskFillPage() {
     [assignment],
   );
 
-  const setField = (key: string, value: string) => {
+  const setField = (key: string, value: any) => {
     if (lockedSet.has(key)) return;
     setAnswers((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const devices: Record<string, any>[] = Array.isArray(answers.devices)
+    ? answers.devices
+    : [];
+
+  const setDeviceField = (index: number, key: string, value: any) => {
+    setAnswers((prev) => {
+      const list = Array.isArray(prev.devices) ? [...prev.devices] : [];
+      const row = { ...(list[index] || {}) };
+      row[key] = value;
+      list[index] = row;
+      return { ...prev, devices: list };
+    });
+  };
+
+  const addDevice = () => {
+    if (!devicesField?.fields) return;
+    setAnswers((prev) => {
+      const list = Array.isArray(prev.devices) ? [...prev.devices] : [];
+      list.push(emptyDevice(devicesField.fields || []));
+      return { ...prev, devices: list };
+    });
+  };
+
+  const removeDevice = (index: number) => {
+    setAnswers((prev) => {
+      const list = Array.isArray(prev.devices) ? [...prev.devices] : [];
+      list.splice(index, 1);
+      return { ...prev, devices: list };
+    });
   };
 
   const onSaveDraft = async () => {
     setSaving(true);
     setError(null);
     setMessage(null);
-    const res = await saveSurveyDraft(id, { answers });
+    const res = await saveSurveyDraft(id, {
+      answers,
+      hospitalId: assignment?.hospitalId
+        ? Number(assignment.hospitalId)
+        : undefined,
+    });
     setSaving(false);
     if (res.error) setError(res.error);
     else {
@@ -107,33 +161,57 @@ export default function SurveyTaskFillPage() {
     setSaving(true);
     setError(null);
     setMessage(null);
-    const res = await submitSurveyAssignment(id, { answers });
+    const res = await submitSurveyAssignment(id, {
+      answers,
+      hospitalId: assignment?.hospitalId
+        ? Number(assignment.hospitalId)
+        : undefined,
+    });
     setSaving(false);
-    if (res.error) {
-      setError(res.error);
-      return;
+    if (res.error) setError(res.error);
+    else {
+      setMessage("已提交审核");
+      await load();
     }
-    setMessage("已提交，等待管理员审核");
-    await load();
   };
 
-  const renderField = (field: SurveyField) => {
-    const value = answers[field.key] || "";
-    const fieldLocked = readOnly || lockedSet.has(field.key);
+  const renderScalar = (
+    field: SurveyField,
+    value: any,
+    onChange: (v: any) => void,
+    disabled: boolean,
+  ) => {
+    if (field.type === "string_array") {
+      const text = Array.isArray(value) ? value.join("、") : String(value || "");
+      return (
+        <Input
+          value={text}
+          disabled={disabled}
+          placeholder="多个项目用顿号或逗号分隔"
+          onChange={(e) => {
+            const parts = e.target.value
+              .split(/[/、,，;；|+]+/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            onChange(parts);
+          }}
+        />
+      );
+    }
     if (field.key === "level") {
       return (
         <Select
-          value={value || undefined}
-          onValueChange={(v) => setField(field.key, v)}
-          disabled={fieldLocked}
+          value={String(value || "")}
+          onValueChange={onChange}
+          disabled={disabled}
         >
           <SelectTrigger>
-            <SelectValue placeholder="选择医院等级" />
+            <SelectValue placeholder="选择等级" />
           </SelectTrigger>
           <SelectContent>
-            {LEVEL_OPTIONS.map((opt) => (
-              <SelectItem key={opt} value={opt}>
-                {opt}
+            {LEVEL_OPTIONS.map((o) => (
+              <SelectItem key={o} value={o}>
+                {o}
               </SelectItem>
             ))}
           </SelectContent>
@@ -143,17 +221,17 @@ export default function SurveyTaskFillPage() {
     if (field.key === "type") {
       return (
         <Select
-          value={value || undefined}
-          onValueChange={(v) => setField(field.key, v)}
-          disabled={fieldLocked}
+          value={String(value || "")}
+          onValueChange={onChange}
+          disabled={disabled}
         >
           <SelectTrigger>
-            <SelectValue placeholder="选择医院类型" />
+            <SelectValue placeholder="选择类型" />
           </SelectTrigger>
           <SelectContent>
-            {TYPE_OPTIONS.map((opt) => (
-              <SelectItem key={opt} value={opt}>
-                {opt}
+            {TYPE_OPTIONS.map((o) => (
+              <SelectItem key={o} value={o}>
+                {o}
               </SelectItem>
             ))}
           </SelectContent>
@@ -162,10 +240,9 @@ export default function SurveyTaskFillPage() {
     }
     return (
       <Input
-        value={value}
-        disabled={fieldLocked}
-        onChange={(e) => setField(field.key, e.target.value)}
-        placeholder={field.label}
+        value={value == null ? "" : String(value)}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
       />
     );
   };
@@ -180,13 +257,10 @@ export default function SurveyTaskFillPage() {
 
   if (!assignment) {
     return (
-      <div className="flex flex-1 flex-col gap-4 p-6">
+      <div className="p-6">
         <p className="text-sm text-destructive">{error || "任务不存在"}</p>
-        <Button asChild variant="outline" className="w-fit">
-          <Link href="/dashboard/surveys/tasks">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            返回列表
-          </Link>
+        <Button asChild variant="outline" className="mt-4">
+          <Link href="/dashboard/surveys/tasks">返回</Link>
         </Button>
       </div>
     );
@@ -194,7 +268,7 @@ export default function SurveyTaskFillPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-auto p-4 md:p-6">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Button asChild variant="ghost" size="sm">
           <Link href="/dashboard/surveys/tasks">
             <ArrowLeft className="mr-1 h-4 w-4" />
@@ -202,6 +276,9 @@ export default function SurveyTaskFillPage() {
           </Link>
         </Button>
         <Badge variant="outline">{assignment.status}</Badge>
+        {assignment.hospitalName ? (
+          <Badge variant="secondary">{assignment.hospitalName}</Badge>
+        ) : null}
         {assignment.campaignStatus === "closed" ? (
           <Badge variant="secondary">发放已关闭</Badge>
         ) : null}
@@ -212,6 +289,9 @@ export default function SurveyTaskFillPage() {
           <CardTitle>{assignment.campaignTitle}</CardTitle>
           <CardDescription>
             {assignment.templateTitle || assignment.templateCode}
+            {assignment.hospitalName
+              ? ` · 医院：${assignment.hospitalName}`
+              : ""}
             {assignment.reviewNote
               ? ` · 驳回意见：${assignment.reviewNote}`
               : ""}
@@ -238,12 +318,81 @@ export default function SurveyTaskFillPage() {
                         </span>
                       ) : null}
                     </Label>
-                    {renderField(field)}
+                    {renderScalar(
+                      field,
+                      answers[field.key],
+                      (v) => setField(field.key, v),
+                      readOnly || lockedSet.has(field.key),
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           ))}
+
+          {devicesField ? (
+            <div className="space-y-3 rounded-lg border p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">
+                  {devicesField.label || "设备列表"}
+                  {devicesField.required ? (
+                    <span className="text-destructive"> *</span>
+                  ) : null}
+                </h3>
+                {!readOnly ? (
+                  <Button type="button" size="sm" variant="outline" onClick={addDevice}>
+                    <Plus className="mr-1 h-4 w-4" />
+                    添加{devicesField.itemLabel || "设备"}
+                  </Button>
+                ) : null}
+              </div>
+              {devices.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  尚未添加设备。请点击「添加」录入迈瑞装机。
+                </p>
+              ) : null}
+              {devices.map((row, index) => (
+                <div
+                  key={index}
+                  className="space-y-3 rounded-md border border-dashed p-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">
+                      {devicesField.itemLabel || "设备"} #{index + 1}
+                    </p>
+                    {!readOnly ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeDevice(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {(devicesField.fields || []).map((field) => (
+                      <div key={field.key} className="space-y-2">
+                        <Label>
+                          {field.label}
+                          {field.required ? (
+                            <span className="text-destructive"> *</span>
+                          ) : null}
+                        </Label>
+                        {renderScalar(
+                          field,
+                          row[field.key],
+                          (v) => setDeviceField(index, field.key, v),
+                          readOnly,
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {!readOnly ? (
             <div className="flex flex-wrap gap-2">
@@ -274,7 +423,10 @@ export default function SurveyTaskFillPage() {
               </Button>
             </div>
           ) : (
-            <Button variant="outline" onClick={() => router.push("/dashboard/surveys/tasks")}>
+            <Button
+              variant="outline"
+              onClick={() => router.push("/dashboard/surveys/tasks")}
+            >
               返回任务列表
             </Button>
           )}

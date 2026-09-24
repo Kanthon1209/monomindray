@@ -12,23 +12,23 @@ import (
 )
 
 type Hospital struct {
-	Id           int64             `db:"id"`
-	Name         string            `db:"name"`
-	Province     string            `db:"province"`
-	City         string            `db:"city"`
-	District     string            `db:"district"`
-	Level        string            `db:"level"`
-	Type         string            `db:"type"`
-	Status       string            `db:"status"`
-	Address      string            `db:"address"`
-	Remark       string            `db:"remark"`
-	Archive      map[string]string `db:"archive"`
-	CreatedBy    *int64            `db:"created_by"`
-	UpdatedBy    *int64            `db:"updated_by"`
-	CreatedAt    time.Time         `db:"created_at"`
-	UpdatedAt    time.Time         `db:"updated_at"`
-	DeviceCount  int               `db:"device_count"`
-	DeviceModels []string          `db:"device_models"`
+	Id           int64          `db:"id"`
+	Name         string         `db:"name"`
+	Province     string         `db:"province"`
+	City         string         `db:"city"`
+	District     string         `db:"district"`
+	Level        string         `db:"level"`
+	Type         string         `db:"type"`
+	Status       string         `db:"status"`
+	Address      string         `db:"address"`
+	Remark       string         `db:"remark"`
+	Archive      map[string]any `db:"archive"`
+	CreatedBy    *int64         `db:"created_by"`
+	UpdatedBy    *int64         `db:"updated_by"`
+	CreatedAt    time.Time      `db:"created_at"`
+	UpdatedAt    time.Time      `db:"updated_at"`
+	DeviceCount  int            `db:"device_count"`
+	DeviceModels []string       `db:"device_models"`
 }
 
 type HospitalFilter struct {
@@ -215,8 +215,8 @@ func (m *hospitalModel) FindByNameProvinceCity(ctx context.Context, name, provin
 	return &h, nil
 }
 
-func decodeArchive(raw []byte) map[string]string {
-	out := map[string]string{}
+func decodeArchive(raw []byte) map[string]any {
+	out := map[string]any{}
 	if len(raw) == 0 {
 		return out
 	}
@@ -224,16 +224,11 @@ func decodeArchive(raw []byte) map[string]string {
 	if err := json.Unmarshal(raw, &generic); err != nil {
 		return out
 	}
-	for k, v := range generic {
-		if v == nil {
-			continue
-		}
-		out[k] = fmt.Sprint(v)
-	}
-	return out
+	return NormalizeArchive(generic)
 }
 
 func (m *hospitalModel) Insert(ctx context.Context, h *Hospital) (int64, error) {
+	h.Archive = NormalizeArchive(h.Archive)
 	archiveJSON, err := json.Marshal(h.Archive)
 	if err != nil {
 		return 0, fmt.Errorf("marshal archive: %w", err)
@@ -250,10 +245,14 @@ func (m *hospitalModel) Insert(ctx context.Context, h *Hospital) (int64, error) 
 	if err != nil {
 		return 0, fmt.Errorf("insert hospital: %w", err)
 	}
+	if err := m.ReplaceProjectItems(ctx, id, h.Archive); err != nil {
+		return id, err
+	}
 	return id, nil
 }
 
 func (m *hospitalModel) Update(ctx context.Context, h *Hospital) error {
+	h.Archive = NormalizeArchive(h.Archive)
 	archiveJSON, err := json.Marshal(h.Archive)
 	if err != nil {
 		return fmt.Errorf("marshal archive: %w", err)
@@ -269,7 +268,7 @@ func (m *hospitalModel) Update(ctx context.Context, h *Hospital) error {
 	if err != nil {
 		return fmt.Errorf("update hospital: %w", err)
 	}
-	return nil
+	return m.ReplaceProjectItems(ctx, h.Id, h.Archive)
 }
 
 func (m *hospitalModel) Delete(ctx context.Context, id int64) error {

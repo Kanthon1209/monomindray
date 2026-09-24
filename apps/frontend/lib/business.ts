@@ -13,23 +13,11 @@ export interface Customer {
   createdAt?: string;
 }
 
-export interface CaseItem {
-  id: string;
-  hospitalId: string;
-  hospitalName?: string;
-  deviceId?: string;
-  deviceModel?: string;
-  title: string;
-  summary?: string;
-  content?: string;
-  status: string;
-  collectedAt?: string;
-  createdAt?: string;
-}
-
 export interface Device {
   id: string;
   hospitalId: string;
+  hospitalName?: string;
+  brand?: string;
   category: string;
   model: string;
   serialNo?: string;
@@ -94,26 +82,12 @@ function mapCustomer(raw: any): Customer {
   };
 }
 
-function mapCase(raw: any): CaseItem {
-  return {
-    id: String(raw.id),
-    hospitalId: String(raw.hospitalId),
-    hospitalName: raw.hospitalName || undefined,
-    deviceId: raw.deviceId != null ? String(raw.deviceId) : undefined,
-    deviceModel: raw.deviceModel || undefined,
-    title: raw.title,
-    summary: raw.summary || undefined,
-    content: raw.content || undefined,
-    status: raw.status,
-    collectedAt: raw.collectedAt,
-    createdAt: raw.createdAt,
-  };
-}
-
 function mapDevice(raw: any): Device {
   return {
     id: String(raw.id),
     hospitalId: String(raw.hospitalId),
+    hospitalName: raw.hospitalName || undefined,
+    brand: raw.brand || "迈瑞",
     category: raw.category,
     model: raw.model,
     serialNo: raw.serialNo || undefined,
@@ -218,11 +192,41 @@ export async function deleteHospital(id: string) {
 }
 
 export async function listDevices(hospitalId: string) {
-  const { data, error } = await apiFetch<{ items: any[] }>(
+  const { data, error } = await apiFetch<{ items: any[]; total?: number }>(
     `/hospitals/${hospitalId}/devices`,
   );
-  if (error) return { error, items: [] as Device[] };
-  return { items: (data?.items || []).map(mapDevice) };
+  if (error) return { error, items: [] as Device[], total: 0 };
+  return {
+    items: (data?.items || []).map(mapDevice),
+    total: data?.total ?? (data?.items || []).length,
+  };
+}
+
+export async function listAllDevices(params?: {
+  hospitalId?: number;
+  brand?: string;
+  category?: string;
+  status?: string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const { data, error } = await apiFetch<{ total: number; items: any[] }>(
+    `/devices${qs({
+      hospitalId: params?.hospitalId,
+      brand: params?.brand,
+      category: params?.category,
+      status: params?.status,
+      keyword: params?.keyword,
+      page: params?.page ?? 1,
+      pageSize: params?.pageSize ?? 50,
+    })}`,
+  );
+  if (error) return { error, items: [] as Device[], total: 0 };
+  return {
+    items: (data?.items || []).map(mapDevice),
+    total: data?.total || 0,
+  };
 }
 
 export async function createDevice(
@@ -233,6 +237,24 @@ export async function createDevice(
     `/hospitals/${hospitalId}/devices`,
     { method: "POST", body: JSON.stringify(payload) },
   );
+  if (error) return { error };
+  return { device: mapDevice(data!.device) };
+}
+
+export async function createDeviceGlobal(payload: {
+  hospitalId: number;
+  brand?: string;
+  category: string;
+  model: string;
+  serialNo?: string;
+  status?: string;
+  installedAt?: string;
+  remark?: string;
+}) {
+  const { data, error } = await apiFetch<{ device: any }>("/devices", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
   if (error) return { error };
   return { device: mapDevice(data!.device) };
 }
@@ -296,75 +318,20 @@ export async function deleteCustomer(id: string) {
   return apiFetch(`/customers/${id}`, { method: "DELETE" });
 }
 
-export async function listCases(params: {
-  keyword?: string;
-  status?: string;
-  hospitalId?: string;
-  page?: number;
-  pageSize?: number;
-}) {
-  const { data, error } = await apiFetch<{ total: number; items: any[] }>(
-    `/cases${qs(params)}`,
-  );
-  if (error) return { error, items: [] as CaseItem[], total: 0 };
-  return {
-    items: (data?.items || []).map(mapCase),
-    total: data?.total || 0,
-  };
-}
-
-export async function createCase(payload: {
-  hospitalId: number;
-  deviceId?: number | null;
-  title: string;
-  summary?: string;
-  content?: string;
-  status?: string;
-}) {
-  const { data, error } = await apiFetch<{ case: any }>("/cases", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  if (error) return { error };
-  return { case: mapCase(data!.case) };
-}
-
-export async function updateCase(
-  id: string,
-  payload: {
-    hospitalId: number;
-    deviceId?: number | null;
-    title: string;
-    summary?: string;
-    content?: string;
-    status?: string;
-  },
-) {
-  const { data, error } = await apiFetch<{ case: any }>(`/cases/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
-  if (error) return { error };
-  return { case: mapCase(data!.case) };
-}
-
-export async function deleteCase(id: string) {
-  return apiFetch(`/cases/${id}`, { method: "DELETE" });
-}
 
 // ---- surveys ----
 
 export interface SurveyField {
   key: string;
   label: string;
-  section: string;
+  section?: string;
   required?: boolean;
   type?: string;
   target?: string;
-  /** 模板级默认值；发放时可再覆盖 */
   default?: string;
-  /** 模板级锁定：采集员不可改 */
   locked?: boolean;
+  itemLabel?: string;
+  fields?: SurveyField[];
 }
 
 export interface SurveySchema {
@@ -414,13 +381,15 @@ export interface SurveyAssignment {
   campaignStatus?: string;
   dueAt?: string;
   status: string;
+  hospitalId?: string;
+  hospitalName?: string;
   templateId: string;
   templateCode?: string;
   templateTitle?: string;
   schema?: SurveySchema;
   submissionId?: string;
   submissionStatus?: string;
-  answers?: Record<string, string>;
+  answers?: Record<string, any>;
   lockedKeys?: string[];
   reviewNote?: string;
 }
@@ -433,7 +402,7 @@ export interface SurveySubmission {
   assigneeEmail?: string;
   collectorName?: string;
   hospitalId?: string;
-  answers: Record<string, string>;
+  answers: Record<string, any>;
   status: string;
   submittedAt?: string;
   reviewedAt?: string;
@@ -502,6 +471,8 @@ function mapAssignment(raw: any): SurveyAssignment {
     campaignStatus: raw.campaignStatus || undefined,
     dueAt: raw.dueAt || undefined,
     status: raw.status,
+    hospitalId: raw.hospitalId != null ? String(raw.hospitalId) : undefined,
+    hospitalName: raw.hospitalName || undefined,
     templateId: String(raw.templateId),
     templateCode: raw.templateCode || undefined,
     templateTitle: raw.templateTitle || undefined,
@@ -593,12 +564,14 @@ export async function createSurveyCampaign(payload: {
   dueAt?: string;
   defaults?: Record<string, string>;
   lockedKeys?: string[];
-  assigneeIds: number[];
+  assigneeId: number;
+  hospitalIds: number[];
 }) {
   const body: Record<string, unknown> = {
     templateId: payload.templateId,
     title: payload.title,
-    assigneeIds: payload.assigneeIds,
+    assigneeId: payload.assigneeId,
+    hospitalIds: payload.hospitalIds,
   };
   if (payload.description) body.description = payload.description;
   if (payload.dueAt) body.dueAt = payload.dueAt;
@@ -646,7 +619,7 @@ export async function getMySurveyAssignment(id: string) {
 
 export async function saveSurveyDraft(
   id: string,
-  payload: { answers: Record<string, string>; hospitalId?: number },
+  payload: { answers: Record<string, any>; hospitalId?: number },
 ) {
   const { data, error } = await apiFetch<{ submission: any }>(
     `/me/survey-assignments/${id}/draft`,
@@ -658,7 +631,7 @@ export async function saveSurveyDraft(
 
 export async function submitSurveyAssignment(
   id: string,
-  payload: { answers: Record<string, string>; hospitalId?: number },
+  payload: { answers: Record<string, any>; hospitalId?: number },
 ) {
   const { data, error } = await apiFetch<{ submission: any }>(
     `/me/survey-assignments/${id}/submit`,

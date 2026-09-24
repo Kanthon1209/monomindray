@@ -1,3 +1,5 @@
+import type { ArchiveValue } from "./hospital-archive";
+
 export interface Hospital {
   id: string;
   name: string;
@@ -9,7 +11,7 @@ export interface Hospital {
   deviceModels: string[];
   status: "active" | "pending" | "inactive" | string;
   remark?: string;
-  archive?: Record<string, string>;
+  archive?: Record<string, ArchiveValue>;
 }
 
 export interface FilterOptions {

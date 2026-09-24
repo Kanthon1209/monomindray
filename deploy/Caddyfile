@@ -4,6 +4,14 @@
 		reverse_proxy api:8080
 	}
 
+	# pgAdmin under /pgadmin — trailing slash required for session cookies
+	@pgadmin_noslash path /pgadmin
+	redir @pgadmin_noslash /pgadmin/ 308
+
+	handle /pgadmin* {
+		reverse_proxy pgadmin:80
+	}
+
 	handle {
 		reverse_proxy web:3000
 	}

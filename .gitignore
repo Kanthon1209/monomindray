@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 deploy/.env
+deploy/pgadmin/pgpass
 apps/backend/etc/*.local.yaml
 
 # Dependencies & build outputs
@@ -46,3 +47,4 @@ data/
 
 # Scratch / one-off scripts (use repo-root tmp/, not commit)
 /tmp/
+apps/backend/*.exe~

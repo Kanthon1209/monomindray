@@ -71,8 +71,31 @@ services:
     networks:
       - mindray
 
+  pgadmin:
+    image: dpage/pgadmin4:8.14
+    container_name: mindray-pgadmin-dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mindray.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-mindray_pgadmin}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data_dev:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin/pgpass:/tmp/pgpass:ro
+    networks:
+      - mindray
+
 volumes:
   postgres_data_dev:
+  pgadmin_data_dev:
 
 networks:
   mindray:

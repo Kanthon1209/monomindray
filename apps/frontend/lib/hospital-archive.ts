@@ -1,6 +1,24 @@
-/** 对齐《2024年化免客户档案》Excel 表头的采集字段 */
+/** 对齐《2024年化免客户档案》三张工作表的采集字段 */
+
+export type ArchiveValue =
+  | string
+  | number
+  | boolean
+  | null
+  | string[]
+  | CompetitorProjectItem[]
+  | Record<string, unknown>;
+
+export interface CompetitorProjectItem {
+  line?: string;
+  brand?: string;
+  instrument?: string;
+  projects?: string[];
+  note?: string;
+}
 
 export type ArchiveFieldKey =
+  // 化学发光
   | "region"
   | "branchOffice"
   | "customerName"
@@ -28,12 +46,49 @@ export type ArchiveFieldKey =
   | "newProjects"
   | "unusedProjects"
   | "missingProjects"
-  | "archiveRemark";
+  | "archiveRemark"
+  // 竞品结构化
+  | "competitorProjectDistribution"
+  // SVIP
+  | "groupName"
+  | "svipLevel"
+  | "dualMajorCustomer"
+  | "volumeDirection"
+  | "iotStock23"
+  | "iotForecast24"
+  | "iotIncrement24"
+  | "iotGrowthRate24"
+  | "productLineSales"
+  | "productLineSalesId"
+  | "reagentSales"
+  | "reagentSalesId"
+  | "psName"
+  | "psId"
+  | "clinicalApp"
+  | "clinicalAppId"
+  | "serviceEngineer"
+  | "serviceEngineerId"
+  | "equipment"
+  // 双大
+  | "dualMajorType"
+  | "dualMajorTarget"
+  | "hospitalReagentOutput"
+  | "reagentOutputTarget"
+  | "salesOwner"
+  | "competitorDevicesProjects"
+  | "mindrayDevicesProjectsVolume"
+  | "supplyChannel"
+  | "labDirector"
+  | "workContact"
+  | "customerSegment"
+  | "segmentCategory";
 
 export interface ArchiveFieldDef {
   key: ArchiveFieldKey;
   label: string;
   section: string;
+  /** string | string_array | competitor_list | number */
+  valueType?: "string" | "string_array" | "competitor_list" | "number";
 }
 
 export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
@@ -48,10 +103,10 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "contactPhone", label: "联系电话", section: "联系人" },
   { key: "installedAt", label: "安装日期", section: "设备信息" },
   { key: "enabledAt", label: "启用日期", section: "设备信息" },
-  { key: "annualRevenue", label: "医院年收入（亿）", section: "经营数据" },
+  { key: "annualRevenue", label: "医院年收入（亿）", section: "经营数据", valueType: "number" },
   { key: "usageLocation", label: "使用位置", section: "经营数据" },
-  { key: "projectCount", label: "开展项目数", section: "项目与试剂" },
-  { key: "mindrayReagentCount", label: "迈瑞试剂项目数", section: "项目与试剂" },
+  { key: "projectCount", label: "开展项目数", section: "项目与试剂", valueType: "number" },
+  { key: "mindrayReagentCount", label: "迈瑞试剂项目数", section: "项目与试剂", valueType: "number" },
   { key: "matchingRate", label: "配套率", section: "项目与试剂" },
   { key: "otherAnalyzers", label: "其它发光仪", section: "竞品与标本" },
   { key: "mindraySampleVolume", label: "迈瑞标本量", section: "竞品与标本" },
@@ -60,11 +115,65 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "qcLevels", label: "质控水平数", section: "质控" },
   { key: "qcCycle", label: "质控周期", section: "质控" },
   { key: "reagentSupplier", label: "试剂供应商", section: "项目与试剂" },
-  { key: "mindrayProjects", label: "迈瑞开展项目", section: "项目与试剂" },
-  { key: "newProjects", label: "主导新增项目", section: "项目与试剂" },
+  {
+    key: "mindrayProjects",
+    label: "迈瑞开展项目",
+    section: "项目与试剂",
+    valueType: "string_array",
+  },
+  { key: "newProjects", label: "主导新增项目", section: "项目与试剂", valueType: "string_array" },
   { key: "unusedProjects", label: "未使用迈瑞项目及品牌及供应商", section: "竞品与标本" },
   { key: "missingProjects", label: "迈瑞没有项目名称及品牌", section: "竞品与标本" },
+  {
+    key: "competitorProjectDistribution",
+    label: "竞品仪器项目分布",
+    section: "竞品与标本",
+    valueType: "competitor_list",
+  },
   { key: "archiveRemark", label: "备注", section: "其他" },
+  // SVIP
+  { key: "groupName", label: "分组", section: "SVIP" },
+  { key: "svipLevel", label: "SVIP级别", section: "SVIP" },
+  { key: "dualMajorCustomer", label: "双大客户", section: "SVIP" },
+  { key: "volumeDirection", label: "上量方向", section: "SVIP" },
+  { key: "iotStock23", label: "23年化免凝IOT存量(W)", section: "SVIP", valueType: "number" },
+  { key: "iotForecast24", label: "24年预估化免凝IOT产出(W)", section: "SVIP", valueType: "number" },
+  { key: "iotIncrement24", label: "24年预估化免凝增量(W)", section: "SVIP", valueType: "number" },
+  { key: "iotGrowthRate24", label: "24年预估化免凝增长率(W)", section: "SVIP", valueType: "number" },
+  { key: "equipment", label: "设备", section: "SVIP" },
+  { key: "productLineSales", label: "产线销售", section: "SVIP责任人" },
+  { key: "productLineSalesId", label: "产线销售工号", section: "SVIP责任人" },
+  { key: "reagentSales", label: "试剂销售", section: "SVIP责任人" },
+  { key: "reagentSalesId", label: "试剂销售工号", section: "SVIP责任人" },
+  { key: "psName", label: "PS", section: "SVIP责任人" },
+  { key: "psId", label: "PS工号", section: "SVIP责任人" },
+  { key: "clinicalApp", label: "临床应用", section: "SVIP责任人" },
+  { key: "clinicalAppId", label: "临床应用工号", section: "SVIP责任人" },
+  { key: "serviceEngineer", label: "用服工程师", section: "SVIP责任人" },
+  { key: "serviceEngineerId", label: "用服工程师工号", section: "SVIP责任人" },
+  // 双大
+  { key: "dualMajorType", label: "双大类型", section: "双大客户" },
+  { key: "dualMajorTarget", label: "双大突破目标", section: "双大客户" },
+  {
+    key: "hospitalReagentOutput",
+    label: "医院试剂年产出（万元）",
+    section: "双大客户",
+    valueType: "number",
+  },
+  {
+    key: "reagentOutputTarget",
+    label: "试剂产出目标（万元）",
+    section: "双大客户",
+    valueType: "number",
+  },
+  { key: "salesOwner", label: "销售责任人", section: "双大客户" },
+  { key: "competitorDevicesProjects", label: "竞品设备+项目", section: "双大客户" },
+  { key: "mindrayDevicesProjectsVolume", label: "迈瑞设备+项目+样本量", section: "双大客户" },
+  { key: "supplyChannel", label: "供货渠道", section: "双大客户" },
+  { key: "labDirector", label: "检验科主任", section: "双大客户" },
+  { key: "workContact", label: "工作对接人", section: "双大客户" },
+  { key: "customerSegment", label: "客户细分", section: "双大客户" },
+  { key: "segmentCategory", label: "细分类别", section: "双大客户" },
 ];
 
 /** 看板默认列（关键指标，适配窄侧栏） */
@@ -84,6 +193,7 @@ export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
   "projectCount",
   "mindrayReagentCount",
   "contactName",
+  "mindrayProjects",
 ];
 
 /** @deprecated 使用 PRIMARY + EXTRA */
@@ -96,6 +206,46 @@ export function archiveFieldLabel(key: ArchiveFieldKey) {
   return ARCHIVE_FIELD_DEFS.find((f) => f.key === key)?.label || key;
 }
 
+export function splitProjectNames(raw: string): string[] {
+  return raw
+    .split(/[/、,，;；|+＋]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export function formatArchiveValue(value: ArchiveValue | undefined): string {
+  if (value == null || value === "") return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "";
+    if (typeof value[0] === "string") {
+      return (value as string[]).join("、");
+    }
+    return (value as CompetitorProjectItem[])
+      .map((item) => {
+        const head = [item.line, item.brand, item.instrument].filter(Boolean).join("/");
+        const projects = (item.projects || []).join("、");
+        const body = [projects, item.note].filter(Boolean).join(" · ");
+        return [head, body].filter(Boolean).join(": ");
+      })
+      .join("；");
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function archiveRaw(
+  hospital: { archive?: Record<string, ArchiveValue> },
+  key: ArchiveFieldKey,
+): ArchiveValue | undefined {
+  return hospital.archive?.[key];
+}
+
 /** 从医院主数据 + archive 解析单个化免字段展示值 */
 export function resolveArchiveField(
   hospital: {
@@ -105,7 +255,7 @@ export function resolveArchiveField(
     level?: string;
     remark?: string;
     deviceModels?: string[];
-    archive?: Record<string, string>;
+    archive?: Record<string, ArchiveValue>;
   },
   key: ArchiveFieldKey,
 ): string {
@@ -113,67 +263,27 @@ export function resolveArchiveField(
   switch (key) {
     case "region":
       return (
-        archive.region ||
+        formatArchiveValue(archive.region) ||
         regionLabelFromCity(hospital.city) ||
         regionLabelFromProvince(hospital.province) ||
         ""
       );
     case "branchOffice":
-      return archive.branchOffice || hospital.city || "";
+      return formatArchiveValue(archive.branchOffice) || hospital.city || "";
     case "customerName":
-      return archive.customerName || hospital.name || "";
-    case "customerCode":
-      return archive.customerCode || "";
+      return formatArchiveValue(archive.customerName) || hospital.name || "";
     case "customerLevel":
-      return archive.customerLevel || hospital.level || "";
+      return formatArchiveValue(archive.customerLevel) || hospital.level || "";
     case "model":
-      return archive.model || hospital.deviceModels?.[0] || "";
-    case "serialNo":
-      return archive.serialNo || "";
-    case "contactName":
-      return archive.contactName || "";
-    case "contactPhone":
-      return archive.contactPhone || "";
-    case "installedAt":
-      return archive.installedAt || "";
-    case "enabledAt":
-      return archive.enabledAt || "";
-    case "annualRevenue":
-      return archive.annualRevenue || "";
-    case "usageLocation":
-      return archive.usageLocation || "";
-    case "projectCount":
-      return archive.projectCount || "";
-    case "mindrayReagentCount":
-      return archive.mindrayReagentCount || "";
-    case "matchingRate":
-      return archive.matchingRate || "";
-    case "otherAnalyzers":
-      return archive.otherAnalyzers || "";
-    case "mindraySampleVolume":
-      return archive.mindraySampleVolume || "";
-    case "totalSampleVolume":
-      return archive.totalSampleVolume || "";
-    case "qcVendor":
-      return archive.qcVendor || "";
-    case "qcLevels":
-      return archive.qcLevels || "";
-    case "qcCycle":
-      return archive.qcCycle || "";
-    case "reagentSupplier":
-      return archive.reagentSupplier || "";
+      return formatArchiveValue(archive.model) || hospital.deviceModels?.[0] || "";
     case "mindrayProjects":
-      return archive.mindrayProjects || "";
     case "newProjects":
-      return archive.newProjects || "";
-    case "unusedProjects":
-      return archive.unusedProjects || "";
-    case "missingProjects":
-      return archive.missingProjects || "";
+    case "competitorProjectDistribution":
+      return formatArchiveValue(archiveRaw(hospital, key));
     case "archiveRemark":
-      return archive.archiveRemark || hospital.remark || "";
+      return formatArchiveValue(archive.archiveRemark) || hospital.remark || "";
     default:
-      return archive[key] || "";
+      return formatArchiveValue(archive[key]);
   }
 }
 

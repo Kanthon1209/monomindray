@@ -36,6 +36,8 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 
 			{Method: http.MethodGet, Path: "/api/v1/hospitals/:id/devices", Handler: ListDevicesHandler(svcCtx)},
 			{Method: http.MethodPost, Path: "/api/v1/hospitals/:id/devices", Handler: CreateDeviceHandler(svcCtx)},
+			{Method: http.MethodGet, Path: "/api/v1/devices", Handler: ListAllDevicesHandler(svcCtx)},
+			{Method: http.MethodPost, Path: "/api/v1/devices", Handler: CreateDeviceGlobalHandler(svcCtx)},
 			{Method: http.MethodPut, Path: "/api/v1/devices/:id", Handler: UpdateDeviceHandler(svcCtx)},
 			{Method: http.MethodDelete, Path: "/api/v1/devices/:id", Handler: DeleteDeviceHandler(svcCtx)},
 
@@ -43,11 +45,6 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 			{Method: http.MethodPost, Path: "/api/v1/customers", Handler: CreateCustomerHandler(svcCtx)},
 			{Method: http.MethodPut, Path: "/api/v1/customers/:id", Handler: UpdateCustomerHandler(svcCtx)},
 			{Method: http.MethodDelete, Path: "/api/v1/customers/:id", Handler: DeleteCustomerHandler(svcCtx)},
-
-			{Method: http.MethodGet, Path: "/api/v1/cases", Handler: ListCasesHandler(svcCtx)},
-			{Method: http.MethodPost, Path: "/api/v1/cases", Handler: CreateCaseHandler(svcCtx)},
-			{Method: http.MethodPut, Path: "/api/v1/cases/:id", Handler: UpdateCaseHandler(svcCtx)},
-			{Method: http.MethodDelete, Path: "/api/v1/cases/:id", Handler: DeleteCaseHandler(svcCtx)},
 
 			{Method: http.MethodGet, Path: "/api/v1/surveys/templates", Handler: ListSurveyTemplatesHandler(svcCtx)},
 			{Method: http.MethodPost, Path: "/api/v1/surveys/templates", Handler: CreateSurveyTemplateHandler(svcCtx)},

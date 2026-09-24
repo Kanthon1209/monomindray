@@ -127,7 +127,7 @@ func toHospitalInfo(h *model.Hospital) types.HospitalInfo {
 	}
 	archive := h.Archive
 	if archive == nil {
-		archive = map[string]string{}
+		archive = map[string]any{}
 	}
 	return types.HospitalInfo{
 		Id: h.Id, Name: h.Name, Province: h.Province, City: h.City, District: h.District,
@@ -137,9 +137,14 @@ func toHospitalInfo(h *model.Hospital) types.HospitalInfo {
 }
 
 func toDeviceInfo(d *model.Device) types.DeviceInfo {
+	brand := d.Brand
+	if brand == "" {
+		brand = "迈瑞"
+	}
 	return types.DeviceInfo{
-		Id: d.Id, HospitalId: d.HospitalId, Category: d.Category, Model: d.Model,
-		SerialNo: d.SerialNo, Status: d.Status, InstalledAt: formatDate(d.InstalledAt), Remark: d.Remark,
+		Id: d.Id, HospitalId: d.HospitalId, HospitalName: d.HospitalName, Brand: brand,
+		Category: d.Category, Model: d.Model, SerialNo: d.SerialNo, Status: d.Status,
+		InstalledAt: formatDate(d.InstalledAt), Remark: d.Remark,
 	}
 }
 
@@ -148,15 +153,6 @@ func toCustomerInfo(c *model.Customer) types.CustomerInfo {
 		Id: c.Id, HospitalId: c.HospitalId, HospitalName: c.HospitalName,
 		Name: c.Name, Title: c.Title, Phone: c.Phone, Email: c.Email, Remark: c.Remark,
 		CreatedAt: formatTime(c.CreatedAt),
-	}
-}
-
-func toCaseInfo(c *model.Case) types.CaseInfo {
-	return types.CaseInfo{
-		Id: c.Id, HospitalId: c.HospitalId, HospitalName: c.HospitalName,
-		DeviceId: c.DeviceId, DeviceModel: c.DeviceModel, Title: c.Title,
-		Summary: c.Summary, Content: c.Content, Status: c.Status,
-		CollectedAt: formatTime(c.CollectedAt), CreatedAt: formatTime(c.CreatedAt),
 	}
 }
 

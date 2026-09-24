@@ -32,13 +32,44 @@ func (l *DeviceLogic) List(hospitalID int64) (*types.ListDevicesResponse, error)
 	for i := range items {
 		out = append(out, toDeviceInfo(&items[i]))
 	}
-	return &types.ListDevicesResponse{Items: out}, nil
+	return &types.ListDevicesResponse{Total: int64(len(out)), Items: out}, nil
+}
+
+func (l *DeviceLogic) ListAll(req *types.ListDevicesRequest) (*types.ListDevicesResponse, error) {
+	page, size := req.Page, req.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 50
+	}
+	items, total, err := l.svcCtx.DeviceModel.List(l.ctx, model.DeviceFilter{
+		HospitalID: req.HospitalId,
+		Brand:      req.Brand,
+		Category:   req.Category,
+		Status:     req.Status,
+		Keyword:    req.Keyword,
+		Limit:      size,
+		Offset:     (page - 1) * size,
+	})
+	if err != nil {
+		l.Errorf("list devices: %v", err)
+		return nil, ErrInternal
+	}
+	out := make([]types.DeviceInfo, 0, len(items))
+	for i := range items {
+		out = append(out, toDeviceInfo(&items[i]))
+	}
+	return &types.ListDevicesResponse{Total: total, Items: out}, nil
 }
 
 func (l *DeviceLogic) Create(hospitalID int64, req *types.DeviceUpsertRequest) (*types.DeviceResponse, error) {
 	uid, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
 		return nil, ErrUnauthorized
+	}
+	if hospitalID <= 0 {
+		hospitalID = req.HospitalId
 	}
 	h, err := l.svcCtx.HospitalModel.FindById(l.ctx, hospitalID)
 	if err != nil {
@@ -50,8 +81,12 @@ func (l *DeviceLogic) Create(hospitalID int64, req *types.DeviceUpsertRequest) (
 	if err := validateDevice(req); err != nil {
 		return nil, err
 	}
+	brand := strings.TrimSpace(req.Brand)
+	if brand == "" {
+		brand = "迈瑞"
+	}
 	d := &model.Device{
-		HospitalId: hospitalID, Category: req.Category, Model: strings.TrimSpace(req.Model),
+		HospitalId: hospitalID, Brand: brand, Category: req.Category, Model: strings.TrimSpace(req.Model),
 		SerialNo: strings.TrimSpace(req.SerialNo), Status: normalizeStatus(req.Status, "active"),
 		Remark: strings.TrimSpace(req.Remark), CreatedBy: ptrInt64(uid), UpdatedBy: ptrInt64(uid),
 		InstalledAt: parseDate(req.InstalledAt),
@@ -60,7 +95,12 @@ func (l *DeviceLogic) Create(hospitalID int64, req *types.DeviceUpsertRequest) (
 	if err != nil {
 		return nil, ErrInternal
 	}
+	got, _ := l.svcCtx.DeviceModel.FindById(l.ctx, id)
+	if got != nil {
+		return &types.DeviceResponse{Device: toDeviceInfo(got)}, nil
+	}
 	d.Id = id
+	d.HospitalName = h.Name
 	return &types.DeviceResponse{Device: toDeviceInfo(d)}, nil
 }
 
@@ -79,6 +119,14 @@ func (l *DeviceLogic) Update(id int64, req *types.DeviceUpsertRequest) (*types.D
 	if err := validateDevice(req); err != nil {
 		return nil, err
 	}
+	brand := strings.TrimSpace(req.Brand)
+	if brand == "" {
+		brand = existing.Brand
+	}
+	if brand == "" {
+		brand = "迈瑞"
+	}
+	existing.Brand = brand
 	existing.Category = req.Category
 	existing.Model = strings.TrimSpace(req.Model)
 	existing.SerialNo = strings.TrimSpace(req.SerialNo)
