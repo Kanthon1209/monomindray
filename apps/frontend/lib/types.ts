@@ -5,11 +5,13 @@ export interface Hospital {
   name: string;
   province: string;
   city: string;
+  district?: string;
   level: string;
   type: string;
   deviceCount: number;
   deviceModels: string[];
   status: "active" | "pending" | "inactive" | string;
+  address?: string;
   remark?: string;
   archive?: Record<string, ArchiveValue>;
 }

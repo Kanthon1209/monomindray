@@ -58,11 +58,13 @@ function mapHospital(raw: any): Hospital {
     name: raw.name,
     province: raw.province,
     city: raw.city,
+    district: raw.district || undefined,
     level: raw.level,
     type: raw.type,
     deviceCount: raw.deviceCount ?? 0,
     deviceModels: raw.deviceModels || [],
     status: raw.status,
+    address: raw.address || undefined,
     remark: raw.remark || undefined,
     archive: raw.archive || {},
   };
@@ -253,6 +255,27 @@ export async function createDeviceGlobal(payload: {
 }) {
   const { data, error } = await apiFetch<{ device: any }>("/devices", {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (error) return { error };
+  return { device: mapDevice(data!.device) };
+}
+
+export async function updateDevice(
+  id: string,
+  payload: {
+    hospitalId?: number;
+    brand?: string;
+    category: string;
+    model: string;
+    serialNo?: string;
+    status?: string;
+    installedAt?: string;
+    remark?: string;
+  },
+) {
+  const { data, error } = await apiFetch<{ device: any }>(`/devices/${id}`, {
+    method: "PUT",
     body: JSON.stringify(payload),
   });
   if (error) return { error };

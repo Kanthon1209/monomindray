@@ -202,9 +202,9 @@ func (m *deviceModel) Update(ctx context.Context, d *Device) error {
 		brand = "迈瑞"
 	}
 	_, err := m.conn.Exec(ctx, `
-		UPDATE devices SET brand=$1, category=$2, model=$3, serial_no=$4, status=$5, installed_at=$6, remark=$7, updated_by=$8
-		WHERE id=$9`,
-		brand, d.Category, d.Model, d.SerialNo, d.Status, d.InstalledAt, d.Remark, d.UpdatedBy, d.Id,
+		UPDATE devices SET hospital_id=$1, brand=$2, category=$3, model=$4, serial_no=$5, status=$6, installed_at=$7, remark=$8, updated_by=$9
+		WHERE id=$10`,
+		d.HospitalId, brand, d.Category, d.Model, d.SerialNo, d.Status, d.InstalledAt, d.Remark, d.UpdatedBy, d.Id,
 	)
 	if err != nil {
 		return fmt.Errorf("update device: %w", err)

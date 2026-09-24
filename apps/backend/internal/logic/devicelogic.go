@@ -119,6 +119,17 @@ func (l *DeviceLogic) Update(id int64, req *types.DeviceUpsertRequest) (*types.D
 	if err := validateDevice(req); err != nil {
 		return nil, err
 	}
+	if req.HospitalId > 0 && req.HospitalId != existing.HospitalId {
+		h, err := l.svcCtx.HospitalModel.FindById(l.ctx, req.HospitalId)
+		if err != nil {
+			return nil, ErrInternal
+		}
+		if h == nil {
+			return nil, NewCodeError(404, "医院不存在")
+		}
+		existing.HospitalId = req.HospitalId
+		existing.HospitalName = h.Name
+	}
 	brand := strings.TrimSpace(req.Brand)
 	if brand == "" {
 		brand = existing.Brand
@@ -136,6 +147,10 @@ func (l *DeviceLogic) Update(id int64, req *types.DeviceUpsertRequest) (*types.D
 	existing.UpdatedBy = ptrInt64(uid)
 	if err := l.svcCtx.DeviceModel.Update(l.ctx, existing); err != nil {
 		return nil, ErrInternal
+	}
+	got, _ := l.svcCtx.DeviceModel.FindById(l.ctx, existing.Id)
+	if got != nil {
+		return &types.DeviceResponse{Device: toDeviceInfo(got)}, nil
 	}
 	return &types.DeviceResponse{Device: toDeviceInfo(existing)}, nil
 }
