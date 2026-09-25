@@ -42,6 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ComboboxInput } from "@/components/ui/combobox-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -58,6 +59,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  CHINA_PROVINCES,
+  allCities,
+  citiesForProvince,
+} from "@/lib/china-regions";
 
 const levels = filterOptions.hospitalLevel
   .filter((x) => x.value !== "all")
@@ -172,6 +178,21 @@ export default function HospitalsPage() {
     () => new Set(devices.map((d) => d.id)),
     [devices],
   );
+
+  const provinceOptions = useMemo(() => {
+    const fromData = items.map((h) => h.province).filter(Boolean);
+    return Array.from(new Set([...CHINA_PROVINCES, ...fromData]));
+  }, [items]);
+
+  const cityOptions = useMemo(() => {
+    const fromProvince = citiesForProvince(form.province);
+    const fromData = items
+      .filter((h) => !form.province || h.province === form.province)
+      .map((h) => h.city)
+      .filter(Boolean);
+    const base = fromProvince.length > 0 ? fromProvince : allCities();
+    return Array.from(new Set([...base, ...fromData]));
+  }, [form.province, items]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -486,21 +507,40 @@ export default function HospitalsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>省份</Label>
-                <Input
+                <ComboboxInput
                   required
-                  placeholder="如 广东省"
+                  placeholder="选择或输入省份"
                   value={form.province}
-                  onChange={(e) =>
-                    setForm({ ...form, province: e.target.value })
+                  options={provinceOptions}
+                  onChange={(province) =>
+                    setForm((prev) => {
+                      if (province === prev.province) return prev;
+                      const cities = citiesForProvince(province);
+                      // 仅在选中完整已知省时，清掉不兼容的城市；输入过程中保留
+                      const exactKnown = CHINA_PROVINCES.includes(province);
+                      return {
+                        ...prev,
+                        province,
+                        city:
+                          exactKnown &&
+                          cities.length > 0 &&
+                          prev.city &&
+                          !cities.includes(prev.city)
+                            ? ""
+                            : prev.city,
+                      };
+                    })
                   }
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>城市</Label>
-                <Input
+                <ComboboxInput
                   required
+                  placeholder="选择或输入城市"
                   value={form.city}
-                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                  options={cityOptions}
+                  onChange={(city) => setForm({ ...form, city })}
                 />
               </div>
               <div className="space-y-1.5">

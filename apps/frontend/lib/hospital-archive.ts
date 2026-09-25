@@ -179,21 +179,21 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
 /** 看板默认列（关键指标，适配窄侧栏） */
 export const DASHBOARD_PRIMARY_COLUMNS: ArchiveFieldKey[] = [
   "customerName",
-  "region",
-  "model",
-  "matchingRate",
-  "mindraySampleVolume",
+  "customerLevel",
+  "mindrayReagentCount",
+  "mindrayProjects",
 ];
 
 /** 展开后追加列 */
 export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
+  "region",
   "branchOffice",
-  "customerLevel",
+  "model",
+  "matchingRate",
+  "mindraySampleVolume",
   "totalSampleVolume",
   "projectCount",
-  "mindrayReagentCount",
   "contactName",
-  "mindrayProjects",
 ];
 
 /** @deprecated 使用 PRIMARY + EXTRA */

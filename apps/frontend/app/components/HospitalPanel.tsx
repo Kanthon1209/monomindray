@@ -240,7 +240,9 @@ export function HospitalPanel({
                           className={cn(
                             "max-w-[160px] truncate px-3 py-3 text-sm",
                             key === "customerName" && "font-medium",
-                            (key === "matchingRate" ||
+                            key === "mindrayProjects" && "max-w-[220px]",
+                            (key === "mindrayReagentCount" ||
+                              key === "matchingRate" ||
                               key === "mindraySampleVolume" ||
                               key === "totalSampleVolume") &&
                               "tabular-nums text-muted-foreground",
