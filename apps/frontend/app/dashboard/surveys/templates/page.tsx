@@ -1013,7 +1013,7 @@ export default function SurveyTemplatesPage() {
                         ))}
                     </SelectGroup>
                     <SelectGroup>
-                      <SelectLabel>attributes</SelectLabel>
+                      <SelectLabel>属性</SelectLabel>
                       {hospitalAttrOptions
                         .filter((o) => o.value.startsWith("attributes."))
                         .map((opt) => (
@@ -1023,7 +1023,7 @@ export default function SurveyTemplatesPage() {
                         ))}
                     </SelectGroup>
                     <SelectGroup>
-                      <SelectLabel>metrics</SelectLabel>
+                      <SelectLabel>指标</SelectLabel>
                       {hospitalAttrOptions
                         .filter((o) => o.value.startsWith("metrics."))
                         .map((opt) => (
@@ -1033,16 +1033,16 @@ export default function SurveyTemplatesPage() {
                         ))}
                     </SelectGroup>
                     <SelectGroup>
-                      <SelectLabel>archive（过渡）</SelectLabel>
+                      <SelectLabel>档案扩展</SelectLabel>
                       {hospitalAttrOptions
                         .filter((o) => o.value.startsWith("archive."))
                         .map((opt) => (
                           <SelectItem key={opt.value} value={opt.value}>
-                            {opt.value}
+                            {opt.value.replace(/^archive\./, "")}
                           </SelectItem>
                         ))}
                       <SelectItem value={NEW_ARCHIVE_ATTR}>
-                        archive.（新建字段…）
+                        新建档案字段…
                       </SelectItem>
                     </SelectGroup>
                     {fieldDraft.attribute &&
@@ -1069,7 +1069,7 @@ export default function SurveyTemplatesPage() {
                         newArchiveKey: e.target.value.trim(),
                       }))
                     }
-                    placeholder="新字段名，如 customMetric"
+                    placeholder="字段名"
                   />
                 ) : null}
                 {resolveTarget(fieldDraft) ? (
