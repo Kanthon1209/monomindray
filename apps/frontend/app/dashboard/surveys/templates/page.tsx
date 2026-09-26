@@ -69,8 +69,21 @@ import {
   PageToolbar,
 } from "@/components/mobile-data-list";
 
-/** 映射实体：不映射 / 医院（后续可加 device 等） */
-type MapEntity = "none" | "hospital";
+/** 关联实体：不映射 / 医院写回 / 检测项目字典（写回医院开展项目） */
+type MapEntity = "none" | "hospital" | "assay";
+
+const ASSAY_WRITE_OPTIONS = [
+  {
+    value: "mindrayProjects",
+    label: "迈瑞开展项目",
+    target: "hospital.archive.mindrayProjects",
+  },
+  {
+    value: "newProjects",
+    label: "主导新增项目",
+    target: "hospital.archive.newProjects",
+  },
+] as const;
 
 const NEW_ARCHIVE_ATTR = "__new_archive__";
 
@@ -180,6 +193,19 @@ function draftFromField(field: SurveyField): FieldDraft {
   base.defaultValue = field.default || "";
   base.locked = !!field.locked;
 
+  const assayOpt = ASSAY_WRITE_OPTIONS.find((o) => o.target === target);
+  if (
+    field.optionsSource === "assay_projects" ||
+    assayOpt ||
+    field.key === "mindrayProjects" ||
+    field.key === "newProjects"
+  ) {
+    base.mapEntity = "assay";
+    base.type = "string_array";
+    base.attribute = assayOpt?.value || field.key || "mindrayProjects";
+    return base;
+  }
+
   if (!target) {
     base.mapEntity = "none";
     return base;
@@ -212,13 +238,16 @@ function draftFromField(field: SurveyField): FieldDraft {
     base.attribute = target.slice("hospital.".length);
     return base;
   }
-  // 无法识别：当模板专用
   base.mapEntity = "none";
   return base;
 }
 
 function resolveTarget(draft: FieldDraft): string | undefined {
   if (draft.mapEntity === "none") return undefined;
+  if (draft.mapEntity === "assay") {
+    const opt = ASSAY_WRITE_OPTIONS.find((o) => o.value === draft.attribute);
+    return opt?.target || ASSAY_WRITE_OPTIONS[0].target;
+  }
   if (draft.mapEntity === "hospital") {
     if (draft.attribute === NEW_ARCHIVE_ATTR) {
       const key = draft.newArchiveKey.trim();
@@ -448,24 +477,35 @@ export default function SurveyTemplatesPage() {
       if (fieldDraft.attribute === NEW_ARCHIVE_ATTR) {
         const archiveKey = fieldDraft.newArchiveKey.trim();
         if (!archiveKey) {
-          setError("请填写新的 archive 字段名");
+          setError("请填写新的档案字段名");
           return;
         }
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(archiveKey)) {
-          setError("archive 字段名仅允许字母、数字、下划线，且不能以数字开头");
+          setError("档案字段名仅允许字母、数字、下划线，且不能以数字开头");
           return;
         }
       }
     }
+    if (fieldDraft.mapEntity === "assay" && !fieldDraft.attribute) {
+      setError("请选择写入的项目字段");
+      return;
+    }
 
     const schema = normalizeSchema(template.schema);
+    const fieldType =
+      fieldDraft.mapEntity === "assay"
+        ? "string_array"
+        : fieldDraft.type || "text";
     const nextField: SurveyField = {
       key,
       label,
       section,
       required: fieldDraft.required,
-      type: fieldDraft.type || "text",
+      type: fieldType,
       ...(target ? { target } : {}),
+      ...(fieldDraft.mapEntity === "assay"
+        ? { optionsSource: "assay_projects" as const }
+        : {}),
       ...(fieldDraft.defaultValue.trim()
         ? { default: fieldDraft.defaultValue.trim() }
         : {}),
@@ -946,8 +986,15 @@ export default function SurveyTemplatesPage() {
               <div className="space-y-2">
                 <Label>类型</Label>
                 <Select
-                  value={fieldDraft.type}
-                  onValueChange={(v) => setFieldDraft((d) => ({ ...d, type: v }))}
+                  value={
+                    fieldDraft.mapEntity === "assay"
+                      ? "string_array"
+                      : fieldDraft.type
+                  }
+                  onValueChange={(v) =>
+                    setFieldDraft((d) => ({ ...d, type: v }))
+                  }
+                  disabled={fieldDraft.mapEntity === "assay"}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -966,12 +1013,32 @@ export default function SurveyTemplatesPage() {
               <Select
                 value={fieldDraft.mapEntity}
                 onValueChange={(v) =>
-                  setFieldDraft((d) => ({
-                    ...d,
-                    mapEntity: v as MapEntity,
-                    attribute: v === "hospital" ? d.attribute || "name" : "",
-                    newArchiveKey: v === "hospital" ? d.newArchiveKey : "",
-                  }))
+                  setFieldDraft((d) => {
+                    const entity = v as MapEntity;
+                    if (entity === "assay") {
+                      return {
+                        ...d,
+                        mapEntity: "assay",
+                        type: "string_array",
+                        attribute: d.attribute === "newProjects" ? "newProjects" : "mindrayProjects",
+                        newArchiveKey: "",
+                      };
+                    }
+                    if (entity === "hospital") {
+                      return {
+                        ...d,
+                        mapEntity: "hospital",
+                        attribute: d.attribute || "name",
+                        newArchiveKey: d.newArchiveKey,
+                      };
+                    }
+                    return {
+                      ...d,
+                      mapEntity: "none",
+                      attribute: "",
+                      newArchiveKey: "",
+                    };
+                  })
                 }
               >
                 <SelectTrigger>
@@ -980,9 +1047,45 @@ export default function SurveyTemplatesPage() {
                 <SelectContent>
                   <SelectItem value="none">不映射</SelectItem>
                   <SelectItem value="hospital">医院</SelectItem>
+                  <SelectItem value="assay">检测项目</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {fieldDraft.mapEntity === "assay" ? (
+              <div className="space-y-2">
+                <Label>写入位置</Label>
+                <Select
+                  value={fieldDraft.attribute || "mindrayProjects"}
+                  onValueChange={(v) =>
+                    setFieldDraft((d) => ({
+                      ...d,
+                      mapEntity: "assay",
+                      type: "string_array",
+                      attribute: v,
+                      key:
+                        fieldMode === "create" && (!d.key || d.key === "mindrayProjects" || d.key === "newProjects")
+                          ? v
+                          : d.key,
+                      label:
+                        fieldMode === "create" && (!d.label || d.label === "迈瑞开展项目" || d.label === "主导新增项目")
+                          ? ASSAY_WRITE_OPTIONS.find((o) => o.value === v)?.label || d.label
+                          : d.label,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASSAY_WRITE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             {fieldDraft.mapEntity === "hospital" ? (
               <div className="space-y-2">
                 <Label>实体属性</Label>

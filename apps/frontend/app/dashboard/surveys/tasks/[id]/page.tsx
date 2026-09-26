@@ -36,6 +36,18 @@ import {
 const LEVEL_OPTIONS = ["三级甲等", "三级乙等", "二级甲等", "二级乙等", "一级"];
 const TYPE_OPTIONS = ["综合医院", "专科医院", "中医医院", "妇幼保健院"];
 
+function usesAssayDictionary(field: SurveyField): boolean {
+  if (field.optionsSource === "assay_projects") return true;
+  const t = field.target || "";
+  if (
+    t === "hospital.archive.mindrayProjects" ||
+    t === "hospital.archive.newProjects"
+  ) {
+    return true;
+  }
+  return field.key === "mindrayProjects" || field.key === "newProjects";
+}
+
 function groupBySection(fields: SurveyField[]) {
   const map = new Map<string, SurveyField[]>();
   for (const f of fields) {
@@ -74,15 +86,14 @@ export default function SurveyTaskFillPage() {
     if (!id) return;
     setLoading(true);
     setError(null);
-    const [res, assayRes] = await Promise.all([
-      getMySurveyAssignment(id),
-      listAssayProjectOptions(),
-    ]);
-    if (assayRes.items?.length) setAssayOptions(assayRes.items);
+    const res = await getMySurveyAssignment(id);
     if (res.error) {
       setError(res.error);
       setAssignment(null);
-    } else if (res.assignment) {
+      setLoading(false);
+      return;
+    }
+    if (res.assignment) {
       setAssignment(res.assignment);
       const next = { ...(res.assignment.answers || {}) };
       const hasDevicesRepeat = (res.assignment.schema?.fields || []).some(
@@ -90,6 +101,17 @@ export default function SurveyTaskFillPage() {
       );
       if (hasDevicesRepeat && !Array.isArray(next.devices)) next.devices = [];
       setAnswers(next);
+
+      const needAssay = (res.assignment.schema?.fields || []).some((f) =>
+        usesAssayDictionary(f),
+      );
+      if (needAssay) {
+        const assayRes = await listAssayProjectOptions();
+        if (assayRes.items?.length) setAssayOptions(assayRes.items);
+        else setAssayOptions([]);
+      } else {
+        setAssayOptions([]);
+      }
     }
     setLoading(false);
   }, [id]);
@@ -211,10 +233,11 @@ export default function SurveyTaskFillPage() {
       return (
         <AssayMultiSelect
           value={arr}
-          options={assayOptions}
+          options={usesAssayDictionary(field) ? assayOptions : []}
           onChange={onChange}
           disabled={disabled}
           placeholder="输入内容"
+          allowCustom
         />
       );
     }

@@ -356,6 +356,8 @@ export interface SurveyField {
   required?: boolean;
   type?: string;
   target?: string;
+  /** 填写时下拉/联想数据源；未设置则纯手工录入 */
+  optionsSource?: "assay_projects";
   default?: string;
   locked?: boolean;
   itemLabel?: string;
