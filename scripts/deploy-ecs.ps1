@@ -169,6 +169,7 @@ $remoteLines = @(
   "if [ -f deploy/artifacts/mindray-api ]; then chmod +x deploy/artifacts/mindray-api; fi",
   "chmod +x scripts/goose-up.sh",
   "mkdir -p deploy/pgadmin",
+  # Values with commas/spaces in deploy/.env MUST be double-quoted (e.g. SITE_ADDRESS="a, b").
   'set -a; . <(sed ''s/\r$//'' deploy/.env); set +a',
   'printf ''%s\n'' "postgres:5432:${DB_NAME:-mindray}:${DB_USER:-mindray}:${DB_PASSWORD:-mindray_secret}" > deploy/pgadmin/pgpass',
   # pgAdmin runs as uid 5050; PassFile must be readable by that user
