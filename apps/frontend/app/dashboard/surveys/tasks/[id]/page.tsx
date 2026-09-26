@@ -214,7 +214,7 @@ export default function SurveyTaskFillPage() {
           options={assayOptions}
           onChange={onChange}
           disabled={disabled}
-          placeholder="填写一项，点「添加一项」继续"
+          placeholder="输入内容"
         />
       );
     }

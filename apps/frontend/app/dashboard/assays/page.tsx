@@ -191,8 +191,7 @@ export default function AssayProjectsPage() {
               <div>
                 <CardTitle>检测项目</CardTitle>
                 <CardDescription>
-                  维护项目字典与所属公司。自有/竞品由公司名自动判断（迈瑞 /
-                  Mindray = 自有），当前共 {total} 项。
+                  当前共 {total} 项。
                 </CardDescription>
               </div>
             </div>

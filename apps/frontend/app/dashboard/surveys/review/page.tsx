@@ -104,8 +104,7 @@ export default function SurveyReviewPage() {
               <div>
                 <CardTitle>答卷审核</CardTitle>
                 <CardDescription>
-                  审核采集员提交的问卷。待审 {total}{" "}
-                  份。通过后将写入医院主数据并出现在看板。
+                  审核采集员提交的问卷。待审 {total} 份。
                 </CardDescription>
               </div>
             </div>

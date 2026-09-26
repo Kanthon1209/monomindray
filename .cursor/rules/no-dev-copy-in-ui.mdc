@@ -1,0 +1,15 @@
+---
+description: Never put agent/dev guidance copy into user-facing UI
+alwaysApply: true
+---
+
+# UI copy: no internal guidance
+
+Do **not** put prompts, implementation notes, or agent guidance into the product UI.
+
+Forbidden in labels, descriptions, placeholders, helper text, toasts, empty states:
+- How the system works internally (`archive.xxx`, `devices[]`, `answers`, schema, reserved keys)
+- Tips that teach the developer/agent workflow (“建议改用…”, “将渲染为…”, “采集员填写时…”)
+- Architecture warnings meant for maintainers
+
+UI copy should be short business language only. Keep technical notes in code comments, rules, or specs—not on screen.

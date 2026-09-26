@@ -825,9 +825,7 @@ export default function SurveyTemplatesPage() {
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
           <DialogHeader className="border-b px-5 py-4">
             <DialogTitle>新建模板</DialogTitle>
-            <DialogDescription>
-              创建后可展开模板，用加号添加分组与字段。
-            </DialogDescription>
+            <DialogDescription className="sr-only">新建问卷模板</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-5 py-4">
             <div className="space-y-2">
@@ -890,8 +888,8 @@ export default function SurveyTemplatesPage() {
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
           <DialogHeader className="border-b px-5 py-4">
             <DialogTitle>{fieldMode === "edit" ? "编辑字段" : "新建字段"}</DialogTitle>
-            <DialogDescription>
-              先选映射实体，再选数据库字段（列名或 archive.xxx）；也可不映射，作为模板专用采集项。
+            <DialogDescription className="sr-only">
+              配置问卷字段
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-5 py-4">
@@ -924,20 +922,6 @@ export default function SurveyTemplatesPage() {
                   placeholder="例如：name"
                   className="font-mono"
                 />
-                {fieldDraft.key === "devices" &&
-                fieldDraft.type !== "repeat" &&
-                fieldDraft.type !== "string_array" ? (
-                  <p className="text-xs text-amber-700">
-                    key「devices」保留给设备装机列表（repeat）或多选数组；当前类型可能导致填写页异常。
-                  </p>
-                ) : null}
-                {fieldDraft.key === "devices" &&
-                fieldDraft.type === "string_array" ? (
-                  <p className="text-xs text-muted-foreground">
-                    将渲染为项目多选。建议改用其它 key（如 installedAssays），避免与装机列表保留字
-                    devices 混淆。
-                  </p>
-                ) : null}
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -972,20 +956,13 @@ export default function SurveyTemplatesPage() {
                     <SelectItem value="text">文本</SelectItem>
                     <SelectItem value="number">数字</SelectItem>
                     <SelectItem value="date">日期</SelectItem>
-                    <SelectItem value="string_array">
-                      数组（多选检测项目）
-                    </SelectItem>
+                    <SelectItem value="string_array">数组</SelectItem>
                   </SelectContent>
                 </Select>
-                {fieldDraft.type === "string_array" ? (
-                  <p className="text-xs text-muted-foreground">
-                    采集员填写时每项单独一行，可点「添加一项」继续录入；检测项目类字段仍可从字典联想。
-                  </p>
-                ) : null}
               </div>
             </div>
             <div className="space-y-2">
-              <Label>写入目标</Label>
+              <Label>关联数据</Label>
               <Select
                 value={fieldDraft.mapEntity}
                 onValueChange={(v) =>
@@ -1001,13 +978,10 @@ export default function SurveyTemplatesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">不映射（模板专用）</SelectItem>
-                  <SelectItem value="hospital">hospital（医院）</SelectItem>
+                  <SelectItem value="none">不映射</SelectItem>
+                  <SelectItem value="hospital">医院</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                先选实体；不映射则仅存在于本模板答卷中。设备装机请用 devices[] 层级模板。
-              </p>
             </div>
             {fieldDraft.mapEntity === "hospital" ? (
               <div className="space-y-2">
@@ -1104,11 +1078,7 @@ export default function SurveyTemplatesPage() {
                   </p>
                 ) : null}
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                当前字段不会写入 hospitals / archive，仅保存在提交的 answers 里。
-              </p>
-            )}
+            ) : null}
             <div className="space-y-2">
               <Label>默认值（可选）</Label>
               <Input
@@ -1116,7 +1086,7 @@ export default function SurveyTemplatesPage() {
                 onChange={(e) =>
                   setFieldDraft((d) => ({ ...d, defaultValue: e.target.value }))
                 }
-                placeholder="采集员打开表单时的预填值"
+                placeholder="可选"
               />
             </div>
             <div className="flex flex-wrap gap-4">
@@ -1176,7 +1146,7 @@ export default function SurveyTemplatesPage() {
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
           <DialogHeader className="border-b px-5 py-4">
             <DialogTitle>{renamingSection ? "重命名分组" : "新建分组"}</DialogTitle>
-            <DialogDescription>分组用于在采集表单中归类字段。</DialogDescription>
+            <DialogDescription className="sr-only">编辑分组名称</DialogDescription>
           </DialogHeader>
           <div className="space-y-2 px-5 py-4">
             <Label>分组名称</Label>
