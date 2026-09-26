@@ -161,6 +161,12 @@ export default function SurveyCampaignsPage() {
       setError("请填写标题、选择模板、采集员，并至少选择一家医院");
       return;
     }
+    const selectedTpl = templates.find((t) => t.id === templateId);
+    const fieldCount = selectedTpl?.schema?.fields?.length ?? 0;
+    if (fieldCount === 0) {
+      setError("所选模板没有字段，请先在「问卷模板」中添加字段");
+      return;
+    }
     setSaving(true);
     setError(null);
     let dueAtIso: string | undefined;
@@ -280,11 +286,14 @@ export default function SurveyCampaignsPage() {
                       <SelectValue placeholder="选择模板" />
                     </SelectTrigger>
                     <SelectContent>
-                      {templates.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.title} ({t.code})
-                        </SelectItem>
-                      ))}
+                      {templates.map((t) => {
+                        const n = t.schema?.fields?.length ?? 0;
+                        return (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.title}（{t.code} · {n} 字段）
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>

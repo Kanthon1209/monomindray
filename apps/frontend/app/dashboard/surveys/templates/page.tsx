@@ -924,6 +924,20 @@ export default function SurveyTemplatesPage() {
                   placeholder="例如：name"
                   className="font-mono"
                 />
+                {fieldDraft.key === "devices" &&
+                fieldDraft.type !== "repeat" &&
+                fieldDraft.type !== "string_array" ? (
+                  <p className="text-xs text-amber-700">
+                    key「devices」保留给设备装机列表（repeat）或多选数组；当前类型可能导致填写页异常。
+                  </p>
+                ) : null}
+                {fieldDraft.key === "devices" &&
+                fieldDraft.type === "string_array" ? (
+                  <p className="text-xs text-muted-foreground">
+                    将渲染为项目多选。建议改用其它 key（如 installedAssays），避免与装机列表保留字
+                    devices 混淆。
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">

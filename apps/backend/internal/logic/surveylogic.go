@@ -147,6 +147,7 @@ func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRe
 		Fields []struct {
 			Key   string `json:"key"`
 			Label string `json:"label"`
+			Type  string `json:"type"`
 		} `json:"fields"`
 	}
 	if err := json.Unmarshal(schemaBytes, &parsed); err != nil {
@@ -163,6 +164,10 @@ func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRe
 			return nil, NewCodeError(400, "字段 key 重复："+key)
 		}
 		seen[key] = struct{}{}
+		if key == "devices" && !strings.EqualFold(strings.TrimSpace(f.Type), "repeat") &&
+			!strings.EqualFold(strings.TrimSpace(f.Type), "string_array") {
+			return nil, NewCodeError(400, "字段 key「devices」仅可用于「可重复组(repeat)」或「多选数组(string_array)」")
+		}
 	}
 
 	status := strings.TrimSpace(req.Status)
@@ -218,6 +223,9 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 	if tpl == nil || tpl.Status != "active" {
 		return nil, NewCodeError(400, "模板不可用")
 	}
+	if len(schemaFieldKeySet(tpl.Schema)) == 0 {
+		return nil, NewCodeError(400, "模板没有字段，请先在模板中添加字段再发放")
+	}
 
 	u, err := l.svcCtx.UserModel.FindById(l.ctx, assigneeID)
 	if err != nil {
@@ -261,7 +269,7 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 		specs = append(specs, model.SurveyAssignmentSpec{
 			AssigneeID: assigneeID,
 			HospitalID: hid,
-			Prefill:    hospitalPrefillAnswers(h),
+			Prefill:    filterPrefillBySchema(tpl.Schema, hospitalPrefillAnswers(h)),
 		})
 	}
 
@@ -389,6 +397,7 @@ func (l *SurveyLogic) GetMyAssignment(id int64) (*types.SurveyAssignmentResponse
 	answers = mergePrefillAnswers(a.Schema, a.CampaignDefaults, answers)
 	locked := effectiveLockedKeys(a.Schema, a.LockedKeys)
 	answers = applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, answers)
+	answers = pruneAnswersToSchema(a.Schema, answers)
 	info := toSurveyAssignmentInfo(a, answers, note)
 	info.LockedKeys = locked
 	return &types.SurveyAssignmentResponse{Assignment: info}, nil
@@ -404,6 +413,7 @@ func (l *SurveyLogic) SaveDraft(id int64, req *types.SaveSurveyAnswersRequest) (
 		return nil, err
 	}
 	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, normalizeAnswers(req.Answers))
+	answers = pruneAnswersToSchema(a.Schema, answers)
 	hid := req.HospitalId
 	if hid == nil {
 		hid = a.HospitalId
@@ -432,6 +442,7 @@ func (l *SurveyLogic) Submit(id int64, req *types.SaveSurveyAnswersRequest) (*ty
 		return nil, NewCodeError(400, "该发放已关闭，无法提交")
 	}
 	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, normalizeAnswers(req.Answers))
+	answers = pruneAnswersToSchema(a.Schema, answers)
 	if err := validateRequiredAnswers(a.Schema, answers); err != nil {
 		return nil, err
 	}
@@ -1088,7 +1099,6 @@ func hospitalPrefillAnswers(h *model.Hospital) map[string]any {
 		"city":     h.City,
 		"level":    h.Level,
 		"type":     h.Type,
-		"devices":  []any{},
 	}
 	if h.District != "" {
 		out["district"] = h.District
@@ -1101,6 +1111,47 @@ func hospitalPrefillAnswers(h *model.Hospital) map[string]any {
 			if v := archiveString(h.Archive, k); v != "" {
 				out[k] = v
 			}
+		}
+	}
+	return out
+}
+
+// filterPrefillBySchema keeps only keys declared in the template schema.
+// devices[] is injected only when the schema has a repeat field named "devices".
+func filterPrefillBySchema(schemaJSON json.RawMessage, prefill map[string]any) map[string]any {
+	keys := schemaFieldKeySet(schemaJSON)
+	out := map[string]any{}
+	if len(keys) == 0 {
+		// No fields declared: do not dump hospital columns into answers.
+		if schemaHasDevicesRepeat(schemaJSON) {
+			out["devices"] = []any{}
+		}
+		return out
+	}
+	for k, v := range prefill {
+		if _, ok := keys[k]; ok {
+			out[k] = v
+		}
+	}
+	if schemaHasDevicesRepeat(schemaJSON) {
+		if _, ok := out["devices"]; !ok {
+			out["devices"] = []any{}
+		}
+	}
+	return out
+}
+
+// pruneAnswersToSchema drops answer keys that are not part of the template schema,
+// so collectors / review UI never see hospital-prefill leftovers from other templates.
+func pruneAnswersToSchema(schemaJSON json.RawMessage, answers map[string]any) map[string]any {
+	keys := schemaFieldKeySet(schemaJSON)
+	if len(keys) == 0 {
+		return map[string]any{}
+	}
+	out := map[string]any{}
+	for k, v := range answers {
+		if _, ok := keys[k]; ok {
+			out[k] = v
 		}
 	}
 	return out
@@ -1233,6 +1284,7 @@ func uniqueStrings(vals []string) []string {
 
 type schemaFieldMeta struct {
 	Key     string `json:"key"`
+	Type    string `json:"type"`
 	Default string `json:"default"`
 	Locked  bool   `json:"locked"`
 }
@@ -1245,6 +1297,27 @@ func parseSchemaFields(schemaJSON json.RawMessage) []schemaFieldMeta {
 		_ = json.Unmarshal(schemaJSON, &schema)
 	}
 	return schema.Fields
+}
+
+func schemaFieldKeySet(schemaJSON json.RawMessage) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, f := range parseSchemaFields(schemaJSON) {
+		k := strings.TrimSpace(f.Key)
+		if k != "" {
+			out[k] = struct{}{}
+		}
+	}
+	return out
+}
+
+func schemaHasDevicesRepeat(schemaJSON json.RawMessage) bool {
+	for _, f := range parseSchemaFields(schemaJSON) {
+		if strings.EqualFold(strings.TrimSpace(f.Type), "repeat") &&
+			strings.TrimSpace(f.Key) == "devices" {
+			return true
+		}
+	}
+	return false
 }
 
 func mergeTemplateDefaults(schemaJSON json.RawMessage, campaignDefaults map[string]string) map[string]string {
@@ -1299,8 +1372,10 @@ func mergePrefillAnswers(schemaJSON json.RawMessage, campaignDefaults map[string
 	for k, v := range saved {
 		out[k] = v
 	}
-	if _, ok := out["devices"]; !ok {
-		out["devices"] = []any{}
+	if schemaHasDevicesRepeat(schemaJSON) {
+		if _, ok := out["devices"]; !ok {
+			out["devices"] = []any{}
+		}
 	}
 	return out
 }

@@ -1,0 +1,14 @@
+---
+description: After finishing code changes, commit and ECS sync without asking
+alwaysApply: true
+---
+
+# Commit + sync after changes
+
+When a task's code/config changes are finished (bugfix, feature, deploy tweak):
+
+1. **Commit** locally with a concise message (follow the repo commit protocol). Do **not** ask whether to commit.
+2. **Sync** by running `scripts/deploy-ecs.ps1` to ECS. Do **not** ask whether to sync.
+3. Still do **not** `git push` unless the user explicitly says **push**.
+
+Skip commit/sync only when there were no file changes, or the user only asked a question / review with no edits.

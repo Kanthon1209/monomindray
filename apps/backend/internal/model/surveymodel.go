@@ -291,9 +291,8 @@ func (m *surveyModel) CreateCampaignWithAssignments(ctx context.Context, c *Surv
 		for k, v := range spec.Prefill {
 			prefill[k] = v
 		}
-		if _, ok := prefill["devices"]; !ok {
-			prefill["devices"] = []any{}
-		}
+		// devices[] is only seeded by the caller when the template schema
+		// declares a repeat field named "devices" — do not force-inject here.
 		answersJSON, err := json.Marshal(prefill)
 		if err != nil {
 			return 0, err

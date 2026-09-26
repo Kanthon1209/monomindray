@@ -85,7 +85,10 @@ export default function SurveyTaskFillPage() {
     } else if (res.assignment) {
       setAssignment(res.assignment);
       const next = { ...(res.assignment.answers || {}) };
-      if (!Array.isArray(next.devices)) next.devices = [];
+      const hasDevicesRepeat = (res.assignment.schema?.fields || []).some(
+        (f) => f.type === "repeat" && f.key === "devices",
+      );
+      if (hasDevicesRepeat && !Array.isArray(next.devices)) next.devices = [];
       setAnswers(next);
     }
     setLoading(false);
@@ -104,7 +107,7 @@ export default function SurveyTaskFillPage() {
     [assignment],
   );
   const sections = useMemo(() => groupBySection(flatFields), [flatFields]);
-  const devicesField = repeatFields.find((f) => f.key === "devices") || repeatFields[0];
+  const devicesField = repeatFields.find((f) => f.key === "devices") || null;
 
   const readOnly = assignment?.status === "submitted";
   const lockedSet = useMemo(
@@ -117,9 +120,13 @@ export default function SurveyTaskFillPage() {
     setAnswers((prev) => ({ ...prev, [key]: value }));
   };
 
-  const devices: Record<string, any>[] = Array.isArray(answers.devices)
-    ? answers.devices
-    : [];
+  const devices: Record<string, any>[] =
+    devicesField && Array.isArray(answers.devices)
+      ? answers.devices.filter(
+          (row): row is Record<string, any> =>
+            row != null && typeof row === "object" && !Array.isArray(row),
+        )
+      : [];
 
   const setDeviceField = (index: number, key: string, value: any) => {
     setAnswers((prev) => {

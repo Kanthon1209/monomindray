@@ -26,20 +26,19 @@
 }
 
 {$SITE_ADDRESS::80} {
-	tls {
-		issuer acme {
-			# classic chain ends at ISRG Root X1, which Android 8+ trusts.
-			# The default YE1/Root YE chain resets the handshake on many phones.
-			profile classic
-		}
-	}
 	import app
 }
 
-# http://IP → https://domain (keep ACME challenge path reachable for IP cert)
+# http://IP → https://domain, except /api (phones often get TCP reset on 443)
 http://{$REDIRECT_IP:127.0.0.2} {
-	@not_acme not path /.well-known/acme-challenge/*
-	redir @not_acme https://{$CANONICAL_HOST:localhost}{uri} 302
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+	@to_https {
+		not path /.well-known/acme-challenge/*
+		not path /api/*
+	}
+	redir @to_https https://{$CANONICAL_HOST:localhost}{uri} 302
 }
 
 # https://IP → https://domain
