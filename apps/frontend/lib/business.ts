@@ -702,3 +702,110 @@ export async function rejectSurveySubmission(id: string, note: string) {
   return { submission: mapSubmission(data!.submission) };
 }
 
+// ---- assay projects (检测项目字典) ----
+
+export type AssayOwnership = "own" | "competitor";
+
+export interface AssayProject {
+  id: string;
+  code?: string;
+  name: string;
+  lineCategory?: string;
+  company?: string;
+  aliases: string[];
+  ownership: AssayOwnership;
+  status: string;
+  usageCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+function mapAssayProject(raw: any): AssayProject {
+  return {
+    id: String(raw.id),
+    code: raw.code || undefined,
+    name: raw.name,
+    lineCategory: raw.lineCategory || undefined,
+    company: raw.company || undefined,
+    aliases: Array.isArray(raw.aliases) ? raw.aliases : [],
+    ownership: raw.ownership === "own" ? "own" : "competitor",
+    status: raw.status || "active",
+    usageCount: raw.usageCount ?? 0,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+  };
+}
+
+export async function listAssayProjects(params?: {
+  keyword?: string;
+  company?: string;
+  line?: string;
+  status?: string;
+  ownership?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const { data, error } = await apiFetch<{
+    total: number;
+    items: any[];
+    companies: string[];
+  }>(
+    `/assay-projects${qs({
+      keyword: params?.keyword,
+      company: params?.company,
+      line: params?.line,
+      status: params?.status,
+      ownership: params?.ownership,
+      page: params?.page ?? 1,
+      pageSize: params?.pageSize ?? 100,
+    })}`,
+  );
+  if (error) {
+    return { error, items: [] as AssayProject[], total: 0, companies: [] as string[] };
+  }
+  return {
+    items: (data?.items || []).map(mapAssayProject),
+    total: data?.total || 0,
+    companies: data?.companies || [],
+  };
+}
+
+export async function createAssayProject(payload: {
+  code?: string;
+  name: string;
+  lineCategory?: string;
+  company?: string;
+  aliases?: string[];
+  status?: string;
+}) {
+  const { data, error } = await apiFetch<{ project: any }>("/assay-projects", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (error) return { error };
+  return { project: mapAssayProject(data!.project) };
+}
+
+export async function updateAssayProject(
+  id: string,
+  payload: {
+    code?: string;
+    name: string;
+    lineCategory?: string;
+    company?: string;
+    aliases?: string[];
+    status?: string;
+  },
+) {
+  const { data, error } = await apiFetch<{ project: any }>(`/assay-projects/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  if (error) return { error };
+  return { project: mapAssayProject(data!.project) };
+}
+
+export async function deleteAssayProject(id: string) {
+  return apiFetch<void>(`/assay-projects/${id}`, { method: "DELETE" });
+}
+

@@ -19,6 +19,7 @@ import {
   Inbox,
   LayoutTemplate,
   Cpu,
+  FlaskConical,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -65,6 +66,7 @@ const navItems = [
   { title: "医院管理", href: "/dashboard/hospitals", icon: Hospital },
   { title: "设备管理", href: "/dashboard/devices", icon: Cpu },
   { title: "客户管理", href: "/dashboard/customers", icon: Users },
+  { title: "检测项目", href: "/dashboard/assays", icon: FlaskConical },
   { title: "系统设置", href: "/dashboard/settings", icon: Settings },
 ];
 
@@ -137,7 +139,7 @@ function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {admin
-                ? navItems.slice(0, 4).map((item) => {
+                ? navItems.slice(0, 5).map((item) => {
                     const isActive =
                       item.href === "/dashboard"
                         ? pathname === "/dashboard"
@@ -244,7 +246,7 @@ function AppSidebar() {
                 </SidebarMenuItem>
               ) : null}
 
-              {navItems.slice(4).map((item) => {
+              {navItems.slice(5).map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (
                   <SidebarMenuItem key={item.href}>

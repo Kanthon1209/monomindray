@@ -57,6 +57,12 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPut, Path: "/api/v1/customers/:id", Handler: UpdateCustomerHandler(svcCtx)},
 		{Method: http.MethodDelete, Path: "/api/v1/customers/:id", Handler: DeleteCustomerHandler(svcCtx)},
 
+		{Method: http.MethodGet, Path: "/api/v1/assay-projects", Handler: ListAssayProjectsHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/assay-projects", Handler: CreateAssayProjectHandler(svcCtx)},
+		{Method: http.MethodGet, Path: "/api/v1/assay-projects/:id", Handler: GetAssayProjectHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/api/v1/assay-projects/:id", Handler: UpdateAssayProjectHandler(svcCtx)},
+		{Method: http.MethodDelete, Path: "/api/v1/assay-projects/:id", Handler: DeleteAssayProjectHandler(svcCtx)},
+
 		{Method: http.MethodGet, Path: "/api/v1/surveys/templates", Handler: ListSurveyTemplatesHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/surveys/templates", Handler: CreateSurveyTemplateHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/api/v1/surveys/templates/:id", Handler: GetSurveyTemplateHandler(svcCtx)},

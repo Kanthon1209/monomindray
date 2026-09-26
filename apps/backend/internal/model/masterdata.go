@@ -15,10 +15,17 @@ type MasterDataModel interface {
 	UpsertAttributes(ctx context.Context, hospitalID int64, attrs map[string]string) error
 	ListAttributes(ctx context.Context, hospitalID int64) (map[string]string, error)
 
-	EnsureAssayProject(ctx context.Context, name, line string, ownMenu bool) (int64, error)
+	EnsureAssayProject(ctx context.Context, name, line, company string) (int64, error)
 	ReplaceOwnAssays(ctx context.Context, hospitalID int64, names []string, flagNew bool) error
 	UpsertAssayRow(ctx context.Context, hospitalID int64, projectName, source, brand, instrument string, flags []string) error
 	SyncAssaysFromArchive(ctx context.Context, hospitalID int64, archive map[string]any) error
+
+	ListAssayProjects(ctx context.Context, f AssayProjectFilter) ([]AssayProject, int64, error)
+	GetAssayProject(ctx context.Context, id int64) (*AssayProject, error)
+	CreateAssayProject(ctx context.Context, in AssayProjectInput) (*AssayProject, error)
+	UpdateAssayProject(ctx context.Context, id int64, in AssayProjectInput) (*AssayProject, error)
+	DeleteAssayProject(ctx context.Context, id int64) error
+	ListAssayCompanies(ctx context.Context) ([]string, error)
 
 	EnsureSupplier(ctx context.Context, name string) (int64, error)
 	UpsertSupply(ctx context.Context, hospitalID int64, supplierName, role, brand, line, remark string) error
@@ -79,19 +86,29 @@ func (m *masterDataModel) ListAttributes(ctx context.Context, hospitalID int64) 
 	return out, rows.Err()
 }
 
-func (m *masterDataModel) EnsureAssayProject(ctx context.Context, name, line string, ownMenu bool) (int64, error) {
+func (m *masterDataModel) EnsureAssayProject(ctx context.Context, name, line, company string) (int64, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return 0, nil
 	}
+	company = strings.TrimSpace(company)
+	own := IsOwnCompany(company)
 	var id int64
 	err := m.conn.QueryRow(ctx, `
-		INSERT INTO assay_projects (name, line_category, is_own_menu, updated_at)
-		VALUES ($1,$2,$3,NOW())
+		INSERT INTO assay_projects (name, line_category, company, is_own_menu, updated_at)
+		VALUES ($1,$2,$3,$4,NOW())
 		ON CONFLICT (name) DO UPDATE SET
 			line_category = CASE WHEN EXCLUDED.line_category <> '' THEN EXCLUDED.line_category ELSE assay_projects.line_category END,
+			company = CASE
+				WHEN assay_projects.company = '' AND EXCLUDED.company <> '' THEN EXCLUDED.company
+				ELSE assay_projects.company
+			END,
+			is_own_menu = CASE
+				WHEN assay_projects.company = '' AND EXCLUDED.company <> '' THEN EXCLUDED.is_own_menu
+				ELSE (LOWER(assay_projects.company) LIKE '%mindray%' OR assay_projects.company = '迈瑞' OR assay_projects.company LIKE '迈瑞%')
+			END,
 			updated_at = NOW()
-		RETURNING id`, name, strings.TrimSpace(line), ownMenu).Scan(&id)
+		RETURNING id`, name, strings.TrimSpace(line), company, own).Scan(&id)
 	return id, err
 }
 
@@ -103,8 +120,14 @@ func (m *masterDataModel) UpsertAssayRow(ctx context.Context, hospitalID int64, 
 	if source == "" {
 		source = "own"
 	}
-	own := source == "own"
-	pid, err := m.EnsureAssayProject(ctx, projectName, "", own)
+	company := ""
+	switch source {
+	case "own":
+		company = "迈瑞"
+	case "competitor":
+		company = strings.TrimSpace(brand)
+	}
+	pid, err := m.EnsureAssayProject(ctx, projectName, "", company)
 	if err != nil {
 		return err
 	}

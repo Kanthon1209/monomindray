@@ -354,4 +354,45 @@ type (
 	ReviewSurveySubmissionRequest struct {
 		Note string `json:"note,optional"`
 	}
+
+	// ---- assay projects (检测项目字典) ----
+	AssayProjectInfo struct {
+		Id           int64    `json:"id"`
+		Code         string   `json:"code,omitempty"`
+		Name         string   `json:"name"`
+		LineCategory string   `json:"lineCategory,omitempty"`
+		Company      string   `json:"company,omitempty"`
+		Aliases      []string `json:"aliases"`
+		// Ownership is derived from company (own=迈瑞/Mindray, else competitor); not a stored flag.
+		Ownership  string `json:"ownership"` // own | competitor
+		Status     string `json:"status"`
+		UsageCount int64  `json:"usageCount"`
+		CreatedAt  string `json:"createdAt,omitempty"`
+		UpdatedAt  string `json:"updatedAt,omitempty"`
+	}
+	ListAssayProjectsRequest struct {
+		Keyword  string `form:"keyword,optional"`
+		Company  string `form:"company,optional"`
+		Line     string `form:"line,optional"`
+		Status   string `form:"status,optional"`
+		Ownership string `form:"ownership,optional"` // own | competitor | all
+		Page     int    `form:"page,optional"`
+		PageSize int    `form:"pageSize,optional"`
+	}
+	ListAssayProjectsResponse struct {
+		Total     int64              `json:"total"`
+		Items     []AssayProjectInfo `json:"items"`
+		Companies []string           `json:"companies"`
+	}
+	AssayProjectUpsertRequest struct {
+		Code         string   `json:"code,optional"`
+		Name         string   `json:"name"`
+		LineCategory string   `json:"lineCategory,optional"`
+		Company      string   `json:"company,optional"`
+		Aliases      []string `json:"aliases,optional"`
+		Status       string   `json:"status,optional"`
+	}
+	AssayProjectResponse struct {
+		Project AssayProjectInfo `json:"project"`
+	}
 )
