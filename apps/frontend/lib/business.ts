@@ -809,3 +809,21 @@ export async function deleteAssayProject(id: string) {
   return apiFetch<void>(`/assay-projects/${id}`, { method: "DELETE" });
 }
 
+export async function listAssayProjectOptions() {
+  const { data, error } = await apiFetch<{ items: any[] }>("/assay-projects/options");
+  if (error) {
+    return {
+      error,
+      items: [] as { id: string; name: string; company?: string; ownership: string }[],
+    };
+  }
+  return {
+    items: (data?.items || []).map((raw) => ({
+      id: String(raw.id),
+      name: String(raw.name || ""),
+      company: raw.company || undefined,
+      ownership: raw.ownership === "own" ? "own" : "competitor",
+    })),
+  };
+}
+

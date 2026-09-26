@@ -395,4 +395,13 @@ type (
 	AssayProjectResponse struct {
 		Project AssayProjectInfo `json:"project"`
 	}
+	AssayProjectOption struct {
+		Id         int64  `json:"id"`
+		Name       string `json:"name"`
+		Company    string `json:"company,omitempty"`
+		Ownership  string `json:"ownership"`
+	}
+	ListAssayProjectOptionsResponse struct {
+		Items []AssayProjectOption `json:"items"`
+	}
 )

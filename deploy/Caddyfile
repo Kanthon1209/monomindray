@@ -26,6 +26,13 @@
 }
 
 {$SITE_ADDRESS::80} {
+	tls {
+		issuer acme {
+			# classic chain ends at ISRG Root X1, which Android 8+ trusts.
+			# The default YE1/Root YE chain resets the handshake on many phones.
+			profile classic
+		}
+	}
 	import app
 }
 

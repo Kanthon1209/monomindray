@@ -7,11 +7,13 @@ import { ArrowLeft, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
 
 import {
   getMySurveyAssignment,
+  listAssayProjectOptions,
   saveSurveyDraft,
   submitSurveyAssignment,
   type SurveyAssignment,
   type SurveyField,
 } from "@/lib/business";
+import { AssayMultiSelect } from "@/components/assay-multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +62,9 @@ export default function SurveyTaskFillPage() {
   const router = useRouter();
   const [assignment, setAssignment] = useState<SurveyAssignment | null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [assayOptions, setAssayOptions] = useState<
+    { id: string; name: string; company?: string; ownership: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +74,11 @@ export default function SurveyTaskFillPage() {
     if (!id) return;
     setLoading(true);
     setError(null);
-    const res = await getMySurveyAssignment(id);
+    const [res, assayRes] = await Promise.all([
+      getMySurveyAssignment(id),
+      listAssayProjectOptions(),
+    ]);
+    if (assayRes.items?.length) setAssayOptions(assayRes.items);
     if (res.error) {
       setError(res.error);
       setAssignment(null);
@@ -181,20 +190,24 @@ export default function SurveyTaskFillPage() {
     onChange: (v: any) => void,
     disabled: boolean,
   ) => {
-    if (field.type === "string_array") {
-      const text = Array.isArray(value) ? value.join("、") : String(value || "");
+    if (
+      field.type === "string_array" ||
+      field.key === "mindrayProjects" ||
+      field.key === "newProjects"
+    ) {
+      const arr = Array.isArray(value)
+        ? value.map(String).filter(Boolean)
+        : String(value || "")
+            .split(/[/、,，;；|+]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
       return (
-        <Input
-          value={text}
+        <AssayMultiSelect
+          value={arr}
+          options={assayOptions}
+          onChange={onChange}
           disabled={disabled}
-          placeholder="多个项目用顿号或逗号分隔"
-          onChange={(e) => {
-            const parts = e.target.value
-              .split(/[/、,，;；|+]+/)
-              .map((s) => s.trim())
-              .filter(Boolean);
-            onChange(parts);
-          }}
+          placeholder="从项目字典中多选，也可输入新项目"
         />
       );
     }

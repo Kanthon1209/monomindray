@@ -27,6 +27,9 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 			{Method: http.MethodGet, Path: "/api/v1/me/survey-assignments/:id", Handler: GetMySurveyAssignmentHandler(svcCtx)},
 			{Method: http.MethodPut, Path: "/api/v1/me/survey-assignments/:id/draft", Handler: SaveSurveyDraftHandler(svcCtx)},
 			{Method: http.MethodPost, Path: "/api/v1/me/survey-assignments/:id/submit", Handler: SubmitSurveyAssignmentHandler(svcCtx)},
+
+			// Active assay dictionary for survey fill (collectors + admins)
+			{Method: http.MethodGet, Path: "/api/v1/assay-projects/options", Handler: ListAssayProjectOptionsHandler(svcCtx)},
 		},
 		rest.WithJwt(svcCtx.Config.Auth.AccessSecret),
 	)

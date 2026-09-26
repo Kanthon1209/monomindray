@@ -119,6 +119,8 @@ function fieldTypeFromArchive(
   valueType: (typeof ARCHIVE_FIELD_DEFS)[number]["valueType"],
 ): string {
   if (valueType === "number") return "number";
+  if (valueType === "string_array") return "string_array";
+  if (valueType === "competitor_list") return "competitor_list";
   return "text";
 }
 
@@ -956,8 +958,16 @@ export default function SurveyTemplatesPage() {
                     <SelectItem value="text">文本</SelectItem>
                     <SelectItem value="number">数字</SelectItem>
                     <SelectItem value="date">日期</SelectItem>
+                    <SelectItem value="string_array">
+                      数组（多选检测项目）
+                    </SelectItem>
                   </SelectContent>
                 </Select>
+                {fieldDraft.type === "string_array" ? (
+                  <p className="text-xs text-muted-foreground">
+                    采集员填写时可从「检测项目」字典多选；也可临时输入新项目名。
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="space-y-2">

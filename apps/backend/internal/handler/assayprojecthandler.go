@@ -10,6 +10,17 @@ import (
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
+func ListAssayProjectOptionsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := logic.NewAssayProjectLogic(r.Context(), svcCtx).Options()
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
 func ListAssayProjectsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req types.ListAssayProjectsRequest

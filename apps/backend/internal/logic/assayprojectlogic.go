@@ -139,6 +139,31 @@ func (l *AssayProjectLogic) Delete(id int64) error {
 	return nil
 }
 
+func (l *AssayProjectLogic) Options() (*types.ListAssayProjectOptionsResponse, error) {
+	// Any logged-in caller may list active projects for survey fill dropdowns.
+	trueOwn := (*bool)(nil)
+	items, _, err := l.svcCtx.MasterDataModel.ListAssayProjects(l.ctx, model.AssayProjectFilter{
+		Status:  "active",
+		OwnOnly: trueOwn,
+		Limit:   2000,
+		Offset:  0,
+	})
+	if err != nil {
+		l.Errorf("list assay options: %v", err)
+		return nil, ErrInternal
+	}
+	out := make([]types.AssayProjectOption, 0, len(items))
+	for i := range items {
+		out = append(out, types.AssayProjectOption{
+			Id:        items[i].Id,
+			Name:      items[i].Name,
+			Company:   items[i].Company,
+			Ownership: model.OwnershipLabel(items[i].Company),
+		})
+	}
+	return &types.ListAssayProjectOptionsResponse{Items: out}, nil
+}
+
 func toAssayProjectInfo(p *model.AssayProject) types.AssayProjectInfo {
 	aliases := p.Aliases
 	if aliases == nil {
