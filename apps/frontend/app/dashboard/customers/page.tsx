@@ -37,6 +37,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DesktopTable,
+  MobileCardItem,
+  MobileCardList,
+  PageToolbar,
+} from "@/components/mobile-data-list";
 
 const emptyForm = {
   hospitalId: "none",
@@ -142,17 +148,23 @@ export default function CustomersPage() {
                 <CardDescription>维护医院联系人。当前共 {total} 人。</CardDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <PageToolbar>
               <Input
                 placeholder="搜索姓名/电话"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                className="w-[180px]"
+                className="w-full sm:w-[180px]"
               />
-              <Button variant="outline" size="icon" onClick={load} disabled={loading}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                onClick={load}
+                disabled={loading}
+              >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-            </div>
+            </PageToolbar>
           </div>
         </CardHeader>
         <CardContent className="space-y-6 px-0">
@@ -224,7 +236,7 @@ export default function CustomersPage() {
             </div>
           </form>
 
-          <div className="rounded-lg border">
+          <DesktopTable>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -274,7 +286,49 @@ export default function CustomersPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </DesktopTable>
+
+          <MobileCardList>
+            {loading ? (
+              <li className="flex h-24 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </li>
+            ) : items.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                暂无客户
+              </li>
+            ) : (
+              items.map((c) => (
+                <MobileCardItem key={c.id}>
+                  <div className="font-medium">{c.name}</div>
+                  {c.title ? (
+                    <div className="text-xs text-muted-foreground">{c.title}</div>
+                  ) : null}
+                  <div className="text-sm text-muted-foreground">
+                    {c.hospitalName || "未关联医院"}
+                  </div>
+                  <div className="text-sm">{c.phone || "—"}</div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      className="min-h-10 w-full"
+                      onClick={() => onEdit(c)}
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="min-h-10 w-full"
+                      onClick={() => onDelete(c.id)}
+                    >
+                      <Trash2 className="mr-1 h-4 w-4" />
+                      删除
+                    </Button>
+                  </div>
+                </MobileCardItem>
+              ))
+            )}
+          </MobileCardList>
         </CardContent>
       </Card>
     </div>

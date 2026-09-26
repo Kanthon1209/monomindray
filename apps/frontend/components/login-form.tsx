@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
+import { homePathForRole } from "@/lib/roles";
 
 export function LoginForm({
   className,
@@ -39,7 +40,7 @@ export function LoginForm({
 
     const result = await login(email, password);
     if (result.success) {
-      router.push("/dashboard");
+      router.push(homePathForRole(result.user?.role));
     } else {
       setError(result.error || "登录失败");
     }

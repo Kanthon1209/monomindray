@@ -48,7 +48,10 @@ interface AuthContextValue {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ success: boolean; error?: string; user?: User }>;
   signup: (
     name: string,
     email: string,
@@ -122,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(data.token);
       localStorage.setItem(STORAGE_KEY, data.token);
       localStorage.setItem(USER_KEY, JSON.stringify(u));
-      return { success: true };
+      return { success: true, user: u };
     } catch {
       return { success: false, error: "网络错误，请检查服务是否启动" };
     }

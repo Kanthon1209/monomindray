@@ -1,10 +1,12 @@
 package logic
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
 
+	"mindray/internal/authx"
 	"mindray/internal/model"
 	"mindray/internal/types"
 )
@@ -25,7 +27,7 @@ func NewCodeError(code int, msg string) *CodeError {
 
 var (
 	ErrUnauthorized  = NewCodeError(http.StatusUnauthorized, "未授权")
-	ErrForbidden     = NewCodeError(http.StatusForbidden, "需要管理员权限")
+	ErrForbidden     = NewCodeError(http.StatusForbidden, "无权访问")
 	ErrBadCredential = NewCodeError(http.StatusUnauthorized, "邮箱或密码不正确")
 	ErrInternal      = NewCodeError(http.StatusInternalServerError, "服务器内部错误")
 )
@@ -60,4 +62,14 @@ func requireAdmin(role string) error {
 		return ErrForbidden
 	}
 	return nil
+}
+
+// RequireAdminRole is the exported form used by HTTP middleware.
+func RequireAdminRole(role string) error {
+	return requireAdmin(role)
+}
+
+// requireAdminCtx rejects non-admin JWT callers (采集员不可访问管理端数据接口).
+func requireAdminCtx(ctx context.Context) error {
+	return requireAdmin(authx.RoleFromCtx(ctx))
 }

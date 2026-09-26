@@ -36,6 +36,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DesktopTable,
+  MobileCardItem,
+  MobileCardList,
+  PageToolbar,
+} from "@/components/mobile-data-list";
 
 export default function UserManagePage() {
   const { user } = useAuth();
@@ -70,9 +76,9 @@ export default function UserManagePage() {
                 </CardDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <PageToolbar>
               <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-full sm:w-[140px]">
                   <SelectValue placeholder="状态筛选" />
                 </SelectTrigger>
                 <SelectContent>
@@ -82,15 +88,21 @@ export default function UserManagePage() {
                   <SelectItem value="rejected">已拒绝</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon" onClick={loadUsers} disabled={loading}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                onClick={loadUsers}
+                disabled={loading}
+              >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-            </div>
+            </PageToolbar>
           </div>
         </CardHeader>
         <CardContent className="px-0">
           {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
-          <div className="rounded-lg border">
+          <DesktopTable>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -167,7 +179,65 @@ export default function UserManagePage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </DesktopTable>
+
+          <MobileCardList>
+            {loading ? (
+              <li className="flex h-24 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </li>
+            ) : items.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                暂无用户
+              </li>
+            ) : (
+              items.map((item) => (
+                <MobileCardItem key={item.id}>
+                  <div className="font-medium">{item.name}</div>
+                  <div className="text-xs text-muted-foreground">{item.email}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{roleLabel(item.role)}</Badge>
+                    {statusBadge(item.status)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {formatTime(item.createdAt)}
+                  </div>
+                  {item.role === "admin" ? (
+                    <span className="text-xs text-muted-foreground">系统管理员</span>
+                  ) : (
+                    <div className="grid w-full grid-cols-2 gap-2 pt-1">
+                      <Button
+                        variant="outline"
+                        className="min-h-10 w-full"
+                        disabled={actingId === item.id || item.status === "approved"}
+                        onClick={() => review(item.id, "approve")}
+                      >
+                        {actingId === item.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4" />
+                        )}
+                        通过
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        className="min-h-10 w-full"
+                        disabled={actingId === item.id || item.status === "rejected"}
+                        onClick={() => review(item.id, "reject")}
+                      >
+                        {actingId === item.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ShieldX className="h-4 w-4" />
+                        )}
+                        拒绝
+                      </Button>
+                    </div>
+                  )}
+                </MobileCardItem>
+              ))
+            )}
+          </MobileCardList>
         </CardContent>
       </Card>
     </div>

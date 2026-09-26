@@ -118,29 +118,25 @@ export function HospitalPanel({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col border-l bg-background">
-      <div className="shrink-0 space-y-3 px-4 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold tracking-tight">
-                医院列表
-              </h2>
-              <Badge variant="secondary">{summary.total}</Badge>
-              {selectedProvince ? (
-                <Badge variant="outline">{selectedProvince}</Badge>
-              ) : null}
-            </div>
+    <div className="flex h-full min-h-0 flex-col bg-background md:border-l">
+      <div className="shrink-0 space-y-3 px-3 py-3 md:px-4 md:py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold tracking-tight">医院列表</h2>
+            <Badge variant="secondary">{summary.total}</Badge>
+            {selectedProvince ? (
+              <Badge variant="outline">{selectedProvince}</Badge>
+            ) : null}
           </div>
-          <Button size="sm" variant="default" asChild>
+          <Button size="sm" variant="default" className="shrink-0" asChild>
             <Link href="/dashboard/surveys/campaigns">
               <ClipboardList className="h-4 w-4" />
-              去采集
+              <span className="hidden sm:inline">去采集</span>
             </Link>
           </Button>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="hidden flex-wrap gap-2 md:flex">
           <Badge variant="outline" className="font-normal">
             有机型{" "}
             <span className="ml-1 font-medium text-foreground">
@@ -165,16 +161,16 @@ export function HospitalPanel({
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="搜索名称、分公司、机型…"
+              placeholder="搜索医院、城市、机型…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 pl-8"
+              className="h-10 pl-8 md:h-9"
             />
           </div>
           <Button
             size="sm"
             variant={expandedCols ? "secondary" : "outline"}
-            className="h-9 shrink-0"
+            className="hidden h-9 shrink-0 md:inline-flex"
             onClick={() => setExpandedCols((v) => !v)}
           >
             <Columns2 className="h-4 w-4" />
@@ -185,7 +181,69 @@ export function HospitalPanel({
 
       <Separator />
 
-      <div className="relative min-h-0 flex-1">
+      {/* 手机：卡片列表 */}
+      <div className="min-h-0 flex-1 overflow-auto md:hidden">
+        {filtered.length === 0 ? (
+          <div className="flex h-40 items-center justify-center px-4 text-sm text-muted-foreground">
+            暂无匹配医院
+          </div>
+        ) : (
+          <ul className="divide-y">
+            {filtered.map((hospital) => {
+              const name = cellValue(hospital, "customerName");
+              const level = cellValue(hospital, "customerLevel");
+              const reagent = cellValue(hospital, "mindrayReagentCount");
+              const projects = cellValue(hospital, "mindrayProjects");
+              const active = selectedId === hospital.id && detailOpen;
+              return (
+                <li key={hospital.id}>
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex w-full items-start gap-3 px-3 py-3.5 text-left transition-colors active:bg-accent",
+                      active && "bg-muted",
+                    )}
+                    onClick={() => openDetail(hospital.id)}
+                  >
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-[15px] font-medium leading-snug">
+                          {name}
+                        </span>
+                        {level !== "—" ? (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 font-normal"
+                          >
+                            {level}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span>
+                          试剂项目{" "}
+                          <span className="tabular-nums text-foreground">
+                            {reagent}
+                          </span>
+                        </span>
+                      </div>
+                      {projects !== "—" ? (
+                        <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                          {projects}
+                        </p>
+                      ) : null}
+                    </div>
+                    <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* 桌面：表格 */}
+      <div className="relative hidden min-h-0 flex-1 md:block">
         <div className="absolute inset-0 overflow-auto">
           <table
             className={cn(
@@ -218,8 +276,7 @@ export function HospitalPanel({
                 </TableRow>
               ) : (
                 filtered.map((hospital) => {
-                  const active =
-                    selectedId === hospital.id && detailOpen;
+                  const active = selectedId === hospital.id && detailOpen;
                   const hovered = hoveredId === hospital.id;
                   return (
                     <TableRow
@@ -271,9 +328,9 @@ export function HospitalPanel({
         </div>
       </div>
 
-      <Separator />
+      <Separator className="hidden md:block" />
 
-      <div className="flex shrink-0 items-center px-4 py-3">
+      <div className="hidden shrink-0 items-center px-4 py-3 md:flex">
         <span className="text-xs text-muted-foreground">
           共 {filtered.length} 家
         </span>

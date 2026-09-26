@@ -26,6 +26,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DesktopTable,
+  MobileCardItem,
+  MobileCardList,
+} from "@/components/mobile-data-list";
 
 function assignmentStatusBadge(status: string) {
   switch (status) {
@@ -85,7 +90,7 @@ export default function SurveyTasksPage() {
         </CardHeader>
         <CardContent className="px-0">
           {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
-          <div className="rounded-lg border">
+          <DesktopTable>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -132,7 +137,42 @@ export default function SurveyTasksPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </DesktopTable>
+
+          <MobileCardList>
+            {loading ? (
+              <li className="flex h-24 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </li>
+            ) : items.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                暂无任务
+              </li>
+            ) : (
+              items.map((item) => (
+                <MobileCardItem key={item.id}>
+                  <div className="font-medium">{item.campaignTitle || "—"}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {item.hospitalName || "—"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {item.templateTitle || item.templateCode}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {assignmentStatusBadge(item.status)}
+                    <span className="text-xs text-muted-foreground">
+                      截止 {formatTime(item.dueAt)}
+                    </span>
+                  </div>
+                  <Button asChild className="min-h-10 w-full" variant="outline">
+                    <Link href={`/dashboard/surveys/tasks/${item.id}`}>
+                      {item.status === "submitted" ? "查看" : "填写"}
+                    </Link>
+                  </Button>
+                </MobileCardItem>
+              ))
+            )}
+          </MobileCardList>
         </CardContent>
       </Card>
     </div>

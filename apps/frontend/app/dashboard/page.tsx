@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Map as MapIcon, List, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { FilterBar } from "../components/FilterBar";
 import { AnhuiMap } from "../components/ChinaMap";
 import { HospitalPanel } from "../components/HospitalPanel";
 import { fetchDashboardHospitals, fetchProvinceStats } from "@/lib/business";
 import { resolveArchiveField } from "@/lib/hospital-archive";
+import { useIsDesktop } from "@/hooks/use-mobile";
 import type { FilterOptions, Hospital, ProvinceData } from "@/lib/types";
 
 const defaultFilters: FilterOptions = {
@@ -15,12 +16,10 @@ const defaultFilters: FilterOptions = {
   model: "all",
 };
 
-type MobileTab = "map" | "list";
-
 export default function DashboardPage() {
+  const isDesktop = useIsDesktop();
   const [filters, setFilters] = useState<FilterOptions>(defaultFilters);
   const [selectedCity, setSelectedCity] = useState<string | undefined>();
-  const [mobileTab, setMobileTab] = useState<MobileTab>("map");
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [mapData, setMapData] = useState<ProvinceData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,22 +35,24 @@ export default function DashboardPage() {
 
   const handleCityClick = useCallback((cityName: string) => {
     setSelectedCity((prev) => (prev === cityName ? undefined : cityName));
-    setMobileTab("list");
   }, []);
 
   useEffect(() => {
+    if (isDesktop === null) return;
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       setError(null);
-      const [hospRes, cityRes] = await Promise.all([
-        fetchDashboardHospitals({
-          region: filters.region,
-          province: "安徽省",
-          city: selectedCity,
-        }),
-        fetchProvinceStats(filters.region),
-      ]);
+      const hospPromise = fetchDashboardHospitals({
+        region: filters.region,
+        province: "安徽省",
+        city: selectedCity,
+      });
+      // 手机端不展示地图，跳过省市统计请求
+      const cityPromise = isDesktop
+        ? fetchProvinceStats(filters.region)
+        : Promise.resolve({ items: [] as ProvinceData[], error: undefined as string | undefined });
+      const [hospRes, cityRes] = await Promise.all([hospPromise, cityPromise]);
       if (cancelled) return;
       if (hospRes.error || cityRes.error) {
         setError(hospRes.error || cityRes.error || "加载失败");
@@ -67,7 +68,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters.region, selectedCity]);
+  }, [filters.region, selectedCity, isDesktop]);
 
   const modelOptions = useMemo(() => {
     const set = new Set<string>();
@@ -88,7 +89,7 @@ export default function DashboardPage() {
   }, [hospitals]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-zinc-900">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30">
       <FilterBar
         filters={filters}
         onFilterChange={handleFilterChange}
@@ -97,78 +98,41 @@ export default function DashboardPage() {
       />
 
       {error ? (
-        <div className="border-b bg-destructive/10 px-4 py-2 text-sm text-destructive">
+        <div className="shrink-0 border-b bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
           {error}
         </div>
       ) : null}
 
-      <div className="flex border-b bg-white dark:bg-zinc-950 md:hidden">
-        <button
-          onClick={() => setMobileTab("map")}
-          className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
-            mobileTab === "map"
-              ? "border-b-2 border-primary text-primary"
-              : "text-muted-foreground"
-          }`}
-        >
-          <MapIcon className="h-4 w-4" />
-          地图
-        </button>
-        <button
-          onClick={() => setMobileTab("list")}
-          className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
-            mobileTab === "list"
-              ? "border-b-2 border-primary text-primary"
-              : "text-muted-foreground"
-          }`}
-        >
-          <List className="h-4 w-4" />
-          客户档案
-          {hospitals.length > 0 && (
-            <span className="ml-0.5 rounded bg-muted px-1 text-xs">
-              {hospitals.length}
-            </span>
-          )}
-        </button>
-      </div>
-
-      <div className="relative min-h-0 flex-1 md:grid md:grid-cols-[minmax(0,6fr)_minmax(420px,4fr)]">
-        {loading ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40">
+      <div className="relative flex min-h-0 flex-1 flex-col md:grid md:grid-cols-[minmax(0,6fr)_minmax(380px,4fr)]">
+        {loading || isDesktop === null ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/50">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : null}
 
-        <div
-          className={`relative min-h-0 overflow-hidden bg-white dark:bg-zinc-950 md:block md:border-r ${
-            mobileTab === "map" ? "block" : "hidden"
-          }`}
-        >
-          <AnhuiMap
-            data={mapData}
-            onCityClick={handleCityClick}
-            selectedCity={selectedCity}
-          />
-          {selectedCity && (
-            <div className="absolute left-4 top-4 z-20 rounded-md bg-white/90 px-3 py-1.5 text-xs font-medium shadow-md dark:bg-zinc-900/90">
-              已选择: {selectedCity}
-              <button
-                onClick={() => setSelectedCity(undefined)}
-                className="ml-2 text-muted-foreground hover:text-foreground"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-        </div>
+        {isDesktop ? (
+          <div className="relative hidden min-h-0 overflow-hidden border-r bg-background md:block">
+            <AnhuiMap
+              data={mapData}
+              onCityClick={handleCityClick}
+              selectedCity={selectedCity}
+            />
+            {selectedCity ? (
+              <div className="absolute left-4 top-4 z-20 rounded-md border bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm">
+                已选择: {selectedCity}
+                <button
+                  type="button"
+                  onClick={() => setSelectedCity(undefined)}
+                  className="ml-2 text-muted-foreground hover:text-foreground"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
-        <div
-          className={`min-h-0 overflow-hidden ${
-            mobileTab === "list"
-              ? "absolute inset-0 md:relative md:inset-auto md:h-full"
-              : "hidden md:relative md:block md:h-full"
-          }`}
-        >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <HospitalPanel
             hospitals={hospitals}
             selectedProvince={selectedCity}

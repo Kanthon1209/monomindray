@@ -24,6 +24,9 @@ func NewDeviceLogic(ctx context.Context, svcCtx *svc.ServiceContext) *DeviceLogi
 }
 
 func (l *DeviceLogic) List(hospitalID int64) (*types.ListDevicesResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	items, err := l.svcCtx.DeviceModel.ListByHospital(l.ctx, hospitalID)
 	if err != nil {
 		return nil, ErrInternal
@@ -36,6 +39,9 @@ func (l *DeviceLogic) List(hospitalID int64) (*types.ListDevicesResponse, error)
 }
 
 func (l *DeviceLogic) ListAll(req *types.ListDevicesRequest) (*types.ListDevicesResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	page, size := req.Page, req.PageSize
 	if page <= 0 {
 		page = 1
@@ -64,6 +70,9 @@ func (l *DeviceLogic) ListAll(req *types.ListDevicesRequest) (*types.ListDevices
 }
 
 func (l *DeviceLogic) Create(hospitalID int64, req *types.DeviceUpsertRequest) (*types.DeviceResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	uid, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
 		return nil, ErrUnauthorized
@@ -105,6 +114,9 @@ func (l *DeviceLogic) Create(hospitalID int64, req *types.DeviceUpsertRequest) (
 }
 
 func (l *DeviceLogic) Update(id int64, req *types.DeviceUpsertRequest) (*types.DeviceResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	uid, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
 		return nil, ErrUnauthorized
@@ -156,6 +168,9 @@ func (l *DeviceLogic) Update(id int64, req *types.DeviceUpsertRequest) (*types.D
 }
 
 func (l *DeviceLogic) Delete(id int64) error {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return err
+	}
 	existing, err := l.svcCtx.DeviceModel.FindById(l.ctx, id)
 	if err != nil {
 		return ErrInternal

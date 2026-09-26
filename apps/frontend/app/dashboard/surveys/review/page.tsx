@@ -30,6 +30,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DesktopTable,
+  MobileCardItem,
+  MobileCardList,
+} from "@/components/mobile-data-list";
 
 export default function SurveyReviewPage() {
   const { user } = useAuth();
@@ -111,7 +116,7 @@ export default function SurveyReviewPage() {
         </CardHeader>
         <CardContent className="px-0">
           {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
-          <div className="rounded-lg border">
+          <DesktopTable>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -221,7 +226,97 @@ export default function SurveyReviewPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </DesktopTable>
+
+          <MobileCardList>
+            {loading ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                加载中…
+              </li>
+            ) : items.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                暂无待审答卷
+              </li>
+            ) : (
+              items.map((item) => {
+                const open = expandedId === item.id;
+                return (
+                  <MobileCardItem key={item.id}>
+                    <div className="font-medium">{item.campaignTitle || "—"}</div>
+                    <div className="text-sm">
+                      {item.assigneeName || item.collectorName || "—"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {item.assigneeEmail}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Badge variant="warning">待审核</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTime(item.submittedAt)}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        className="min-h-10 w-full"
+                        onClick={() =>
+                          setExpandedId((cur) => (cur === item.id ? null : item.id))
+                        }
+                      >
+                        {open ? "收起" : "查看"}
+                      </Button>
+                      <Button
+                        className="min-h-10 w-full"
+                        disabled={actingId === item.id}
+                        onClick={() => onApprove(item.id)}
+                      >
+                        {actingId === item.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Check className="mr-1 h-4 w-4" />
+                            通过
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {open ? (
+                      <div className="space-y-3 rounded-md bg-muted/30 p-3">
+                        <div className="grid gap-2 text-sm">
+                          {Object.entries(item.answers || {}).map(([k, v]) => (
+                            <div key={k}>
+                              <span className="text-muted-foreground">{k}：</span>
+                              <span>{v || "—"}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <Input
+                          className="w-full"
+                          placeholder="驳回原因（必填）"
+                          value={rejectNotes[item.id] || ""}
+                          onChange={(e) =>
+                            setRejectNotes((prev) => ({
+                              ...prev,
+                              [item.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <Button
+                          variant="destructive"
+                          className="min-h-10 w-full"
+                          disabled={actingId === item.id}
+                          onClick={() => onReject(item.id)}
+                        >
+                          <X className="mr-1 h-4 w-4" />
+                          驳回
+                        </Button>
+                      </div>
+                    ) : null}
+                  </MobileCardItem>
+                );
+              })
+            )}
+          </MobileCardList>
         </CardContent>
       </Card>
     </div>

@@ -43,6 +43,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DesktopTable,
+  MobileCardItem,
+  MobileCardList,
+  PageToolbar,
+} from "@/components/mobile-data-list";
 
 const categories = filterOptions.deviceCategory.filter((x) => x.value !== "all");
 
@@ -170,29 +176,38 @@ export default function DevicesPage() {
                 </CardDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={load} disabled={loading}>
+            <PageToolbar>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                onClick={load}
+                disabled={loading}
+              >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-              <Button onClick={() => setShowForm((v) => !v)}>
+              <Button
+                className="min-h-10 w-full sm:w-auto"
+                onClick={() => setShowForm((v) => !v)}
+              >
                 <Plus className="mr-1 h-4 w-4" />
                 {showForm ? "取消" : "新建设备"}
               </Button>
-            </div>
+            </PageToolbar>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             <Input
-              className="max-w-xs"
+              className="w-full sm:max-w-xs"
               placeholder="搜索医院/型号/序列号/品牌"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
             />
             <Select value={brandFilter} onValueChange={setBrandFilter}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue placeholder="品牌" />
               </SelectTrigger>
               <SelectContent>
@@ -202,7 +217,7 @@ export default function DevicesPage() {
               </SelectContent>
             </Select>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue placeholder="产线" />
               </SelectTrigger>
               <SelectContent>
@@ -303,7 +318,7 @@ export default function DevicesPage() {
             </form>
           ) : null}
 
-          <div className="rounded-md border">
+          <DesktopTable className="rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -364,7 +379,53 @@ export default function DevicesPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </DesktopTable>
+
+          <MobileCardList>
+            {loading ? (
+              <li className="flex h-24 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </li>
+            ) : items.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                暂无设备
+              </li>
+            ) : (
+              items.map((d) => (
+                <MobileCardItem key={d.id}>
+                  <div className="font-medium">{d.hospitalName || d.hospitalId}</div>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    {d.brand === "迈瑞" ? (
+                      <Badge variant="outline">迈瑞</Badge>
+                    ) : (
+                      <Badge variant="secondary">{d.brand || "竞品"}</Badge>
+                    )}
+                    <span className="text-muted-foreground">
+                      {d.model}
+                      {d.serialNo ? ` · ${d.serialNo}` : ""}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {categoryLabel[d.category] || d.category}
+                    </span>
+                    {statusBadge(d.status)}
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="min-h-10"
+                      onClick={() => onDelete(d.id)}
+                    >
+                      <Trash2 className="mr-1 h-4 w-4" />
+                      删除
+                    </Button>
+                  </div>
+                </MobileCardItem>
+              ))
+            )}
+          </MobileCardList>
         </CardContent>
       </Card>
     </div>

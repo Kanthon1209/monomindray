@@ -17,3 +17,21 @@ export function useIsMobile() {
 
   return !!isMobile
 }
+
+/**
+ * null = 尚未判定（SSR/首屏）；true = ≥ md。
+ * 用于避免手机端挂载地图，并避免桌面端先按手机逻辑请求再重拉。
+ */
+export function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = React.useState<boolean | null>(null)
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`)
+    const onChange = () => setIsDesktop(mql.matches)
+    onChange()
+    mql.addEventListener("change", onChange)
+    return () => mql.removeEventListener("change", onChange)
+  }, [])
+
+  return isDesktop
+}

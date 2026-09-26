@@ -267,9 +267,9 @@ export default function SurveyTaskFillPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-auto p-4 md:p-6">
+    <div className="flex flex-1 flex-col gap-5 overflow-auto p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="min-h-10">
           <Link href="/dashboard/surveys/tasks">
             <ArrowLeft className="mr-1 h-4 w-4" />
             返回
@@ -297,12 +297,12 @@ export default function SurveyTaskFillPage() {
               : ""}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6 px-0">
+        <CardContent className="space-y-5 px-0 pb-6">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {message ? <p className="text-sm text-green-700">{message}</p> : null}
 
           {sections.map(([section, fields]) => (
-            <div key={section} className="space-y-3 rounded-lg border p-4">
+            <div key={section} className="space-y-4 rounded-lg border p-4 sm:p-5">
               <h3 className="text-sm font-semibold">{section}</h3>
               <div className="grid gap-4 md:grid-cols-2">
                 {fields.map((field) => (
@@ -331,8 +331,8 @@ export default function SurveyTaskFillPage() {
           ))}
 
           {devicesField ? (
-            <div className="space-y-3 rounded-lg border p-4">
-              <div className="flex items-center justify-between gap-2">
+            <div className="space-y-4 rounded-lg border p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">
                   {devicesField.label || "设备列表"}
                   {devicesField.required ? (
@@ -395,10 +395,11 @@ export default function SurveyTaskFillPage() {
           ) : null}
 
           {!readOnly ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button
                 type="button"
                 variant="outline"
+                className="min-h-11 w-full sm:w-auto"
                 disabled={saving}
                 onClick={onSaveDraft}
               >
@@ -411,6 +412,7 @@ export default function SurveyTaskFillPage() {
               </Button>
               <Button
                 type="button"
+                className="min-h-11 w-full sm:w-auto"
                 disabled={saving || assignment.campaignStatus === "closed"}
                 onClick={onSubmit}
               >

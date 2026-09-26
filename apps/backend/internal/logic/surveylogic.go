@@ -27,8 +27,10 @@ func NewSurveyLogic(ctx context.Context, svcCtx *svc.ServiceContext) *SurveyLogi
 }
 
 func (l *SurveyLogic) ListTemplates() (*types.ListSurveyTemplatesResponse, error) {
-	activeOnly := authx.RoleFromCtx(l.ctx) != "admin"
-	items, err := l.svcCtx.SurveyModel.ListTemplates(l.ctx, activeOnly)
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
+	items, err := l.svcCtx.SurveyModel.ListTemplates(l.ctx, false)
 	if err != nil {
 		l.Errorf("list templates: %v", err)
 		return nil, ErrInternal
@@ -41,6 +43,9 @@ func (l *SurveyLogic) ListTemplates() (*types.ListSurveyTemplatesResponse, error
 }
 
 func (l *SurveyLogic) GetTemplate(id int64) (*types.SurveyTemplateResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	t, err := l.svcCtx.SurveyModel.FindTemplateById(l.ctx, id)
 	if err != nil {
 		return nil, ErrInternal

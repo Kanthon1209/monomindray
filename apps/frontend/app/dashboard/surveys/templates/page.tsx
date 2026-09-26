@@ -62,6 +62,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DesktopTable,
+  MobileCardItem,
+  MobileCardList,
+  PageToolbar,
+} from "@/components/mobile-data-list";
 
 /** 映射实体：不映射 / 医院（后续可加 device 等） */
 type MapEntity = "none" | "hospital";
@@ -557,6 +563,107 @@ export default function SurveyTemplatesPage() {
 
   if (!user || user.role !== "admin") return null;
 
+  const renderTemplateEditor = (item: SurveyTemplate) => {
+    const schema = normalizeSchema(item.schema);
+    const groups = groupBySection(schema);
+    return (
+      <>
+        {item.description ? (
+          <p className="mb-3 text-sm text-muted-foreground">{item.description}</p>
+        ) : null}
+        <div className="space-y-4">
+          {groups.map(({ section, fields }) => (
+            <div key={section}>
+              <div className="mb-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="text-sm font-medium hover:underline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openRenameSection(item, section);
+                  }}
+                >
+                  {section}
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground"
+                  title="删除分组"
+                  disabled={saving}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteSection(item, section);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {fields.map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    className="rounded-md border bg-background px-3 py-2 text-left text-sm transition hover:border-primary/40 hover:bg-accent/40"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditField(item, f);
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{f.label}</span>
+                      <div className="flex items-center gap-1">
+                        {f.locked ? <Badge variant="secondary">锁定</Badge> : null}
+                        {f.required ? <Badge variant="outline">必填</Badge> : null}
+                      </div>
+                    </div>
+                    <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                      {f.key}
+                      {f.target ? ` → ${f.target}` : ""}
+                    </p>
+                    {f.default ? (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        默认：{f.default}
+                      </p>
+                    ) : null}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="flex min-h-[64px] items-center justify-center rounded-md border border-dashed bg-background/60 text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+                  disabled={saving}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openCreateField(item, section);
+                  }}
+                  title="新建字段"
+                >
+                  <Plus className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          ))}
+          <div>
+            <p className="mb-2 text-sm font-medium text-muted-foreground">新建分组</p>
+            <button
+              type="button"
+              className="flex min-h-[72px] w-full items-center justify-center rounded-md border border-dashed bg-background/60 text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:max-w-xs"
+              disabled={saving}
+              onClick={(e) => {
+                e.stopPropagation();
+                openCreateSection(item);
+              }}
+              title="新建分组"
+            >
+              <Plus className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-auto p-4 md:p-6">
       <Card className="border-none shadow-none">
@@ -571,10 +678,11 @@ export default function SurveyTemplatesPage() {
                 <CardDescription>当前共 {items.length} 个模板</CardDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <PageToolbar>
               <Button
                 variant="outline"
                 size="icon"
+                className="h-10 w-10 shrink-0"
                 onClick={load}
                 disabled={loading || saving || creating}
               >
@@ -582,17 +690,21 @@ export default function SurveyTemplatesPage() {
                   className={`h-4 w-4 ${loading || saving || creating ? "animate-spin" : ""}`}
                 />
               </Button>
-              <Button onClick={openCreateTemplate} disabled={creating}>
+              <Button
+                className="min-h-10 w-full sm:w-auto"
+                onClick={openCreateTemplate}
+                disabled={creating}
+              >
                 <Plus className="mr-1 h-4 w-4" />
                 新建模板
               </Button>
-            </div>
+            </PageToolbar>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          <div className="rounded-lg border">
+          <DesktopTable>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -621,7 +733,6 @@ export default function SurveyTemplatesPage() {
                   items.map((item) => {
                     const open = expanded === item.id;
                     const schema = normalizeSchema(item.schema);
-                    const groups = groupBySection(schema);
                     return (
                       <Fragment key={item.id}>
                         <TableRow
@@ -646,106 +757,7 @@ export default function SurveyTemplatesPage() {
                         {open ? (
                           <TableRow>
                             <TableCell colSpan={6} className="bg-muted/30 p-4">
-                              {item.description ? (
-                                <p className="mb-3 text-sm text-muted-foreground">
-                                  {item.description}
-                                </p>
-                              ) : null}
-                              <div className="space-y-4">
-                                {groups.map(({ section, fields }) => (
-                                  <div key={section}>
-                                    <div className="mb-2 flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        className="text-sm font-medium hover:underline"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openRenameSection(item, section);
-                                        }}
-                                      >
-                                        {section}
-                                      </button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7 text-muted-foreground"
-                                        title="删除分组"
-                                        disabled={saving}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onDeleteSection(item, section);
-                                        }}
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </div>
-                                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                                      {fields.map((f) => (
-                                        <button
-                                          key={f.key}
-                                          type="button"
-                                          className="rounded-md border bg-background px-3 py-2 text-left text-sm transition hover:border-primary/40 hover:bg-accent/40"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openEditField(item, f);
-                                          }}
-                                        >
-                                            <div className="flex items-center justify-between gap-2">
-                                              <span className="font-medium">{f.label}</span>
-                                              <div className="flex items-center gap-1">
-                                                {f.locked ? (
-                                                  <Badge variant="secondary">锁定</Badge>
-                                                ) : null}
-                                                {f.required ? (
-                                                  <Badge variant="outline">必填</Badge>
-                                                ) : null}
-                                              </div>
-                                            </div>
-                                            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                                              {f.key}
-                                              {f.target ? ` → ${f.target}` : ""}
-                                            </p>
-                                            {f.default ? (
-                                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                                默认：{f.default}
-                                              </p>
-                                            ) : null}
-                                        </button>
-                                      ))}
-                                      <button
-                                        type="button"
-                                        className="flex min-h-[64px] items-center justify-center rounded-md border border-dashed bg-background/60 text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
-                                        disabled={saving}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openCreateField(item, section);
-                                        }}
-                                        title="新建字段"
-                                      >
-                                        <Plus className="h-5 w-5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                                <div>
-                                  <p className="mb-2 text-sm font-medium text-muted-foreground">
-                                    新建分组
-                                  </p>
-                                  <button
-                                    type="button"
-                                    className="flex min-h-[72px] w-full items-center justify-center rounded-md border border-dashed bg-background/60 text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:max-w-xs"
-                                    disabled={saving}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openCreateSection(item);
-                                    }}
-                                    title="新建分组"
-                                  >
-                                    <Plus className="h-5 w-5" />
-                                  </button>
-                                </div>
-                              </div>
+                              {renderTemplateEditor(item)}
                             </TableCell>
                           </TableRow>
                         ) : null}
@@ -755,7 +767,55 @@ export default function SurveyTemplatesPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </DesktopTable>
+
+          <MobileCardList>
+            {loading ? (
+              <li className="flex h-24 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </li>
+            ) : items.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                暂无模板
+              </li>
+            ) : (
+              items.map((item) => {
+                const open = expanded === item.id;
+                const schema = normalizeSchema(item.schema);
+                return (
+                  <MobileCardItem key={item.id}>
+                    <button
+                      type="button"
+                      className="flex w-full min-h-10 flex-col gap-2 text-left"
+                      onClick={() =>
+                        setExpanded((prev) => (prev === item.id ? null : item.id))
+                      }
+                    >
+                      <div className="flex items-start gap-2">
+                        {open ? (
+                          <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium">{item.title}</div>
+                          <div className="font-mono text-xs text-muted-foreground">
+                            {item.code} · v{item.version} · {schema.fields.length} 字段
+                          </div>
+                        </div>
+                        {statusBadge(item.status)}
+                      </div>
+                    </button>
+                    {open ? (
+                      <div className="rounded-md bg-muted/30 p-3">
+                        {renderTemplateEditor(item)}
+                      </div>
+                    ) : null}
+                  </MobileCardItem>
+                );
+              })
+            )}
+          </MobileCardList>
         </CardContent>
       </Card>
 

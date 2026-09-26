@@ -21,6 +21,12 @@ import {
   Cpu,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import {
+  homePathForRole,
+  isAdmin,
+  isCollector,
+  isCollectorAllowedPath,
+} from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import {
   Sidebar,
@@ -77,6 +83,8 @@ function AppSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const router = useRouter();
+  const admin = isAdmin(user);
+  const homeHref = homePathForRole(user?.role);
   const usersSectionActive = pathname.startsWith("/dashboard/users");
   const surveysSectionActive = pathname.startsWith("/dashboard/surveys");
   const [usersOpen, setUsersOpen] = useState(usersSectionActive);
@@ -109,7 +117,7 @@ function AppSidebar() {
               asChild
               className="group-data-[collapsible=icon]:p-2!"
             >
-              <Link href="/dashboard">
+              <Link href={homeHref}>
                 <div className="bg-primary text-primary-foreground flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:rounded-md">
                   <Activity className="size-4 group-data-[collapsible=icon]:size-3" />
                 </div>
@@ -128,28 +136,30 @@ function AppSidebar() {
           <SidebarGroupLabel>主菜单</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.slice(0, 4).map((item) => {
-                const isActive =
-                  item.href === "/dashboard"
-                    ? pathname === "/dashboard"
-                    : pathname.startsWith(item.href);
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      tooltip={item.title}
-                    >
-                      <Link href={item.href}>
-                        <item.icon />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {admin
+                ? navItems.slice(0, 4).map((item) => {
+                    const isActive =
+                      item.href === "/dashboard"
+                        ? pathname === "/dashboard"
+                        : pathname.startsWith(item.href);
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={isActive}
+                          tooltip={item.title}
+                        >
+                          <Link href={item.href}>
+                            <item.icon />
+                            <span>{item.title}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })
+                : null}
 
-              {user?.role === "admin" ? (
+              {admin ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     tooltip="数据收集"
@@ -198,7 +208,7 @@ function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {user?.role === "admin" ? (
+              {admin ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     tooltip="用户管理"
@@ -304,7 +314,9 @@ function TopBar() {
     <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
       <SidebarTrigger />
       <div className="ml-auto flex items-center gap-2">
-        <span className="text-sm text-muted-foreground">IVD 产品应用价值平台</span>
+        <span className="hidden text-sm text-muted-foreground sm:inline">
+          IVD 产品应用价值平台
+        </span>
       </div>
     </header>
   );
@@ -317,12 +329,20 @@ export default function DashboardLayout({
 }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.replace("/login");
     }
   }, [user, isLoading, router]);
+
+  useEffect(() => {
+    if (!user || isLoading) return;
+    if (isCollector(user) && !isCollectorAllowedPath(pathname)) {
+      router.replace(homePathForRole(user.role));
+    }
+  }, [user, isLoading, pathname, router]);
 
   if (isLoading || !user) {
     return (
@@ -332,12 +352,22 @@ export default function DashboardLayout({
     );
   }
 
+  if (isCollector(user) && !isCollectorAllowedPath(pathname)) {
+    return (
+      <div className="flex h-svh items-center justify-center">
+        <Skeleton className="h-8 w-8 rounded-full" />
+      </div>
+    );
+  }
+
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh overflow-hidden">
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className="min-h-0 overflow-hidden">
         <TopBar />
-        <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

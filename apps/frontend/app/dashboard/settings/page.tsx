@@ -45,8 +45,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-1 justify-center p-6 md:p-8">
-      <Card className="w-full max-w-xl border-none shadow-none">
+    <div className="flex flex-1 flex-col overflow-auto p-4 md:p-8">
+      <div className="mx-auto w-full max-w-xl flex-1">
+      <Card className="w-full border-none shadow-none">
         <CardHeader>
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <UserRound className="h-6 w-6 text-muted-foreground" />
@@ -96,6 +97,7 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

@@ -42,6 +42,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DesktopTable,
+  MobileCardItem,
+  MobileCardList,
+  PageToolbar,
+} from "@/components/mobile-data-list";
 
 function campaignStatusBadge(status: string) {
   switch (status) {
@@ -220,16 +226,20 @@ export default function SurveyCampaignsPage() {
                 </CardDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <PageToolbar>
               <Button
                 variant="outline"
                 size="icon"
+                className="h-10 w-10 shrink-0"
                 onClick={load}
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-              <Button onClick={() => setShowForm((v) => !v)}>
+              <Button
+                className="min-h-10 w-full sm:w-auto"
+                onClick={() => setShowForm((v) => !v)}
+              >
                 {showForm ? (
                   <>
                     <X className="mr-1 h-4 w-4" />
@@ -242,7 +252,7 @@ export default function SurveyCampaignsPage() {
                   </>
                 )}
               </Button>
-            </div>
+            </PageToolbar>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
@@ -351,7 +361,7 @@ export default function SurveyCampaignsPage() {
             </form>
           ) : null}
 
-          <div className="rounded-md border">
+          <DesktopTable className="rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -403,7 +413,47 @@ export default function SurveyCampaignsPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </DesktopTable>
+
+          <MobileCardList>
+            {loading ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                加载中…
+              </li>
+            ) : items.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                暂无发放
+              </li>
+            ) : (
+              items.map((c) => (
+                <MobileCardItem key={c.id}>
+                  <div className="font-medium">{c.title}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {templateLabel(c.templateId, c.templateTitle)}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {c.assignmentCount} 条任务
+                    </span>
+                    {campaignStatusBadge(c.status)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {formatTime(c.createdAt)}
+                  </div>
+                  {c.status === "active" ? (
+                    <Button
+                      variant="outline"
+                      className="min-h-10 w-full"
+                      disabled={saving}
+                      onClick={() => onClose(c.id)}
+                    >
+                      关闭
+                    </Button>
+                  ) : null}
+                </MobileCardItem>
+              ))
+            )}
+          </MobileCardList>
         </CardContent>
       </Card>
     </div>

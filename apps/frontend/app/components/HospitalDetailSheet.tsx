@@ -129,8 +129,8 @@ export function HospitalDetailSheet({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] w-[min(96vw,72rem)] max-w-none flex-col gap-0 overflow-hidden rounded-xl border bg-card p-0 text-card-foreground shadow-xl sm:max-w-none">
-        <DialogHeader className="shrink-0 border-b bg-muted/30 px-5 py-4 text-left">
+      <DialogContent className="flex max-h-[92dvh] w-[min(96vw,72rem)] max-w-none flex-col gap-0 overflow-hidden rounded-xl border bg-card p-0 text-card-foreground shadow-xl sm:max-w-none">
+        <DialogHeader className="shrink-0 border-b bg-muted/30 px-4 py-3 text-left md:px-5 md:py-4">
           <DialogTitle className="pr-8 text-base">
             {hospital?.name || "客户档案"}
           </DialogTitle>
@@ -138,7 +138,7 @@ export function HospitalDetailSheet({
             <span>
               {hospital
                 ? `${hospital.province} · ${hospital.city}`
-                : "化免客户档案详情"}
+                : "客户档案详情"}
             </span>
             {hospital ? (
               <Badge variant="outline" className="text-[10px]">
@@ -148,7 +148,7 @@ export function HospitalDetailSheet({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 md:px-5">
           {loading ? (
             <div className="flex h-40 items-center justify-center text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -165,9 +165,11 @@ export function HospitalDetailSheet({
                   {group.fields.map((field) => (
                     <div
                       key={field.key}
-                      className="grid grid-cols-[8rem_1fr] gap-3 border-b px-4 py-3 text-sm last:border-b-0 md:border-b md:odd:border-r"
+                      className="flex flex-col gap-1 border-b px-3 py-3 text-sm last:border-b-0 md:grid md:grid-cols-[8rem_1fr] md:gap-3 md:border-b md:px-4 md:odd:border-r"
                     >
-                      <div className="text-muted-foreground">{field.label}</div>
+                      <div className="text-xs text-muted-foreground md:text-sm">
+                        {field.label}
+                      </div>
                       <div className="break-words whitespace-pre-wrap text-foreground">
                         {field.key === "matchingRate"
                           ? formatMatchingRate(values[field.key])

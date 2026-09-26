@@ -47,7 +47,7 @@ services:
       - mindray
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.10-alpine
     container_name: mindray-caddy
     restart: unless-stopped
     depends_on:
@@ -58,6 +58,8 @@ services:
       - "443:443"
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      CANONICAL_HOST: ${CANONICAL_HOST:-localhost}
+      REDIRECT_IP: ${REDIRECT_IP:-127.0.0.2}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

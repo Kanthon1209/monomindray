@@ -23,6 +23,9 @@ func NewCustomerLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Customer
 }
 
 func (l *CustomerLogic) List(req *types.ListCustomersRequest) (*types.ListCustomersResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	page, size := req.Page, req.PageSize
 	if page <= 0 {
 		page = 1
@@ -44,6 +47,9 @@ func (l *CustomerLogic) List(req *types.ListCustomersRequest) (*types.ListCustom
 }
 
 func (l *CustomerLogic) Create(req *types.CustomerUpsertRequest) (*types.CustomerResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	uid, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
 		return nil, ErrUnauthorized
@@ -68,6 +74,9 @@ func (l *CustomerLogic) Create(req *types.CustomerUpsertRequest) (*types.Custome
 }
 
 func (l *CustomerLogic) Update(id int64, req *types.CustomerUpsertRequest) (*types.CustomerResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	uid, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
 		return nil, ErrUnauthorized
@@ -97,6 +106,9 @@ func (l *CustomerLogic) Update(id int64, req *types.CustomerUpsertRequest) (*typ
 }
 
 func (l *CustomerLogic) Delete(id int64) error {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return err
+	}
 	existing, err := l.svcCtx.CustomerModel.FindById(l.ctx, id)
 	if err != nil {
 		return ErrInternal

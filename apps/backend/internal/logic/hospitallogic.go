@@ -23,6 +23,9 @@ func NewHospitalLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Hospital
 }
 
 func (l *HospitalLogic) List(req *types.ListHospitalsRequest) (*types.ListHospitalsResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	page, size := req.Page, req.PageSize
 	if page <= 0 {
 		page = 1
@@ -47,6 +50,9 @@ func (l *HospitalLogic) List(req *types.ListHospitalsRequest) (*types.ListHospit
 }
 
 func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*types.ListHospitalsResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	province := strings.TrimSpace(req.Province)
 	if province == "" {
 		province = defaultDashboardProvince
@@ -75,6 +81,9 @@ func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*ty
 }
 
 func (l *HospitalLogic) Provinces(req *types.DashboardProvincesRequest) (*types.DashboardProvincesResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	// 看板已收敛为安徽省：返回地市医院数量，供安徽地图着色
 	stats, err := l.svcCtx.HospitalModel.CityStats(l.ctx, defaultDashboardProvince, citiesByAnhuiRegion(req.Region))
 	if err != nil {
@@ -89,6 +98,9 @@ func (l *HospitalLogic) Provinces(req *types.DashboardProvincesRequest) (*types.
 }
 
 func (l *HospitalLogic) Get(id int64) (*types.HospitalResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	h, err := l.svcCtx.HospitalModel.FindById(l.ctx, id)
 	if err != nil {
 		return nil, ErrInternal
@@ -107,6 +119,9 @@ func (l *HospitalLogic) Get(id int64) (*types.HospitalResponse, error) {
 }
 
 func (l *HospitalLogic) Create(req *types.HospitalUpsertRequest) (*types.HospitalResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	uid, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
 		return nil, ErrUnauthorized
@@ -134,6 +149,9 @@ func (l *HospitalLogic) Create(req *types.HospitalUpsertRequest) (*types.Hospita
 }
 
 func (l *HospitalLogic) Update(id int64, req *types.HospitalUpsertRequest) (*types.HospitalResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
 	uid, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
 		return nil, ErrUnauthorized
@@ -175,6 +193,9 @@ func (l *HospitalLogic) Update(id int64, req *types.HospitalUpsertRequest) (*typ
 }
 
 func (l *HospitalLogic) Delete(id int64) error {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return err
+	}
 	existing, err := l.svcCtx.HospitalModel.FindById(l.ctx, id)
 	if err != nil {
 		return ErrInternal

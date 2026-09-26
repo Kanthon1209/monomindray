@@ -60,6 +60,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  DesktopTable,
+  MobileCardItem,
+  MobileCardList,
+  PageToolbar,
+} from "@/components/mobile-data-list";
+import {
   CHINA_PROVINCES,
   allCities,
   citiesForProvince,
@@ -384,16 +390,17 @@ export default function HospitalsPage() {
                 </CardDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <PageToolbar>
               <Input
                 placeholder="搜索医院/城市"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                className="w-[180px]"
+                className="w-full sm:w-[180px]"
               />
               <Button
                 variant="outline"
                 size="icon"
+                className="h-10 w-10 shrink-0"
                 onClick={load}
                 disabled={loading}
               >
@@ -401,11 +408,11 @@ export default function HospitalsPage() {
                   className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
                 />
               </Button>
-              <Button onClick={openCreate}>
+              <Button className="min-h-10 w-full sm:w-auto" onClick={openCreate}>
                 <Plus className="h-4 w-4" />
                 新增医院
               </Button>
-            </div>
+            </PageToolbar>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
@@ -413,7 +420,7 @@ export default function HospitalsPage() {
             <p className="text-sm text-destructive">{error}</p>
           ) : null}
 
-          <div className="rounded-lg border">
+          <DesktopTable>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -479,7 +486,51 @@ export default function HospitalsPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </DesktopTable>
+
+          <MobileCardList>
+            {loading ? (
+              <li className="flex h-24 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </li>
+            ) : items.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                暂无医院数据
+              </li>
+            ) : (
+              items.map((h) => (
+                <MobileCardItem key={h.id}>
+                  <div className="flex w-full items-start gap-2">
+                    <button
+                      type="button"
+                      className="flex min-h-10 min-w-0 flex-1 flex-col gap-1.5 text-left"
+                      onClick={() => openEdit(h)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-medium">{h.name}</span>
+                        {statusBadge(h.status)}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {h.province} · {h.city}
+                      </span>
+                      <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
+                        <span>{h.level}</span>
+                        <span>{h.deviceCount} 台</span>
+                      </div>
+                    </button>
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      className="h-10 w-10 shrink-0"
+                      onClick={(e) => onDelete(h.id, e)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </MobileCardItem>
+              ))
+            )}
+          </MobileCardList>
         </CardContent>
       </Card>
 
