@@ -979,7 +979,7 @@ export default function SurveyTemplatesPage() {
                 </Select>
                 {fieldDraft.type === "string_array" ? (
                   <p className="text-xs text-muted-foreground">
-                    采集员填写时可从「检测项目」字典多选；也可临时输入新项目名。
+                    采集员填写时每项单独一行，可点「添加一项」继续录入；检测项目类字段仍可从字典联想。
                   </p>
                 ) : null}
               </div>

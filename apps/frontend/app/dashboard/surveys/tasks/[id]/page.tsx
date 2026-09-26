@@ -214,7 +214,7 @@ export default function SurveyTaskFillPage() {
           options={assayOptions}
           onChange={onChange}
           disabled={disabled}
-          placeholder="从项目字典中多选，也可输入新项目"
+          placeholder="填写一项，点「添加一项」继续"
         />
       );
     }
