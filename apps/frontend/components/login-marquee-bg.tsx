@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * Diagonal scrolling "MINDRAY" watermark — ZZZ character-screen scale.
- * Sparse hero bands, huge uppercase ghost type, very slow opposite drift.
+ * Diagonal MINDRAY watermark — ZZZ official-site display typography vibe:
+ * condensed heavy uppercase, tight tracking, sparse slow bands.
  */
 const BANDS = 5;
-const REPEAT = 6;
+const REPEAT = 8;
 const TEXT = "MINDRAY";
 
 export function LoginMarqueeBg() {
@@ -17,8 +17,7 @@ export function LoginMarqueeBg() {
       <div className="login-marquee-stage">
         {Array.from({ length: BANDS }, (_, i) => {
           const reverse = i % 2 === 1;
-          // Very slow premium drift: ~100–160s
-          const duration = 100 + (i % 4) * 20;
+          const duration = 96 + (i % 4) * 18;
           return (
             <div
               key={i}

@@ -126,47 +126,47 @@ body {
 }
 
 
-/* ---- Login page diagonal MINDRAY marquee (ZZZ hero VOID-scale) ---- */
+/* ---- Login page MINDRAY watermark (ZZZ official-site typography vibe) ---- */
 .login-marquee-bg {
   z-index: 0;
   background:
-    radial-gradient(1100px 800px at 12% -8%, rgba(90, 120, 145, 0.1), transparent 58%),
-    radial-gradient(800px 560px at 100% 105%, rgba(70, 95, 120, 0.08), transparent 52%),
-    linear-gradient(168deg, #14171c 0%, #1b1f26 48%, #12151a 100%);
+    radial-gradient(900px 640px at 18% 0%, rgba(70, 100, 125, 0.14), transparent 55%),
+    radial-gradient(720px 520px at 92% 100%, rgba(55, 75, 95, 0.1), transparent 50%),
+    linear-gradient(165deg, #101318 0%, #181c22 50%, #0e1116 100%);
 }
 
 .login-marquee-stage {
   position: absolute;
-  left: -45%;
-  top: -55%;
-  width: 190%;
-  height: 210%;
-  transform: rotate(-38deg);
+  left: -30%;
+  top: -40%;
+  width: 160%;
+  height: 180%;
+  transform: rotate(-28deg);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: clamp(2.5rem, 5vw, 4.5rem);
+  gap: clamp(1.75rem, 3.2vw, 3rem);
   opacity: 1;
 }
 
 .login-marquee-band {
   flex: 0 0 auto;
-  height: clamp(7rem, 14vw, 12rem);
+  height: clamp(4.75rem, 9.5vw, 7.75rem);
   overflow: hidden;
   white-space: nowrap;
-  mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
 }
 
 .login-marquee-track {
   display: inline-flex;
   width: max-content;
-  animation: login-marquee-scroll var(--marquee-duration, 120s) linear infinite;
+  animation: login-marquee-scroll var(--marquee-duration, 110s) linear infinite;
   will-change: transform;
 }
 
 .login-marquee-band.is-reverse .login-marquee-track {
   animation-direction: reverse;
-  animation-duration: calc(var(--marquee-duration, 120s) * 1.18);
+  animation-duration: calc(var(--marquee-duration, 110s) * 1.14);
 }
 
 .login-marquee-chunk {
@@ -174,41 +174,38 @@ body {
   align-items: center;
 }
 
+/* Oswald condensed + tight tracking ≈ Mont-Heavy / Impact watermark feel */
 .login-marquee-word {
   display: inline-block;
-  padding: 0 clamp(3.5rem, 7vw, 8rem);
-  font-size: clamp(5.5rem, 14vw, 11.5rem);
-  font-weight: 900;
-  font-stretch: condensed;
-  letter-spacing: 0.32em;
-  line-height: 0.92;
+  padding: 0 clamp(1.75rem, 3.5vw, 3.25rem);
+  font-family: var(--font-login-display), "Arial Narrow", Impact, Haettenschweiler, sans-serif;
+  font-size: clamp(4rem, 10vw, 7.5rem);
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  line-height: 0.95;
   text-transform: uppercase;
-  color: rgba(150, 172, 190, 0.075);
-  -webkit-text-stroke: 1px rgba(170, 195, 215, 0.045);
-  text-shadow:
-    0 0 0.5px rgba(180, 205, 225, 0.06),
-    0 1px 0 rgba(0, 0, 0, 0.15);
+  color: rgba(168, 186, 204, 0.13);
+  -webkit-text-stroke: 0.5px rgba(190, 210, 225, 0.05);
+  text-shadow: none;
   user-select: none;
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  font-feature-settings: "ss01" 0;
 }
 
 .login-marquee-band:nth-child(odd) .login-marquee-word {
-  color: rgba(135, 158, 178, 0.065);
-  -webkit-text-stroke-color: rgba(155, 180, 200, 0.04);
-  letter-spacing: 0.36em;
+  color: rgba(150, 170, 190, 0.11);
+  letter-spacing: 0.03em;
+  font-weight: 600;
 }
 
 .login-marquee-band:nth-child(3n) .login-marquee-word {
-  color: rgba(160, 185, 205, 0.055);
-  letter-spacing: 0.4em;
-  -webkit-text-stroke-width: 0.75px;
+  color: rgba(175, 195, 212, 0.1);
+  letter-spacing: 0.055em;
 }
 
 .login-marquee-band:nth-child(even) .login-marquee-word {
-  font-size: clamp(4.75rem, 12vw, 10rem);
-  letter-spacing: 0.38em;
-  color: rgba(125, 148, 168, 0.06);
+  font-size: clamp(3.5rem, 8.5vw, 6.5rem);
+  letter-spacing: 0.02em;
+  color: rgba(140, 160, 180, 0.1);
 }
 
 @keyframes login-marquee-scroll {
