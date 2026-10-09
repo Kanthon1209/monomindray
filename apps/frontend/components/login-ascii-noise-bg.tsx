@@ -11,9 +11,11 @@ import { useEffect, useRef } from "react";
 const RAMP =
   " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
 
-const SPEED = 1;
-const SCALE = 0.032;
-const LIGHT_GAIN = 1.15;
+const SPEED = 0.42; // slower drift
+const SCALE = 0.018; // larger spatial waves
+const LIGHT_GAIN = 1.35;
+/** Amplify fBm height before remap → stronger peaks/valleys */
+const HEIGHT_AMP = 1.55;
 
 const perm = new Uint8Array(512);
 (function seed() {
@@ -80,14 +82,14 @@ function perlin3(x: number, y: number, z: number) {
   );
 }
 function fbm(x: number, y: number, z: number) {
-  let amp = 0.55;
+  let amp = 0.65;
   let freq = 1;
   let sum = 0;
   let norm = 0;
   for (let i = 0; i < 5; i++) {
     sum += amp * perlin3(x * freq, y * freq, z * freq);
     norm += amp;
-    amp *= 0.5;
+    amp *= 0.52;
     freq *= 2.03;
   }
   return sum / norm;
@@ -109,14 +111,15 @@ function shadeColor(
   y: number,
   time: number,
 ) {
-  const wave = Math.sin(x * 0.045 + time * 0.55) * 0.5 + 0.5;
+  // Hue locked to light-blue ↔ cyan only (no purple / magenta / amber)
+  const wave = Math.sin(x * 0.035 + time * 0.28) * 0.5 + 0.5;
   const wave2 =
-    Math.cos(y * 0.07 - time * 0.35 + height01 * 4.2) * 0.5 + 0.5;
-  let hue = 185 + height01 * 95 + wave * 70 + wave2 * 45 + time * 18;
-  hue = ((hue % 360) + 360) % 360;
-  const sat = 58 + height01 * 28 + lit * 12;
-  const baseL = 18 + height01 * 34;
-  const L = Math.min(82, Math.max(8, baseL + lit * 28 + rim * 12));
+    Math.cos(y * 0.05 - time * 0.18 + height01 * 3.2) * 0.5 + 0.5;
+  let hue = 178 + height01 * 20 + wave * 10 + wave2 * 8;
+  hue = Math.min(208, Math.max(172, hue));
+  const sat = 48 + height01 * 22 + lit * 10;
+  const baseL = 14 + height01 * 38;
+  const L = Math.min(78, Math.max(6, baseL + lit * 30 + rim * 10));
   return `hsl(${hue.toFixed(1)} ${sat.toFixed(1)}% ${L.toFixed(1)}%)`;
 }
 
@@ -199,8 +202,12 @@ export function LoginAsciiNoiseBg() {
           lit = Math.pow(lit, 0.85) * lightGain;
           const rim = Math.pow(1 - Math.max(0, nzv), 2) * 0.35;
 
-          const height01 = Math.min(1, Math.max(0, (h0 + 1) * 0.5));
-          const density = Math.pow(height01, 0.92);
+          const height01 = Math.min(
+            1,
+            Math.max(0, (h0 * HEIGHT_AMP + 1) * 0.5),
+          );
+          // Lower gamma → punchier ASCII density contrast
+          const density = Math.pow(height01, 0.72);
           const idx = Math.min(
             RAMP.length - 1,
             (density * (RAMP.length - 1)) | 0,
