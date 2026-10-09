@@ -126,71 +126,82 @@ body {
 }
 
 
-/* ---- Login page diagonal mindray marquee background ---- */
+/* ---- Login page diagonal MINDRAY marquee (ZZZ-style watermark) ---- */
 .login-marquee-bg {
   z-index: 0;
   background:
-    radial-gradient(1200px 600px at 10% 0%, rgba(196, 22, 28, 0.08), transparent 60%),
-    radial-gradient(900px 500px at 90% 100%, rgba(199, 0, 11, 0.06), transparent 55%),
-    #faf7f7;
+    radial-gradient(1000px 700px at 15% -10%, rgba(80, 110, 130, 0.12), transparent 55%),
+    radial-gradient(900px 600px at 95% 110%, rgba(196, 22, 28, 0.06), transparent 50%),
+    linear-gradient(165deg, #1a1d22 0%, #23272e 45%, #1c2026 100%);
 }
 
 .login-marquee-stage {
   position: absolute;
-  left: -20%;
-  top: -30%;
-  width: 140%;
-  height: 160%;
-  transform: rotate(-28deg);
+  left: -35%;
+  top: -45%;
+  width: 170%;
+  height: 190%;
+  transform: rotate(-32deg);
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  opacity: 0.55;
+  justify-content: center;
+  gap: 1.25rem;
+  opacity: 1;
 }
 
 .login-marquee-band {
   flex: 0 0 auto;
-  height: 2.6rem;
+  height: clamp(4.5rem, 9vw, 7.5rem);
   overflow: hidden;
   white-space: nowrap;
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
 }
 
 .login-marquee-track {
   display: inline-flex;
   width: max-content;
-  animation: login-marquee-scroll var(--marquee-duration, 36s) linear infinite;
+  animation: login-marquee-scroll var(--marquee-duration, 90s) linear infinite;
   will-change: transform;
 }
 
 .login-marquee-band.is-reverse .login-marquee-track {
   animation-direction: reverse;
-  animation-duration: calc(var(--marquee-duration, 36s) * 1.15);
+  animation-duration: calc(var(--marquee-duration, 90s) * 1.12);
 }
 
 .login-marquee-chunk {
   display: inline-flex;
+  align-items: center;
 }
 
 .login-marquee-word {
   display: inline-block;
-  padding: 0 1.75rem;
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-transform: lowercase;
-  color: rgba(196, 22, 28, 0.22);
+  padding: 0 clamp(2rem, 4vw, 4.5rem);
+  font-size: clamp(3.25rem, 8.5vw, 7rem);
+  font-weight: 900;
+  font-stretch: condensed;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: rgba(148, 168, 184, 0.11);
+  text-shadow: 0 0 1px rgba(160, 190, 210, 0.08);
   user-select: none;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.login-marquee-band:nth-child(odd) .login-marquee-word {
+  color: rgba(130, 150, 168, 0.1);
 }
 
 .login-marquee-band:nth-child(3n) .login-marquee-word {
-  color: rgba(199, 0, 11, 0.16);
+  color: rgba(170, 190, 205, 0.09);
+  letter-spacing: 0.22em;
 }
 
 .login-marquee-band:nth-child(4n) .login-marquee-word {
-  font-size: 1.15rem;
-  letter-spacing: 0.4em;
-  color: rgba(100, 20, 24, 0.14);
+  font-size: clamp(2.75rem, 7vw, 5.75rem);
+  letter-spacing: 0.28em;
+  color: rgba(120, 145, 165, 0.08);
 }
 
 @keyframes login-marquee-scroll {

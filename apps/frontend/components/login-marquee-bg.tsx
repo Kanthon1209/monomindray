@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Diagonal scrolling "mindray" watermark bands for the login page.
- * Alternating bands move in opposite directions.
+ * Diagonal scrolling "MINDRAY" watermark bands for the login page.
+ * ZZZ-style: large uppercase ghost text, sparse bands, slow opposite drift.
  */
-const BANDS = 14;
-const REPEAT = 24;
-const TEXT = "mindray";
+const BANDS = 7;
+const REPEAT = 10;
+const TEXT = "MINDRAY";
 
 export function LoginMarqueeBg() {
   return (
@@ -17,7 +17,8 @@ export function LoginMarqueeBg() {
       <div className="login-marquee-stage">
         {Array.from({ length: BANDS }, (_, i) => {
           const reverse = i % 2 === 1;
-          const duration = 28 + (i % 5) * 6;
+          // Slow premium drift: ~72–120s per band
+          const duration = 72 + (i % 4) * 16;
           return (
             <div
               key={i}
