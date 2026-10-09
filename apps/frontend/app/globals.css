@@ -124,3 +124,86 @@ body {
   --sidebar-border: hsl(0 8% 16%);
   --sidebar-ring: #e00b0b;
 }
+
+
+/* ---- Login page diagonal mindray marquee background ---- */
+.login-marquee-bg {
+  z-index: 0;
+  background:
+    radial-gradient(1200px 600px at 10% 0%, rgba(196, 22, 28, 0.08), transparent 60%),
+    radial-gradient(900px 500px at 90% 100%, rgba(199, 0, 11, 0.06), transparent 55%),
+    #faf7f7;
+}
+
+.login-marquee-stage {
+  position: absolute;
+  left: -20%;
+  top: -30%;
+  width: 140%;
+  height: 160%;
+  transform: rotate(-28deg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  opacity: 0.55;
+}
+
+.login-marquee-band {
+  flex: 0 0 auto;
+  height: 2.6rem;
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.login-marquee-track {
+  display: inline-flex;
+  width: max-content;
+  animation: login-marquee-scroll var(--marquee-duration, 36s) linear infinite;
+  will-change: transform;
+}
+
+.login-marquee-band.is-reverse .login-marquee-track {
+  animation-direction: reverse;
+  animation-duration: calc(var(--marquee-duration, 36s) * 1.15);
+}
+
+.login-marquee-chunk {
+  display: inline-flex;
+}
+
+.login-marquee-word {
+  display: inline-block;
+  padding: 0 1.75rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: lowercase;
+  color: rgba(196, 22, 28, 0.22);
+  user-select: none;
+}
+
+.login-marquee-band:nth-child(3n) .login-marquee-word {
+  color: rgba(199, 0, 11, 0.16);
+}
+
+.login-marquee-band:nth-child(4n) .login-marquee-word {
+  font-size: 1.15rem;
+  letter-spacing: 0.4em;
+  color: rgba(100, 20, 24, 0.14);
+}
+
+@keyframes login-marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-marquee-track {
+    animation: none;
+  }
+}
