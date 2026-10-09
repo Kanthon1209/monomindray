@@ -1,10 +1,9 @@
 "use client";
 
 /**
- * Diagonal MINDRAY watermark — ZZZ official-site display typography vibe:
- * condensed heavy uppercase, tight tracking, sparse slow bands.
+ * Diagonal MINDRAY watermark — Oswald, tight tracking, full-viewport cover.
  */
-const BANDS = 5;
+const BANDS = 10;
 const REPEAT = 8;
 const TEXT = "MINDRAY";
 
@@ -17,7 +16,7 @@ export function LoginMarqueeBg() {
       <div className="login-marquee-stage">
         {Array.from({ length: BANDS }, (_, i) => {
           const reverse = i % 2 === 1;
-          const duration = 96 + (i % 4) * 18;
+          const duration = 100 + (i % 5) * 16;
           return (
             <div
               key={i}
