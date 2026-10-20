@@ -152,7 +152,8 @@ body {
 
 .login-marquee-band {
   flex: 0 0 auto;
-  height: clamp(6.5rem, 13vw, 11rem);
+  /* ~1.1× word font-size (clamp 6rem/14vw/11.5rem) so overflow:hidden never clips glyphs */
+  height: clamp(6.6rem, 15.4vw, 12.65rem);
   overflow: hidden;
   white-space: nowrap;
   /* Soft edge only — keep most of the band opaque so corners stay filled */

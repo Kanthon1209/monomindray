@@ -153,14 +153,19 @@ export function LoginAsciiNoiseBg() {
       canvas.width = Math.floor(cssW * dpr);
       canvas.height = Math.floor(cssH * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // Cap density for full-viewport perf (still fills screen)
-      const fontPx = Math.max(10, Math.min(16, Math.floor(cssW / 88)));
-      ctx.font = `600 ${fontPx}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
-      ctx.textBaseline = "top";
-      cellW = ctx.measureText("M").width;
-      cellH = fontPx * 1.12;
-      cols = Math.min(140, Math.max(48, Math.floor(cssW / cellW)));
-      rows = Math.min(70, Math.max(28, Math.floor(cssH / cellH)));
+      // Always cover full viewport; raise font size if cell count would exceed ~10k
+      const MAX_CELLS = 10000;
+      let fontPx = Math.max(10, Math.min(16, Math.floor(cssW / 88)));
+      for (;;) {
+        ctx.font = `600 ${fontPx}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+        ctx.textBaseline = "top";
+        cellW = ctx.measureText("M").width || fontPx * 0.6;
+        cellH = fontPx * 1.12;
+        cols = Math.ceil(cssW / cellW) + 1;
+        rows = Math.ceil(cssH / cellH) + 1;
+        if (cols * rows <= MAX_CELLS || fontPx >= 28) break;
+        fontPx += 1;
+      }
     };
 
     const paint = (time: number, animate: boolean) => {
