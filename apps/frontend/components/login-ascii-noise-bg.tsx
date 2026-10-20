@@ -132,10 +132,6 @@ export function LoginAsciiNoiseBg() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const reduceMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
     let cols = 100;
     let rows = 36;
     let cellW = 10;
@@ -149,7 +145,7 @@ export function LoginAsciiNoiseBg() {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const cssW = canvas.clientWidth;
       const cssH = canvas.clientHeight;
-      if (cssW < 1 || cssH < 1) return;
+      if (cssW < 1 || cssH < 1) return false;
       canvas.width = Math.floor(cssW * dpr);
       canvas.height = Math.floor(cssH * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -166,6 +162,7 @@ export function LoginAsciiNoiseBg() {
         if (cols * rows <= MAX_CELLS || fontPx >= 28) break;
         fontPx += 1;
       }
+      return true;
     };
 
     const paint = (time: number, animate: boolean) => {
@@ -239,24 +236,34 @@ export function LoginAsciiNoiseBg() {
       raf = requestAnimationFrame(frame);
     };
 
+    // Always animate (ignore prefers-reduced-motion; login bg is decorative)
     resize();
-    if (reduceMotion) {
-      paint(1.2, false);
-    } else {
-      last = performance.now();
-      raf = requestAnimationFrame(frame);
-    }
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
 
     const onResize = () => {
       resize();
-      if (reduceMotion) paint(1.2, false);
     };
     window.addEventListener("resize", onResize);
+    // Retry sizing if canvas was 0×0 on first mount / layout changes
+    const ro =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(onResize) : null;
+    ro?.observe(canvas);
+    const onVis = () => {
+      if (!document.hidden) {
+        last = performance.now();
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(frame);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
 
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
+      document.removeEventListener("visibilitychange", onVis);
+      ro?.disconnect();
     };
   }, []);
 

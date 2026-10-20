@@ -219,8 +219,3 @@ body {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .login-marquee-track {
-    animation: none;
-  }
-}
