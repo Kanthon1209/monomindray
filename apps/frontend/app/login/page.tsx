@@ -10,7 +10,8 @@ import { LoginBg, type LoginBgMode } from "@/components/login-bg"
  *
  * See components/LOGIN_BG_SWITCH.md
  */
-const LOGIN_BG_MODE: LoginBgMode = "random"
+// ASCII Perlin disabled (code kept). Set "random" or "ascii" to re-enable.
+const LOGIN_BG_MODE: LoginBgMode = "marquee"
 
 /** Marquee Oswald face; harmless when ASCII wins the random pick. */
 const loginDisplay = Oswald({
