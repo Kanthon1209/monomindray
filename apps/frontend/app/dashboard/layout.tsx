@@ -5,8 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   LayoutDashboard,
-  Hospital,
-  Users,
+  Building2,
   Settings,
   LogOut,
   Activity,
@@ -63,9 +62,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const navItems = [
   { title: "数据看板", href: "/dashboard", icon: LayoutDashboard },
-  { title: "医院管理", href: "/dashboard/hospitals", icon: Hospital },
+  { title: "客户管理", href: "/dashboard/customers", icon: Building2 },
   { title: "设备管理", href: "/dashboard/devices", icon: Cpu },
-  { title: "客户管理", href: "/dashboard/customers", icon: Users },
   { title: "检测项目", href: "/dashboard/assays", icon: FlaskConical },
   { title: "系统设置", href: "/dashboard/settings", icon: Settings },
 ];
@@ -139,7 +137,7 @@ function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {admin
-                ? navItems.slice(0, 5).map((item) => {
+                ? navItems.slice(0, 4).map((item) => {
                     const isActive =
                       item.href === "/dashboard"
                         ? pathname === "/dashboard"
@@ -246,7 +244,7 @@ function AppSidebar() {
                 </SidebarMenuItem>
               ) : null}
 
-              {navItems.slice(5).map((item) => {
+              {navItems.slice(4).map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (
                   <SidebarMenuItem key={item.href}>
