@@ -317,19 +317,19 @@ export default function UserManagePage() {
         </CardContent>
       </Card>
     <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="gap-5 p-5 sm:max-w-md sm:p-6">
+          <DialogHeader className="pr-8 text-left">
             <DialogTitle>编辑用户</DialogTitle>
             <DialogDescription>修改用户资料、角色与状态。</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             <div className="grid gap-1.5">
-              <Label htmlFor="eu-name">姓名</Label>
+              <Label className="text-sm" htmlFor="eu-name">姓名</Label>
               <Input id="eu-name" value={form.name} maxLength={64}
                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="eu-email">邮箱</Label>
+              <Label className="text-sm" htmlFor="eu-email">邮箱</Label>
               <Input id="eu-email" type="email" value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
@@ -337,7 +337,7 @@ export default function UserManagePage() {
               <Label>角色</Label>
               <Select value={form.role} disabled={isSelf(editing)}
                 onValueChange={(v) => setForm({ ...form, role: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="collector">采集员</SelectItem>
                   <SelectItem value="admin">管理员</SelectItem>
@@ -348,7 +348,7 @@ export default function UserManagePage() {
               <Label>状态</Label>
               <Select value={form.status} disabled={isSelf(editing)}
                 onValueChange={(v) => setForm({ ...form, status: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pending">待审核</SelectItem>
                   <SelectItem value="approved">已通过</SelectItem>
@@ -361,7 +361,7 @@ export default function UserManagePage() {
             ) : null}
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           </div>
-          <DialogFooter className="[&>button]:w-full sm:[&>button]:w-auto">
+          <DialogFooter className="gap-2 pt-1 [&>button]:w-full sm:[&>button]:w-auto">
             <Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>取消</Button>
             <Button onClick={saveEdit} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -372,8 +372,8 @@ export default function UserManagePage() {
       </Dialog>
 
       <Dialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="gap-5 p-5 sm:max-w-md sm:p-6">
+          <DialogHeader className="pr-8 text-left">
             <DialogTitle>确认删除用户</DialogTitle>
             <DialogDescription>
               确定要删除用户「{deleting?.name}」（{deleting?.email}）吗？此操作不可恢复，
@@ -381,7 +381,7 @@ export default function UserManagePage() {
             </DialogDescription>
           </DialogHeader>
           {deleteError ? <p className="text-sm text-destructive">{deleteError}</p> : null}
-          <DialogFooter className="[&>button]:w-full sm:[&>button]:w-auto">
+          <DialogFooter className="gap-2 pt-1 [&>button]:w-full sm:[&>button]:w-auto">
             <Button variant="outline" onClick={() => setDeleting(null)}>取消</Button>
             <Button variant="destructive" onClick={confirmDelete}
               disabled={!!deleting && actingId === deleting.id}>
