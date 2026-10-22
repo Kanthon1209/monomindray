@@ -38,6 +38,8 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/api/v1/admin/users", Handler: ListUsersHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/admin/users/:id/approve", Handler: ApproveUserHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/admin/users/:id/reject", Handler: RejectUserHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/api/v1/admin/users/:id", Handler: AdminUpdateUserHandler(svcCtx)},
+		{Method: http.MethodDelete, Path: "/api/v1/admin/users/:id", Handler: AdminDeleteUserHandler(svcCtx)},
 
 		{Method: http.MethodGet, Path: "/api/v1/dashboard/hospitals", Handler: DashboardHospitalsHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/api/v1/dashboard/provinces", Handler: DashboardProvincesHandler(svcCtx)},

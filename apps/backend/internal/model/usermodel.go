@@ -40,6 +40,8 @@ type UserModel interface {
 	Update(ctx context.Context, user *User) error
 	UpdateStatus(ctx context.Context, id int64, status string) error
 	List(ctx context.Context, filter UserListFilter) ([]User, int64, error)
+	AdminUpdate(ctx context.Context, user *User) error
+	Delete(ctx context.Context, id int64) error
 }
 
 type userModel struct {
@@ -173,4 +175,26 @@ func (m *userModel) List(ctx context.Context, filter UserListFilter) ([]User, in
 		return nil, 0, fmt.Errorf("iterate users: %w", err)
 	}
 	return users, total, nil
+}
+
+// AdminUpdate updates profile, role and status in one statement (admin only).
+func (m *userModel) AdminUpdate(ctx context.Context, user *User) error {
+	_, err := m.conn.Exec(ctx,
+		`UPDATE users SET name = $1, email = $2, role = $3, status = $4, avatar = $5 WHERE id = $6`,
+		user.Name, user.Email, user.Role, user.Status, user.Avatar, user.Id,
+	)
+	if err != nil {
+		return fmt.Errorf("admin update user: %w", err)
+	}
+	return nil
+}
+
+// Delete hard-deletes a user. FK references are ON DELETE SET NULL (audit columns)
+// or ON DELETE CASCADE (survey_assignments), so the database handles related rows.
+func (m *userModel) Delete(ctx context.Context, id int64) error {
+	_, err := m.conn.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
 }

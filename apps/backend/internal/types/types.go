@@ -49,6 +49,17 @@ type (
 	ReviewUserRequest struct {
 		Id int64 `path:"id"`
 	}
+	AdminUpdateUserRequest struct {
+		Id     int64  `path:"id"`
+		Name   string `json:"name"`
+		Email  string `json:"email"`
+		Role   string `json:"role"`
+		Status string `json:"status"`
+		Avatar string `json:"avatar,optional"`
+	}
+	AdminDeleteUserResponse struct {
+		Id int64 `json:"id"`
+	}
 	ReviewUserResponse struct {
 		User UserInfo `json:"user"`
 	}

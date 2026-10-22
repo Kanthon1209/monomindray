@@ -57,6 +57,19 @@ type (
 		Id int64 `path:"id"`
 	}
 
+	AdminUpdateUserRequest {
+		Id     int64  `path:"id"`
+		Name   string `json:"name"`
+		Email  string `json:"email"`
+		Role   string `json:"role"`
+		Status string `json:"status"`
+		Avatar string `json:"avatar,optional"`
+	}
+
+	AdminDeleteUserResponse {
+		Id int64 `json:"id"`
+	}
+
 	ReviewUserResponse {
 		User UserInfo `json:"user"`
 	}
@@ -103,4 +116,10 @@ service mindray-api {
 	)
 	@handler RejectUserHandler
 	post /api/v1/admin/users/:id/reject (ReviewUserRequest) returns (ReviewUserResponse)
+
+	@handler AdminUpdateUserHandler
+	put /api/v1/admin/users/:id (AdminUpdateUserRequest) returns (ReviewUserResponse)
+
+	@handler AdminDeleteUserHandler
+	delete /api/v1/admin/users/:id (ReviewUserRequest) returns (AdminDeleteUserResponse)
 }

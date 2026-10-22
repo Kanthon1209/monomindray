@@ -95,7 +95,51 @@ export function useAdminUsers(status: StatusFilter) {
     }
   };
 
+  const updateUser = async (
+    id: string,
+    payload: { name: string; email: string; role: string; status: string; avatar?: string },
+  ): Promise<string | null> => {
+    const token = getAuthToken();
+    if (!token) return "未登录";
+    setActingId(id);
+    try {
+      const resp = await fetch(`${API_BASE}/admin/users/${id}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) return await readError(resp);
+      await loadUsers();
+      return null;
+    } catch {
+      return "保存失败，请重试";
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const deleteUser = async (id: string): Promise<string | null> => {
+    const token = getAuthToken();
+    if (!token) return "未登录";
+    setActingId(id);
+    try {
+      const resp = await fetch(`${API_BASE}/admin/users/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) return await readError(resp);
+      await loadUsers();
+      return null;
+    } catch {
+      return "删除失败，请重试";
+    } finally {
+      setActingId(null);
+    }
+  };
+
   return {
+    updateUser,
+    deleteUser,
     items,
     total,
     loading,
