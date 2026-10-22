@@ -11,7 +11,7 @@ export function Header() {
       </div>
       <div className="hidden h-6 w-px bg-border sm:block" />
       <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
-        IVD 产品应用价值平台
+        迈瑞客户信息平台
       </span>
     </header>
   );

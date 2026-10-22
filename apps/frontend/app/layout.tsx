@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IVD 产品应用价值平台",
-  description: "迈瑞 IVD 产品应用价值数据看板",
+  title: "迈瑞客户信息平台",
+  description: "迈瑞客户信息平台",
 };
 
 export const viewport: Viewport = {

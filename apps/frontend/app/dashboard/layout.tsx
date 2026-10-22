@@ -123,7 +123,7 @@ function AppSidebar() {
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">Mindray</span>
-                  <span className="truncate text-xs">IVD 价值平台</span>
+                  <span className="truncate text-xs">迈瑞客户信息平台</span>
                 </div>
               </Link>
             </SidebarMenuButton>
@@ -315,7 +315,7 @@ function TopBar() {
       <SidebarTrigger />
       <div className="ml-auto flex items-center gap-2">
         <span className="hidden text-sm text-muted-foreground sm:inline">
-          IVD 产品应用价值平台
+          迈瑞客户信息平台
         </span>
       </div>
     </header>
