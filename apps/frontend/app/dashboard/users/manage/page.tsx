@@ -361,7 +361,7 @@ export default function UserManagePage() {
             ) : null}
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           </div>
-          <DialogFooter>
+          <DialogFooter className="[&>button]:w-full sm:[&>button]:w-auto">
             <Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>取消</Button>
             <Button onClick={saveEdit} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -381,7 +381,7 @@ export default function UserManagePage() {
             </DialogDescription>
           </DialogHeader>
           {deleteError ? <p className="text-sm text-destructive">{deleteError}</p> : null}
-          <DialogFooter>
+          <DialogFooter className="[&>button]:w-full sm:[&>button]:w-auto">
             <Button variant="outline" onClick={() => setDeleting(null)}>取消</Button>
             <Button variant="destructive" onClick={confirmDelete}
               disabled={!!deleting && actingId === deleting.id}>

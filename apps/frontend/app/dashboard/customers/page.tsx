@@ -579,8 +579,8 @@ export default function CustomersPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={closeDialog}>
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
-          <DialogHeader className="border-b px-5 py-4">
+        <DialogContent className="flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 border-b px-5 py-4 pr-10">
             <DialogTitle>{editingId ? "编辑客户" : "新增客户"}</DialogTitle>
             <DialogDescription>
               {editingId
@@ -589,7 +589,7 @@ export default function CustomersPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={onSubmit} className="space-y-4 px-5 py-4">
+          <form onSubmit={onSubmit} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pt-4 sm:px-5">
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
@@ -803,7 +803,7 @@ export default function CustomersPage() {
               </div>
             ) : null}
 
-            <DialogFooter className="gap-2 border-t px-0 pt-4 sm:justify-end">
+            <DialogFooter className="sticky bottom-0 z-10 -mx-4 gap-2 border-t bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:-mx-5 sm:justify-end sm:px-5 [&>button]:w-full sm:[&>button]:w-auto">
               <Button
                 type="button"
                 variant="outline"
@@ -823,7 +823,7 @@ export default function CustomersPage() {
       </Dialog>
 
       <Dialog open={addDeviceOpen} onOpenChange={setAddDeviceOpen}>
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogContent className="max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1.5rem)] gap-0 overflow-y-auto overscroll-contain p-0 sm:max-w-lg">
           <DialogHeader className="border-b px-5 py-4">
             <DialogTitle>添加设备</DialogTitle>
             <DialogDescription>
