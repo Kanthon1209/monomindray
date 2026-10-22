@@ -7,8 +7,17 @@
 }
 
 (app) {
+	log {
+		output stdout
+		format json
+	}
+
 	handle /api/* {
-		reverse_proxy api:8080
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
 	}
 
 	@pgadmin_noslash path /pgadmin
@@ -16,6 +25,13 @@
 
 	handle /pgadmin* {
 		reverse_proxy pgadmin:80
+	}
+
+	@grafana_noslash path /grafana
+	redir @grafana_noslash /grafana/ 308
+
+	handle /grafana* {
+		reverse_proxy grafana:3000
 	}
 
 	handle {
@@ -32,7 +48,11 @@
 # http://IP → https://domain, except /api (phones often get TCP reset on 443)
 http://{$REDIRECT_IP:127.0.0.2} {
 	handle /api/* {
-		reverse_proxy api:8080
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
 	}
 	@to_https {
 		not path /.well-known/acme-challenge/*

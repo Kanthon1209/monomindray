@@ -2,6 +2,22 @@ Name: mindray-api
 Host: 0.0.0.0
 Port: 8080
 
+# Structured JSON logs on stdout for Alloy → Loki.
+Log:
+  Mode: console
+  Encoding: json
+  Level: info
+  Stat: false
+
+# OpenTelemetry traces → Alloy OTLP → Tempo.
+Telemetry:
+  Name: mindray-api
+  Endpoint: alloy:4318
+  Batcher: otlphttp
+  Sampler: 1.0
+  OtlpHttpPath: /v1/traces
+  OtlpHttpSecure: false
+
 Auth:
   AccessSecret: mindray_jwt_secret_change_me
   ExpireAfter: 86400

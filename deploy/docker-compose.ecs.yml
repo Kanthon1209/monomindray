@@ -32,6 +32,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      alloy:
+        condition: service_started
     networks:
       - mindray
 
@@ -56,6 +58,7 @@ services:
     depends_on:
       - api
       - web
+      - grafana
     ports:
       - "80:80"
       - "443:443"
@@ -99,11 +102,84 @@ services:
     networks:
       - mindray
 
+  # Observability — Loki logs + Tempo traces via /grafana. Keep memory tight.
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: mindray-loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    mem_limit: 320m
+    networks:
+      - mindray
+
+  tempo:
+    image: grafana/tempo:2.7.1
+    container_name: mindray-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/config.yml"]
+    volumes:
+      - ./observability/tempo-config.yml:/etc/tempo/config.yml:ro
+      - tempo_data:/var/tempo
+    mem_limit: 256m
+    networks:
+      - mindray
+
+  alloy:
+    image: grafana/alloy:v1.8.1
+    container_name: mindray-alloy
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./observability/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+      - tempo
+    mem_limit: 192m
+    networks:
+      - mindray
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: mindray-grafana
+    restart: unless-stopped
+    depends_on:
+      - loki
+      - tempo
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-mindray_grafana}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://www.mindcollect.xyz/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_LOG_LEVEL: warn
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    mem_limit: 256m
+    networks:
+      - mindray
+
 volumes:
   postgres_data:
   caddy_data:
   caddy_config:
   pgadmin_data:
+  loki_data:
+  alloy_data:
+  grafana_data:
+  tempo_data:
 
 networks:
   mindray:
