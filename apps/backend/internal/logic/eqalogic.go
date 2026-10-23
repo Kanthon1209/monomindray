@@ -132,7 +132,7 @@ func (l *EqaLogic) Dashboard(req *types.EqaDashboardRequest) (*types.EqaDashboar
 	resp := &types.EqaDashboardResponse{
 		Year: req.Year, TotalParticipations: stats.TotalParticipations,
 		CoverageHospitals: stats.CoverageHospitals,
-		ByScope: make([]types.EqaScopeCount, 0), TopItems: make([]types.EqaItemCount, 0),
+		ByScope:           make([]types.EqaScopeCount, 0), TopItems: make([]types.EqaItemCount, 0),
 		OwnerProgress: make([]types.EqaOwnerProgress, 0),
 	}
 	if resp.Year <= 0 {
@@ -352,14 +352,14 @@ func (l *EqaLogic) EnsureEqaTemplate() (*types.SurveyTemplateResponse, error) {
 		return nil, err
 	}
 	if existing != nil {
-		t, err := l.svcCtx.SurveyModel.UpdateTemplate(l.ctx, existing.Id, "室间质评参评采集", "根据字段注册表生成的 EQA 勾选问卷", "active", schema, true)
+		t, err := l.svcCtx.SurveyModel.UpdateTemplate(l.ctx, existing.Id, "室间质评参评采集", "EQA 复合块：国考/省考可选，科目来自字段注册表", "active", schema, true)
 		if err != nil {
 			return nil, ErrInternal
 		}
 		return &types.SurveyTemplateResponse{Template: toSurveyTemplateInfo(t)}, nil
 	}
 	t, err := l.svcCtx.SurveyModel.CreateTemplate(l.ctx, &model.SurveyTemplate{
-		Code: code, Title: "室间质评参评采集", Description: "根据字段注册表生成的 EQA 勾选问卷",
+		Code: code, Title: "室间质评参评采集", Description: "EQA 复合块：国考/省考可选，科目来自字段注册表",
 		Schema: schema, Status: "active", CreatedBy: &uid,
 	})
 	if err != nil {
@@ -370,15 +370,6 @@ func (l *EqaLogic) EnsureEqaTemplate() (*types.SurveyTemplateResponse, error) {
 }
 
 func (l *EqaLogic) buildEqaSchema() (json.RawMessage, error) {
-	rows, err := l.svcCtx.EqaModel.ListFields(l.ctx)
-	if err != nil {
-		return nil, err
-	}
-	byCode := map[string]model.FieldRegistry{}
-	for _, r := range rows {
-		byCode[r.Code] = r
-	}
-
 	levelOptions := []string{"战略客户", "重点客户", "普通客户", "潜在客户"}
 	if cf, err := l.svcCtx.CollectableFieldModel.FindByStorageTarget(l.ctx, "hospital.attributes.customer_level"); err == nil && cf != nil {
 		var enums []string
@@ -388,15 +379,18 @@ func (l *EqaLogic) buildEqaSchema() (json.RawMessage, error) {
 	}
 
 	type field struct {
-		Key           string   `json:"key"`
-		Label         string   `json:"label"`
-		Section       string   `json:"section"`
-		Type          string   `json:"type"`
-		Target        string   `json:"target"`
-		Required      bool     `json:"required"`
-		Options       []string `json:"options,omitempty"`
-		OptionsSource string   `json:"optionsSource,omitempty"`
+		Key              string   `json:"key"`
+		Label            string   `json:"label"`
+		Section          string   `json:"section"`
+		Type             string   `json:"type"`
+		Target           string   `json:"target"`
+		Required         bool     `json:"required"`
+		Options          []string `json:"options,omitempty"`
+		OptionsSource    string   `json:"optionsSource,omitempty"`
+		EnableNational   *bool    `json:"enableNational,omitempty"`
+		EnableProvincial *bool    `json:"enableProvincial,omitempty"`
 	}
+	enNat, enProv := true, true
 	fields := []field{
 		{
 			Key: "hospital_name", Label: "医院名称", Section: "基本信息", Type: "text",
@@ -406,33 +400,15 @@ func (l *EqaLogic) buildEqaSchema() (json.RawMessage, error) {
 			Key: "customer_level", Label: "客户等级", Section: "基本信息", Type: "enum",
 			Target: "hospital.attributes.customer_level", Options: levelOptions,
 		},
-		{Key: "eqa_year", Label: "参评年份", Section: "基本信息", Type: "number", Target: "eqa.year", Required: true},
-		{Key: "eqa_scope", Label: "参评范围", Section: "基本信息", Type: "enum", Target: "eqa.scope", Required: true, Options: []string{"national", "provincial"}},
+		{
+			Key: "eqa", Label: "室间质评", Section: "室间质评", Type: "eqa_block",
+			Target: "eqa.block", EnableNational: &enNat, EnableProvincial: &enProv,
+		},
 	}
-	for _, r := range rows {
-		if r.ValueType != "boolean" {
-			continue
-		}
-		section := "其他"
-		if r.ParentCode != nil {
-			if p, ok := byCode[*r.ParentCode]; ok {
-				section = p.Name
-			}
-		}
-		fields = append(fields, field{
-			Key: r.Code, Label: r.Name, Section: section, Type: "boolean",
-			Target: "eqa.field." + r.Code,
-		})
+	payload := map[string]any{
+		"fields":   fields,
+		"sections": []string{"基本信息", "室间质评"},
 	}
-	sections := []string{"基本信息"}
-	seen := map[string]bool{"基本信息": true}
-	for _, f := range fields {
-		if !seen[f.Section] {
-			sections = append(sections, f.Section)
-			seen[f.Section] = true
-		}
-	}
-	payload := map[string]any{"fields": fields, "sections": sections}
 	b, err := json.Marshal(payload)
 	return json.RawMessage(b), err
 }
@@ -472,76 +448,280 @@ func toEqaParticipationInfo(p *model.EqaParticipation, items []types.EqaParticip
 	return info
 }
 
-// WritebackFromSurveyAnswers upserts EQA participation from approved survey answers.
-func (l *EqaLogic) WritebackFromSurveyAnswers(actorID, hospitalID int64, answers map[string]any) error {
-	if hospitalID <= 0 || answers == nil {
+// EqaScopeUpsert is one exam scope (national / provincial) for dual-scope writeback.
+type EqaScopeUpsert struct {
+	Participating bool
+	Codes         []string
+}
+
+// EqaHospitalUpsert is the domain payload for a hospital × year EQA snapshot.
+type EqaHospitalUpsert struct {
+	Year       int
+	National   *EqaScopeUpsert
+	Provincial *EqaScopeUpsert
+}
+
+// UpsertHospitalEQA writes national and/or provincial participation for one hospital×year.
+// participating=false deletes that scope's participation row (if any).
+// Codes must belong to the matching field_registry parent (scope.national / scope.provincial).
+func (l *EqaLogic) UpsertHospitalEQA(actorID, hospitalID int64, payload EqaHospitalUpsert) error {
+	if hospitalID <= 0 {
 		return nil
 	}
-	year := int(anyToInt64(answers["eqa_year"]))
+	year := payload.Year
 	if year <= 0 {
 		year = time.Now().Year()
-	}
-	scope := strings.TrimSpace(anyToString(answers["eqa_scope"]))
-	if scope != "national" && scope != "provincial" {
-		// infer from answered field codes
-		for k, v := range answers {
-			if truthy(v) && strings.HasPrefix(k, "national.") {
-				scope = "national"
-				break
-			}
-			if truthy(v) && strings.HasPrefix(k, "provincial.") {
-				scope = "provincial"
-				break
-			}
-		}
-	}
-	if scope != "national" && scope != "provincial" {
-		return nil // not an EQA survey
-	}
-
-	p, err := l.svcCtx.EqaModel.FindParticipationByKey(l.ctx, hospitalID, year, scope)
-	if err != nil {
-		return err
-	}
-	if p == nil {
-		owner := actorID
-		p, err = l.svcCtx.EqaModel.CreateParticipation(l.ctx, &model.EqaParticipation{
-			HospitalId: hospitalID, Year: year, Scope: scope, OwnerUserId: &owner,
-		})
-		if err != nil {
-			return err
-		}
 	}
 	fields, err := l.svcCtx.EqaModel.ListFields(l.ctx)
 	if err != nil {
 		return err
 	}
-	items := make([]model.EqaParticipationItem, 0)
+	allowed := map[string]map[string]struct{}{
+		"national":   {},
+		"provincial": {},
+	}
 	for _, f := range fields {
-		if f.ValueType == "group" || f.ValueType == "enum" || f.ValueType == "text" || f.ValueType == "number" {
-			// boolean participation items only for boolean fields
-			if f.ValueType != "boolean" {
+		if f.ValueType != "boolean" || f.ParentCode == nil {
+			continue
+		}
+		switch *f.ParentCode {
+		case "scope.national":
+			allowed["national"][f.Code] = struct{}{}
+		case "scope.provincial":
+			allowed["provincial"][f.Code] = struct{}{}
+		}
+	}
+
+	applyScope := func(scope string, part *EqaScopeUpsert) error {
+		if part == nil {
+			return nil
+		}
+		existing, err := l.svcCtx.EqaModel.FindParticipationByKey(l.ctx, hospitalID, year, scope)
+		if err != nil {
+			return err
+		}
+		if !part.Participating {
+			if existing != nil {
+				hid, pid := hospitalID, existing.Id
+				if err := l.svcCtx.EqaModel.DeleteParticipation(l.ctx, existing.Id); err != nil {
+					return err
+				}
+				_ = l.svcCtx.EqaModel.AddChangeLog(l.ctx, &pid, &hid, actorID, "survey_approve_clear", map[string]any{
+					"year": year, "scope": scope,
+				})
+			}
+			return nil
+		}
+		// validate codes
+		codes := make([]string, 0, len(part.Codes))
+		seen := map[string]struct{}{}
+		allow := allowed[scope]
+		for _, c := range part.Codes {
+			c = strings.TrimSpace(c)
+			if c == "" {
 				continue
 			}
+			if _, ok := allow[c]; !ok {
+				return NewCodeError(400, "无效 EQA 科目："+c)
+			}
+			if _, ok := seen[c]; ok {
+				continue
+			}
+			seen[c] = struct{}{}
+			codes = append(codes, c)
 		}
+		p := existing
+		if p == nil {
+			owner := actorID
+			p, err = l.svcCtx.EqaModel.CreateParticipation(l.ctx, &model.EqaParticipation{
+				HospitalId: hospitalID, Year: year, Scope: scope, OwnerUserId: &owner,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		items := make([]model.EqaParticipationItem, 0, len(codes))
+		for _, c := range codes {
+			items = append(items, model.EqaParticipationItem{FieldCode: c, Value: true})
+		}
+		if err := l.svcCtx.EqaModel.ReplaceItems(l.ctx, p.Id, items); err != nil {
+			return err
+		}
+		pid, hid := p.Id, hospitalID
+		return l.svcCtx.EqaModel.AddChangeLog(l.ctx, &pid, &hid, actorID, "survey_approve_writeback", map[string]any{
+			"year": year, "scope": scope, "itemCount": len(items),
+		})
+	}
+
+	if err := applyScope("national", payload.National); err != nil {
+		return err
+	}
+	if err := applyScope("provincial", payload.Provincial); err != nil {
+		return err
+	}
+	return nil
+}
+
+// WritebackFromSurveyAnswers upserts EQA participation from approved survey answers.
+// Prefers structured eqa_block answer; falls back to legacy flat eqa_scope + boolean fields.
+func (l *EqaLogic) WritebackFromSurveyAnswers(actorID, hospitalID int64, answers map[string]any) error {
+	if hospitalID <= 0 || answers == nil {
+		return nil
+	}
+	if payload, ok := extractEqaBlockUpsert(answers); ok {
+		return l.UpsertHospitalEQA(actorID, hospitalID, payload)
+	}
+	return l.writebackLegacyFlat(actorID, hospitalID, answers)
+}
+
+func extractEqaBlockUpsert(answers map[string]any) (EqaHospitalUpsert, bool) {
+	var raw any
+	if v, ok := answers["eqa"]; ok && v != nil {
+		raw = v
+	} else {
+		for _, v := range answers {
+			m, ok := v.(map[string]any)
+			if !ok {
+				continue
+			}
+			// Heuristic: object with national/provincial keys
+			_, hasN := m["national"]
+			_, hasP := m["provincial"]
+			if hasN || hasP {
+				raw = v
+				break
+			}
+		}
+	}
+	if raw == nil {
+		return EqaHospitalUpsert{}, false
+	}
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return EqaHospitalUpsert{}, false
+	}
+	_, hasN := m["national"]
+	_, hasP := m["provincial"]
+	if !hasN && !hasP && m["year"] == nil {
+		return EqaHospitalUpsert{}, false
+	}
+	out := EqaHospitalUpsert{Year: int(anyToInt64(m["year"]))}
+	if hasN {
+		out.National = parseScopeUpsert(m["national"])
+	}
+	if hasP {
+		out.Provincial = parseScopeUpsert(m["provincial"])
+	}
+	// If both nil pointers somehow, still treat as block present with neither participating
+	if out.National == nil && out.Provincial == nil {
+		out.National = &EqaScopeUpsert{Participating: false}
+		out.Provincial = &EqaScopeUpsert{Participating: false}
+	}
+	return out, true
+}
+
+func parseScopeUpsert(v any) *EqaScopeUpsert {
+	if v == nil {
+		return &EqaScopeUpsert{Participating: false}
+	}
+	switch t := v.(type) {
+	case bool:
+		return &EqaScopeUpsert{Participating: t}
+	case map[string]any:
+		part := truthy(t["participating"])
+		if _, ok := t["participating"]; !ok {
+			// codes present implies participating
+			if codes, _ := t["codes"].([]any); len(codes) > 0 {
+				part = true
+			}
+		}
+		codes := make([]string, 0)
+		switch c := t["codes"].(type) {
+		case []any:
+			for _, x := range c {
+				s := strings.TrimSpace(anyToString(x))
+				if s != "" {
+					codes = append(codes, s)
+				}
+			}
+		case []string:
+			codes = append(codes, c...)
+		}
+		if !part {
+			codes = nil
+		}
+		return &EqaScopeUpsert{Participating: part, Codes: codes}
+	default:
+		return &EqaScopeUpsert{Participating: false}
+	}
+}
+
+func (l *EqaLogic) writebackLegacyFlat(actorID, hospitalID int64, answers map[string]any) error {
+	year := int(anyToInt64(answers["eqa_year"]))
+	if year <= 0 {
+		year = time.Now().Year()
+	}
+
+	fields, err := l.svcCtx.EqaModel.ListFields(l.ctx)
+	if err != nil {
+		return err
+	}
+
+	natCodes := make([]string, 0)
+	provCodes := make([]string, 0)
+	for _, f := range fields {
 		if f.ValueType != "boolean" {
 			continue
 		}
 		v, ok := answers[f.Code]
-		if !ok {
+		if !ok || !truthy(v) {
 			continue
 		}
-		items = append(items, model.EqaParticipationItem{FieldCode: f.Code, Value: truthy(v)})
-	}
-	if len(items) > 0 {
-		if err := l.svcCtx.EqaModel.ReplaceItems(l.ctx, p.Id, items); err != nil {
-			return err
+		if f.ParentCode != nil {
+			switch *f.ParentCode {
+			case "scope.national":
+				natCodes = append(natCodes, f.Code)
+			case "scope.provincial":
+				provCodes = append(provCodes, f.Code)
+			}
+		} else if strings.HasPrefix(f.Code, "national.") {
+			natCodes = append(natCodes, f.Code)
+		} else if strings.HasPrefix(f.Code, "provincial.") {
+			provCodes = append(provCodes, f.Code)
 		}
 	}
-	pid, hid := p.Id, hospitalID
-	return l.svcCtx.EqaModel.AddChangeLog(l.ctx, &pid, &hid, actorID, "survey_approve_writeback", map[string]any{
-		"year": year, "scope": scope, "itemCount": len(items),
-	})
+
+	scopeHint := strings.TrimSpace(anyToString(answers["eqa_scope"]))
+	hasNat := len(natCodes) > 0 || scopeHint == "national"
+	hasProv := len(provCodes) > 0 || scopeHint == "provincial"
+	if !hasNat && !hasProv {
+		// No EQA signal at all
+		return nil
+	}
+
+	payload := EqaHospitalUpsert{Year: year}
+	if hasNat || scopeHint == "national" || scopeHint == "" {
+		// If only provincial hint, skip national unless codes present
+		if len(natCodes) > 0 || scopeHint == "national" {
+			payload.National = &EqaScopeUpsert{Participating: true, Codes: natCodes}
+		}
+	}
+	if hasProv || scopeHint == "provincial" {
+		if len(provCodes) > 0 || scopeHint == "provincial" {
+			payload.Provincial = &EqaScopeUpsert{Participating: true, Codes: provCodes}
+		}
+	}
+	// Dual: if both code sets present, write both regardless of single scope hint
+	if len(natCodes) > 0 {
+		payload.National = &EqaScopeUpsert{Participating: true, Codes: natCodes}
+	}
+	if len(provCodes) > 0 {
+		payload.Provincial = &EqaScopeUpsert{Participating: true, Codes: provCodes}
+	}
+	if payload.National == nil && payload.Provincial == nil {
+		return nil
+	}
+	return l.UpsertHospitalEQA(actorID, hospitalID, payload)
 }
 
 func truthy(v any) bool {

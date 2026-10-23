@@ -15,6 +15,10 @@ import {
   type SurveyField,
 } from "@/lib/business";
 import { AssayMultiSelect } from "@/components/assay-multi-select";
+import {
+  EqaParticipationField,
+  normalizeEqaBlockAnswer,
+} from "@/components/eqa-participation-field";
 import { HospitalNameTypeahead } from "@/components/hospital-name-typeahead";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -169,6 +173,11 @@ export default function SurveyTaskFillPage() {
         (f) => f.type === "repeat" && f.key === "devices",
       );
       if (hasDevicesRepeat && !Array.isArray(next.devices)) next.devices = [];
+      for (const f of res.assignment.schema?.fields || []) {
+        if (f.type === "eqa_block" && (next[f.key] == null || typeof next[f.key] !== "object")) {
+          next[f.key] = normalizeEqaBlockAnswer(undefined);
+        }
+      }
       setAnswers(next);
       setLinkedHospitalId(
         res.assignment.hospitalId
@@ -557,16 +566,37 @@ export default function SurveyTaskFillPage() {
           {message ? <p className="text-sm text-green-700">{message}</p> : null}
 
           {sections.map(([section, fields]) => {
+            const eqaFields = fields.filter((f) => f.type === "eqa_block");
+            const scalarFields = fields.filter((f) => f.type !== "eqa_block");
             const mostlyBoolean =
-              fields.length > 0 &&
-              fields.filter((f) => f.type === "boolean").length >=
-                Math.ceil(fields.length * 0.6);
+              scalarFields.length > 0 &&
+              scalarFields.filter((f) => f.type === "boolean").length >=
+                Math.ceil(scalarFields.length * 0.6);
             return (
               <div key={section} className="space-y-4 rounded-lg border p-4 sm:p-5">
                 <h3 className="text-sm font-semibold">{section}</h3>
-                {mostlyBoolean ? (
+                {eqaFields.map((field) => (
+                  <div key={field.key} className="space-y-2">
+                    <Label>
+                      {field.label}
+                      {field.required ? (
+                        <span className="text-destructive"> *</span>
+                      ) : null}
+                    </Label>
+                    <EqaParticipationField
+                      value={answers[field.key]}
+                      disabled={readOnly || lockedSet.has(field.key)}
+                      config={{
+                        enableNational: field.enableNational !== false,
+                        enableProvincial: field.enableProvincial !== false,
+                      }}
+                      onChange={(v) => setField(field.key, v)}
+                    />
+                  </div>
+                ))}
+                {scalarFields.length === 0 ? null : mostlyBoolean ? (
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {fields.map((field) => (
+                    {scalarFields.map((field) => (
                       <label
                         key={field.key}
                         className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm"
@@ -612,7 +642,7 @@ export default function SurveyTaskFillPage() {
                   </div>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2">
-                    {fields.map((field) => (
+                    {scalarFields.map((field) => (
                       <div
                         key={field.key}
                         className={

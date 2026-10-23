@@ -624,7 +624,7 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	if len(schema.Fields) > 0 {
 		for _, f := range schema.Fields {
-			if strings.EqualFold(f.Type, "repeat") {
+			if strings.EqualFold(f.Type, "repeat") || strings.EqualFold(f.Type, "eqa_block") {
 				continue
 			}
 			applyTarget(f.Target, f.Key, answerString(answers, f.Key))
@@ -1021,7 +1021,6 @@ func normalizeAnswers(in map[string]any) map[string]any {
 	return out
 }
 
-
 // validateSurveySchemaFields requires every collectable field to map to an active
 // collectable_fields.storage_target. Unmapped / invented targets are rejected.
 func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
@@ -1065,7 +1064,8 @@ func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
 			!strings.EqualFold(strings.TrimSpace(typ), "string_array") {
 			return NewCodeError(400, "字段 key「devices」仅可用于「可重复组(repeat)」或「多选数组(string_array)」")
 		}
-		if strings.EqualFold(strings.TrimSpace(typ), "repeat") {
+		typNorm := strings.ToLower(strings.TrimSpace(typ))
+		if typNorm == "repeat" || typNorm == "eqa_block" {
 			return nil
 		}
 		target = strings.TrimSpace(target)
@@ -1120,6 +1120,10 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any)
 		label := f.Label
 		if label == "" {
 			label = f.Key
+		}
+		if strings.EqualFold(f.Type, "eqa_block") {
+			// EQA block: neither/both/one scope is valid; no required scalar.
+			continue
 		}
 		if strings.EqualFold(f.Type, "repeat") {
 			rows := extractDeviceAnswers(answers[f.Key])

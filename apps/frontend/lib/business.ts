@@ -363,6 +363,9 @@ export interface SurveyField {
   options?: string[];
   itemLabel?: string;
   fields?: SurveyField[];
+  /** EQA composite block: show national / provincial scopes */
+  enableNational?: boolean;
+  enableProvincial?: boolean;
 }
 
 export interface SurveySchema {

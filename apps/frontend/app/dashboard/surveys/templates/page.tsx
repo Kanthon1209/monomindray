@@ -216,6 +216,8 @@ function typeLabel(type: string): string {
     case "multi_enum":
     case "multi_select":
       return "多选";
+    case "eqa_block":
+      return "EQA 复合块";
     default:
       return type || "文本";
   }
@@ -549,6 +551,18 @@ export default function SurveyTemplatesPage() {
   };
 
   const openEditField = (template: SurveyTemplate, field: SurveyField) => {
+    if (field.type === "eqa_block") {
+      if (
+        window.confirm(
+          `「${field.label || "室间质评"}」是 EQA 复合块（科目来自系统字典）。\n确定删除该块？`,
+        )
+      ) {
+        const schema = normalizeSchema(template.schema);
+        const fields = (schema.fields || []).filter((f) => f.key !== field.key);
+        void persistSchema(template, { fields, sections: schema.sections });
+      }
+      return;
+    }
     setEditingTemplateId(template.id);
     setFieldMode("edit");
     setEditingOriginalKey(field.key);
@@ -702,7 +716,32 @@ export default function SurveyTemplatesPage() {
     if (ok) setSectionDialogOpen(false);
   };
 
+  const onInsertEqaBlock = async (template: SurveyTemplate, section?: string) => {
+    const schema = normalizeSchema(template.schema);
+    if ((schema.fields || []).some((f) => f.type === "eqa_block")) {
+      setError("该模板已有 EQA 块，每个模板只需一个");
+      return;
+    }
+    const sec = (section || "室间质评").trim() || "室间质评";
+    const key = ensureUniqueFieldKey("eqa", (schema.fields || []).map((f) => f.key));
+    const nextField: SurveyField = {
+      key,
+      label: "室间质评",
+      section: sec,
+      type: "eqa_block",
+      target: "eqa.block",
+      enableNational: true,
+      enableProvincial: true,
+    };
+    const fields = [...(schema.fields || []), nextField];
+    const sections = [...(schema.sections || [])];
+    if (!sections.includes(sec)) sections.push(sec);
+    setError(null);
+    await persistSchema(template, { fields, sections });
+  };
+
   const onDeleteSection = async (template: SurveyTemplate, section: string) => {
+
     const schema = normalizeSchema(template.schema);
     const count = (schema.fields || []).filter(
       (f) => (f.section || "未分组") === section,
@@ -776,7 +815,11 @@ export default function SurveyTemplatesPage() {
                         {f.required ? <Badge variant="outline">必填</Badge> : null}
                       </div>
                     </div>
-                    {f.target ? (
+                    {f.type === "eqa_block" ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        国考/省考可选 → 展开科目复选（字典）
+                      </p>
+                    ) : f.target ? (
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                         → {f.target}
                       </p>
@@ -819,20 +862,43 @@ export default function SurveyTemplatesPage() {
               </div>
             </div>
           ))}
-          <div>
-            <p className="mb-2 text-sm font-medium text-muted-foreground">新建分组</p>
-            <button
-              type="button"
-              className="flex min-h-[72px] w-full items-center justify-center rounded-md border border-dashed bg-background/60 text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:max-w-xs"
-              disabled={saving}
-              onClick={(e) => {
-                e.stopPropagation();
-                openCreateSection(item);
-              }}
-              title="新建分组"
-            >
-              <Plus className="h-5 w-5" />
-            </button>
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <p className="mb-2 text-sm font-medium text-muted-foreground">新建分组</p>
+              <button
+                type="button"
+                className="flex min-h-[72px] w-full items-center justify-center rounded-md border border-dashed bg-background/60 text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:min-w-[160px]"
+                disabled={saving}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openCreateSection(item);
+                }}
+                title="新建分组"
+              >
+                <Plus className="h-5 w-5" />
+              </button>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-medium text-muted-foreground">特殊块</p>
+              <button
+                type="button"
+                className="flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:min-w-[160px]"
+                disabled={
+                  saving ||
+                  (normalizeSchema(item.schema).fields || []).some(
+                    (f) => f.type === "eqa_block",
+                  )
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void onInsertEqaBlock(item);
+                }}
+                title="插入 EQA 复合块"
+              >
+                <Plus className="h-5 w-5" />
+                <span>插入 EQA</span>
+              </button>
+            </div>
           </div>
         </div>
       </>
@@ -1154,7 +1220,6 @@ export default function SurveyTemplatesPage() {
                 <SelectContent>
                   <SelectItem value="hospital">医院</SelectItem>
                   <SelectItem value="assay">检测项目</SelectItem>
-                  <SelectItem value="eqa">室间质评</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
@@ -1182,7 +1247,12 @@ export default function SurveyTemplatesPage() {
                           f.storageTarget.includes("mindrayProjects") ||
                           f.storageTarget.includes("newProjects"),
                       )
-                    : catalogByDomain[fieldDraft.mapEntity] || []
+                    : (catalogByDomain[fieldDraft.mapEntity] || []).filter(
+                        (f) =>
+                          f.domain !== "eqa" &&
+                          f.valueType !== "eqa_block" &&
+                          !f.storageTarget.startsWith("eqa."),
+                      )
                   ).map((f) => (
                     <SelectItem key={f.code} value={f.storageTarget}>
                       {f.section ? `${f.section} / ` : ""}
