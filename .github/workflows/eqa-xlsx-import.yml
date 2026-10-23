@@ -1,0 +1,42 @@
+name: eqa-xlsx-import
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run or commit"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - dry-run
+          - commit
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload import files to ECS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "scripts/eqa_xlsx_import.py,scripts/run-eqa-xlsx-import-on-ecs.sh,scripts/data/eqa-customers.xlsx"
+          target: "/home/kanthon/mindray"
+          overwrite: true
+
+      - name: Run import on ECS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            cd /home/kanthon/mindray
+            chmod +x scripts/run-eqa-xlsx-import-on-ecs.sh scripts/eqa_xlsx_import.py
+            scripts/run-eqa-xlsx-import-on-ecs.sh scripts/data/eqa-customers.xlsx "${{ github.event.inputs.mode }}"
