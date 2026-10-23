@@ -46,6 +46,7 @@ func (l *HospitalLogic) List(req *types.ListHospitalsRequest) (*types.ListHospit
 	for i := range items {
 		out = append(out, toHospitalInfo(&items[i]))
 	}
+	out = l.attachAttributes(items, out)
 	return &types.ListHospitalsResponse{Total: total, Items: out}, nil
 }
 
@@ -106,6 +107,7 @@ func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*ty
 	for i := range items {
 		out = append(out, toHospitalInfo(&items[i]))
 	}
+	out = l.attachAttributes(items, out)
 	return &types.ListHospitalsResponse{Total: total, Items: out}, nil
 }
 
@@ -237,6 +239,25 @@ func (l *HospitalLogic) Delete(id int64) error {
 		return NewCodeError(400, "删除失败，可能仍有关联案例")
 	}
 	return nil
+}
+
+
+func (l *HospitalLogic) attachAttributes(items []model.Hospital, out []types.HospitalInfo) []types.HospitalInfo {
+	ids := make([]int64, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].Id)
+	}
+	attrsByID, err := l.svcCtx.MasterDataModel.ListAttributesByHospitalIDs(l.ctx, ids)
+	if err != nil {
+		l.Errorf("list attributes batch: %v", err)
+		return out
+	}
+	for i := range out {
+		if attrs, ok := attrsByID[out[i].Id]; ok {
+			out[i].Attributes = attrs
+		}
+	}
+	return out
 }
 
 func (l *HospitalLogic) validateUpsert(req *types.HospitalUpsertRequest) error {

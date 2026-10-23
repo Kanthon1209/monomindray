@@ -83,8 +83,11 @@ function customerLevelPresets(field: SurveyField): string[] | null {
   const label = field.label || "";
   if (
     key === "customerLevel" ||
+    key === "customer_level" ||
     t.includes("customerLevel") ||
+    t.includes("customer_level") ||
     t.includes("customer.level") ||
+    t === "hospital.attributes.customer_level" ||
     label.includes("客户等级") ||
     label.includes("客户级别")
   ) {

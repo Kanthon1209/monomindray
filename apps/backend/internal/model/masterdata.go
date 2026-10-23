@@ -14,6 +14,7 @@ type MasterDataModel interface {
 	UpsertAttribute(ctx context.Context, hospitalID int64, key, value string) error
 	UpsertAttributes(ctx context.Context, hospitalID int64, attrs map[string]string) error
 	ListAttributes(ctx context.Context, hospitalID int64) (map[string]string, error)
+	ListAttributesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64]map[string]string, error)
 
 	EnsureAssayProject(ctx context.Context, name, line, company string) (int64, error)
 	ReplaceOwnAssays(ctx context.Context, hospitalID int64, names []string, flagNew bool) error
@@ -66,6 +67,34 @@ func (m *masterDataModel) UpsertAttributes(ctx context.Context, hospitalID int64
 		}
 	}
 	return nil
+}
+
+
+func (m *masterDataModel) ListAttributesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64]map[string]string, error) {
+	out := map[int64]map[string]string{}
+	if len(hospitalIDs) == 0 {
+		return out, nil
+	}
+	rows, err := m.conn.Query(ctx, `
+		SELECT hospital_id, attr_key, attr_value
+		FROM hospital_attributes
+		WHERE hospital_id = ANY($1)`, hospitalIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hid int64
+		var k, v string
+		if err := rows.Scan(&hid, &k, &v); err != nil {
+			return nil, err
+		}
+		if out[hid] == nil {
+			out[hid] = map[string]string{}
+		}
+		out[hid][k] = v
+	}
+	return out, rows.Err()
 }
 
 func (m *masterDataModel) ListAttributes(ctx context.Context, hospitalID int64) (map[string]string, error) {
@@ -349,6 +378,10 @@ func nullIfZero(id int64) *int64 {
 
 // KnownAttributeKeys maps survey/archive keys to hospital_attributes keys.
 var KnownAttributeKeys = map[string]string{
+	"customerLevel":     "customer_level",
+	"customer_level":    "customer_level",
+	"usageLocation":     "usage_location",
+	"usage_location":    "usage_location",
 	"svipLevel":         "svip_level",
 	"dualMajorCustomer": "dual_major",
 	"groupName":         "sales_group",

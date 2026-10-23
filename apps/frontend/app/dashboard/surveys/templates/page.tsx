@@ -17,6 +17,8 @@ import {
   listSurveyTemplates,
   createSurveyTemplate,
   updateSurveyTemplate,
+  listCollectableFields,
+  type CollectableField,
   type SurveyField,
   type SurveySchema,
   type SurveyTemplate,
@@ -24,7 +26,6 @@ import {
 import {
   ARCHIVE_FIELD_DEFS,
   HOSPITAL_COLUMNS,
-  listHospitalAttributeOptions,
 } from "@/lib/hospital-archive";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,8 +70,8 @@ import {
   PageToolbar,
 } from "@/components/mobile-data-list";
 
-/** 关联实体：必须映射医院写回或检测项目字典 */
-type MapEntity = "hospital" | "assay";
+/** 关联实体：必须映射可采集字段目录中的条目 */
+type MapEntity = "hospital" | "assay" | "eqa";
 
 const ASSAY_WRITE_OPTIONS = [
   {
@@ -85,8 +86,6 @@ const ASSAY_WRITE_OPTIONS = [
   },
 ] as const;
 
-const NEW_ARCHIVE_ATTR = "__new_archive__";
-
 type FieldDraft = {
   key: string;
   label: string;
@@ -94,11 +93,14 @@ type FieldDraft = {
   required: boolean;
   type: string;
   mapEntity: MapEntity;
-  /** 实体属性：列名 / archive.xxx / __new_archive__ */
+  /** catalog storageTarget, or legacy attribute selector value */
   attribute: string;
-  newArchiveKey: string;
+  /** explicit catalog storage target when bound from API */
+  catalogTarget: string;
   defaultValue: string;
   locked: boolean;
+  options: string[];
+  optionsSource?: SurveyField["optionsSource"];
 };
 
 const emptyFieldDraft = (section: string): FieldDraft => ({
@@ -108,25 +110,13 @@ const emptyFieldDraft = (section: string): FieldDraft => ({
   required: false,
   type: "text",
   mapEntity: "hospital",
-  attribute: "name",
-  newArchiveKey: "",
+  attribute: "hospital.name",
+  catalogTarget: "hospital.name",
   defaultValue: "",
   locked: false,
+  options: [],
+  optionsSource: "hospitals",
 });
-
-function collectArchiveKeysFromTemplates(templates: SurveyTemplate[]): string[] {
-  const keys: string[] = [];
-  for (const t of templates) {
-    for (const f of t.schema?.fields || []) {
-      const target = f.target || "";
-      if (target.startsWith("hospital.archive.")) {
-        const k = target.slice("hospital.archive.".length).trim();
-        if (k) keys.push(k);
-      }
-    }
-  }
-  return keys;
-}
 
 function fieldTypeFromArchive(
   valueType: (typeof ARCHIVE_FIELD_DEFS)[number]["valueType"],
@@ -151,43 +141,42 @@ const NUMERIC_METRIC_CODES = new Set([
 ]);
 
 const DATE_ARCHIVE_KEYS = new Set(["installedAt", "enabledAt"]);
-const ENUM_ARCHIVE_KEYS = new Set(["customerLevel", "svipLevel", "dualMajorType"]);
-
 /**
- * 字段类型一律由绑定的数据库字段决定，模板编辑器不可手改。
+ * 字段类型一律由目录 / 映射决定，模板编辑器不可手改。
  */
 function resolveFieldTypeFromMapping(draft: FieldDraft): string {
+  if (draft.type) return draft.type;
   if (draft.mapEntity === "assay") return "string_array";
-
+  if (draft.mapEntity === "eqa") return "boolean";
   const attr = (draft.attribute || "").trim();
-  if (!attr || attr === NEW_ARCHIVE_ATTR) return "text";
-
+  if (attr.startsWith("hospital.attributes.customer_level") || attr.endsWith("customer_level")) {
+    return "enum";
+  }
   if (attr.startsWith("archive.")) {
     const key = attr.slice("archive.".length).trim();
     if (DATE_ARCHIVE_KEYS.has(key)) return "date";
-    if (ENUM_ARCHIVE_KEYS.has(key)) return "enum";
     const def = ARCHIVE_FIELD_DEFS.find((d) => d.key === key);
     if (def?.valueType) return fieldTypeFromArchive(def.valueType);
     return "text";
   }
-  if (attr.startsWith("attributes.")) return "text";
-  if (attr.startsWith("metrics.")) {
-    const code = attr.slice("metrics.".length).trim();
+  if (attr.startsWith("metrics.") || attr.includes(".metrics.")) {
+    const code = attr.includes(".") ? attr.split(".").pop()! : attr;
     return NUMERIC_METRIC_CODES.has(code) ? "number" : "text";
   }
-
-  // 医院表列
-  if (attr === "level" || attr === "type" || attr === "status") return "enum";
+  if (attr === "level" || attr === "type" || attr === "status" || attr.endsWith(".level") || attr.endsWith(".type") || attr.endsWith(".status")) {
+    return "enum";
+  }
   return "text";
 }
 
 function resolveOptionsSource(
   draft: FieldDraft,
 ): SurveyField["optionsSource"] | undefined {
+  if (draft.optionsSource) return draft.optionsSource;
   if (draft.mapEntity === "assay") return "assay_projects";
-  if (draft.mapEntity !== "hospital") return undefined;
-  const attr = (draft.attribute || "").trim();
-  if (attr === "name" || attr === "archive.customerName") return "hospitals";
+  const t = (draft.catalogTarget || draft.attribute || "").trim();
+  if (t === "hospital.name" || t.endsWith(".name") && t.includes("hospital")) return "hospitals";
+  if (t.includes("mindrayProjects") || t.includes("newProjects")) return "assay_projects";
   return undefined;
 }
 
@@ -269,121 +258,96 @@ function draftFromField(field: SurveyField): FieldDraft {
   base.required = !!field.required;
   base.defaultValue = field.default || "";
   base.locked = !!field.locked;
+  base.type = field.type || "text";
+  base.options = field.options || [];
+  base.optionsSource = field.optionsSource;
+  base.catalogTarget = target;
+  base.attribute = target || "hospital.name";
 
+  if (target.startsWith("eqa.")) {
+    base.mapEntity = "eqa";
+    return base;
+  }
   const assayOpt = ASSAY_WRITE_OPTIONS.find((o) => o.target === target);
   if (
     field.optionsSource === "assay_projects" ||
     assayOpt ||
-    field.key === "mindrayProjects" ||
-    field.key === "newProjects"
+    target.includes("mindrayProjects") ||
+    target.includes("newProjects")
   ) {
     base.mapEntity = "assay";
-    base.attribute = assayOpt?.value || field.key || "mindrayProjects";
-    base.type = resolveFieldTypeFromMapping(base);
-    return base;
-  }
-
-  if (!target) {
-    // 历史未映射字段：打开编辑时强制改为医院.name，保存前必须选好映射
-    base.mapEntity = "hospital";
-    base.attribute = "name";
-    base.type = resolveFieldTypeFromMapping(base);
-    return base;
-  }
-  if (target.startsWith("hospital.archive.")) {
-    const key = target.slice("hospital.archive.".length).trim();
-    base.mapEntity = "hospital";
-    base.attribute = key ? `archive.${key}` : "name";
-    base.type = resolveFieldTypeFromMapping(base);
-    return base;
-  }
-  if (target.startsWith("hospital.attributes.")) {
-    base.mapEntity = "hospital";
-    base.attribute = `attributes.${target.slice("hospital.attributes.".length)}`;
-    base.type = resolveFieldTypeFromMapping(base);
-    return base;
-  }
-  if (target.startsWith("hospital.metrics.")) {
-    base.mapEntity = "hospital";
-    base.attribute = `metrics.${target.slice("hospital.metrics.".length)}`;
-    base.type = resolveFieldTypeFromMapping(base);
-    return base;
-  }
-  const col = HOSPITAL_COLUMNS.find((c) => c.target === target);
-  if (col) {
-    base.mapEntity = "hospital";
-    base.attribute = col.column;
-    base.type = resolveFieldTypeFromMapping(base);
-    return base;
-  }
-  if (/^hospital\.[a-zA-Z_]+$/.test(target)) {
-    base.mapEntity = "hospital";
-    base.attribute = target.slice("hospital.".length);
-    base.type = resolveFieldTypeFromMapping(base);
+    base.attribute = assayOpt?.target || target || ASSAY_WRITE_OPTIONS[0].target;
+    base.catalogTarget = base.attribute;
+    base.type = "string_array";
+    base.optionsSource = "assay_projects";
     return base;
   }
   base.mapEntity = "hospital";
-  base.attribute = "name";
-  base.type = resolveFieldTypeFromMapping(base);
+  if (!target) {
+    base.attribute = "hospital.name";
+    base.catalogTarget = "hospital.name";
+    base.type = "text";
+    base.optionsSource = "hospitals";
+  }
   return base;
 }
 
 function resolveTarget(draft: FieldDraft): string | undefined {
+  const catalog = (draft.catalogTarget || "").trim();
+  if (catalog) return catalog;
   if (draft.mapEntity === "assay") {
-    const opt = ASSAY_WRITE_OPTIONS.find((o) => o.value === draft.attribute);
+    const opt = ASSAY_WRITE_OPTIONS.find(
+      (o) => o.value === draft.attribute || o.target === draft.attribute,
+    );
     return opt?.target || ASSAY_WRITE_OPTIONS[0].target;
   }
-  if (draft.mapEntity === "hospital") {
-    if (draft.attribute === NEW_ARCHIVE_ATTR) {
-      const key = draft.newArchiveKey.trim();
-      return key ? `hospital.archive.${key}` : undefined;
-    }
-    if (draft.attribute.startsWith("archive.")) {
-      const key = draft.attribute.slice("archive.".length).trim();
-      return key ? `hospital.archive.${key}` : undefined;
-    }
-    if (draft.attribute.startsWith("attributes.")) {
-      const key = draft.attribute.slice("attributes.".length).trim();
-      return key ? `hospital.attributes.${key}` : undefined;
-    }
-    if (draft.attribute.startsWith("metrics.")) {
-      const key = draft.attribute.slice("metrics.".length).trim();
-      return key ? `hospital.metrics.${key}` : undefined;
-    }
-    const col = HOSPITAL_COLUMNS.find((c) => c.column === draft.attribute);
-    if (col) return col.target;
-    if (draft.attribute) return `hospital.${draft.attribute}`;
-  }
-  return undefined;
+  const attr = (draft.attribute || "").trim();
+  if (!attr) return undefined;
+  if (attr.startsWith("hospital.") || attr.startsWith("eqa.")) return attr;
+  if (attr.startsWith("archive.")) return `hospital.${attr}`;
+  if (attr.startsWith("attributes.")) return `hospital.${attr}`;
+  if (attr.startsWith("metrics.")) return `hospital.${attr}`;
+  const col = HOSPITAL_COLUMNS.find((c) => c.column === attr);
+  if (col) return col.target;
+  return `hospital.${attr}`;
 }
 
-function applyHospitalAttribute(
+function applyCatalogField(
   draft: FieldDraft,
-  attribute: string,
+  field: CollectableField,
   mode: "create" | "edit",
 ): FieldDraft {
+  const domain = field.domain as MapEntity;
+  const mapEntity: MapEntity =
+    domain === "eqa"
+      ? "eqa"
+      : domain === "assay" || field.optionsSource === "assay_projects"
+        ? "assay"
+        : "hospital";
   const next: FieldDraft = {
     ...draft,
-    mapEntity: "hospital",
-    attribute,
-    newArchiveKey: attribute === NEW_ARCHIVE_ATTR ? draft.newArchiveKey : "",
+    mapEntity,
+    attribute: field.storageTarget,
+    catalogTarget: field.storageTarget,
+    type: field.valueType || "text",
+    options: field.enumValues || [],
+    optionsSource: (field.optionsSource as SurveyField["optionsSource"]) || undefined,
   };
-  if (mode === "create" && attribute.startsWith("archive.")) {
-    const archiveKey = attribute.slice("archive.".length);
-    const def = ARCHIVE_FIELD_DEFS.find((d) => d.key === archiveKey);
-    if (def) {
-      if (!next.key) next.key = def.key;
-      if (!next.label) next.label = def.label;
-      if (!next.section || next.section === "未分组") next.section = def.section;
-    } else if (!next.key) {
-      next.key = archiveKey;
+  if (mode === "create") {
+    if (!next.key) {
+      // prefer last segment; allow dots for eqa.field codes via ensure path,
+      // template editor uses underscore-safe key derived from code
+      const code = field.code.replace(/^hospital\.(attributes|metrics|archive)\./, "")
+        .replace(/^hospital\./, "")
+        .replace(/^eqa\.field\./, "")
+        .replace(/^eqa\./, "");
+      next.key = code.replace(/[^a-zA-Z0-9_]+/g, "_");
+    }
+    if (!next.label) next.label = field.label;
+    if (!next.section || next.section === "未分组") {
+      next.section = field.section || next.section || "未分组";
     }
   }
-  if (mode === "create" && attribute !== NEW_ARCHIVE_ATTR && !attribute.startsWith("archive.")) {
-    if (!next.key) next.key = attribute;
-  }
-  // 类型始终跟随绑定字段，创建/编辑都不可手改
-  next.type = resolveFieldTypeFromMapping(next);
   return next;
 }
 
@@ -391,6 +355,7 @@ export default function SurveyTemplatesPage() {
   const { user } = useAuth();
   const router = useRouter();
   const [items, setItems] = useState<SurveyTemplate[]>([]);
+  const [catalog, setCatalog] = useState<CollectableField[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -424,9 +389,14 @@ export default function SurveyTemplatesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const res = await listSurveyTemplates();
+    const [res, cat] = await Promise.all([
+      listSurveyTemplates(),
+      listCollectableFields(),
+    ]);
     if (res.error) setError(res.error);
+    else if (cat.error) setError(cat.error);
     setItems(res.items);
+    setCatalog(cat.items || []);
     setExpanded((prev) => prev || res.items[0]?.id || null);
     setLoading(false);
   }, []);
@@ -450,9 +420,25 @@ export default function SurveyTemplatesPage() {
     return base;
   }, [editingTemplate, fieldDraft.section]);
 
-  const hospitalAttrOptions = useMemo(() => {
-    return listHospitalAttributeOptions(collectArchiveKeysFromTemplates(items));
-  }, [items]);
+  const catalogByDomain = useMemo(() => {
+    const groups: Record<string, CollectableField[]> = {
+      hospital: [],
+      assay: [],
+      eqa: [],
+    };
+    for (const f of catalog) {
+      const d = f.domain || "hospital";
+      if (!groups[d]) groups[d] = [];
+      groups[d].push(f);
+    }
+    return groups;
+  }, [catalog]);
+
+  const catalogByTarget = useMemo(() => {
+    const m = new Map<string, CollectableField>();
+    for (const f of catalog) m.set(f.storageTarget, f);
+    return m;
+  }, [catalog]);
 
   const persistSchema = async (
     template: SurveyTemplate,
@@ -549,32 +535,30 @@ export default function SurveyTemplatesPage() {
       return;
     }
     if (!key) key = slugifyKey(label);
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
-      setError("字段 key 仅允许字母、数字、下划线，且不能以数字开头");
+    if (!/^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(key)) {
+      setError("字段 key 仅允许字母、数字、下划线与点，且不能以数字开头");
       return;
     }
     const section = fieldDraft.section.trim() || "未分组";
-    if (fieldDraft.attribute === NEW_ARCHIVE_ATTR) {
-      setError("不允许新建系统外字段，请从已有数据库字段中选择");
-      return;
-    }
-    if (fieldDraft.mapEntity === "hospital" && !fieldDraft.attribute) {
-      setError("请选择要绑定的数据库字段");
-      return;
-    }
-    if (fieldDraft.mapEntity === "assay" && !fieldDraft.attribute) {
-      setError("请选择写入的项目字段");
-      return;
-    }
     const target = resolveTarget(fieldDraft);
     if (!target) {
-      setError("每个采集字段必须绑定到系统已有的数据库字段");
+      setError("请从可采集字段目录中选择绑定字段");
+      return;
+    }
+    if (!catalogByTarget.has(target)) {
+      setError(`映射「${target}」不在可采集字段目录中`);
       return;
     }
 
     const schema = normalizeSchema(template.schema);
-    const fieldType = resolveFieldTypeFromMapping(fieldDraft);
-    const optionsSource = resolveOptionsSource(fieldDraft);
+    const cat = catalogByTarget.get(target);
+    const fieldType = cat?.valueType || resolveFieldTypeFromMapping(fieldDraft);
+    const optionsSource =
+      (cat?.optionsSource as SurveyField["optionsSource"] | undefined) ||
+      resolveOptionsSource(fieldDraft);
+    const enumOptions = cat?.enumValues?.length
+      ? cat.enumValues
+      : fieldDraft.options;
     const nextField: SurveyField = {
       key,
       label,
@@ -583,6 +567,7 @@ export default function SurveyTemplatesPage() {
       type: fieldType,
       target,
       ...(optionsSource ? { optionsSource } : {}),
+      ...(enumOptions?.length ? { options: enumOptions } : {}),
       ...(fieldDraft.defaultValue.trim()
         ? { default: fieldDraft.defaultValue.trim() }
         : {}),
@@ -1087,167 +1072,81 @@ export default function SurveyTemplatesPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>绑定数据库字段</Label>
+              <Label>绑定可采集字段（目录）</Label>
               <Select
                 value={fieldDraft.mapEntity}
-                onValueChange={(v) =>
-                  setFieldDraft((d) => {
-                    const entity = v as MapEntity;
-                    if (entity === "assay") {
-                      return {
-                        ...d,
-                        mapEntity: "assay",
-                        type: "string_array",
-                        attribute:
-                          d.attribute === "newProjects"
-                            ? "newProjects"
-                            : "mindrayProjects",
-                        newArchiveKey: "",
-                      };
-                    }
-                    {
-                      const next: FieldDraft = {
-                        ...d,
-                        mapEntity: "hospital",
-                        attribute:
-                          d.attribute && d.attribute !== NEW_ARCHIVE_ATTR
-                            ? d.attribute
-                            : "name",
-                        newArchiveKey: "",
-                      };
-                      next.type = resolveFieldTypeFromMapping(next);
-                      return next;
-                    }
-                  })
-                }
+                onValueChange={(v) => {
+                  const entity = v as MapEntity;
+                  const first =
+                    (catalogByDomain[entity] || [])[0] ||
+                    (entity === "assay"
+                      ? ({
+                          code: ASSAY_WRITE_OPTIONS[0].target,
+                          domain: "hospital",
+                          storageTarget: ASSAY_WRITE_OPTIONS[0].target,
+                          valueType: "string_array",
+                          label: ASSAY_WRITE_OPTIONS[0].label,
+                          section: "档案扩展",
+                          enumValues: [],
+                          optionsSource: "assay_projects",
+                        } as CollectableField)
+                      : catalogByDomain.hospital?.[0]);
+                  setFieldDraft((d) =>
+                    first
+                      ? applyCatalogField(d, first, fieldMode)
+                      : { ...d, mapEntity: entity },
+                  );
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="hospital">医院（必选映射）</SelectItem>
+                  <SelectItem value="hospital">医院</SelectItem>
                   <SelectItem value="assay">检测项目</SelectItem>
+                  <SelectItem value="eqa">室间质评</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                模板字段必须绑定系统已有数据库字段，不允许不映射或新建系统外字段。
+                只能从系统字段目录勾选；类型与映射只读。没有的字段请先在目录/主数据中登记。
               </p>
             </div>
-            {fieldDraft.mapEntity === "assay" ? (
-              <div className="space-y-2">
-                <Label>写入位置</Label>
-                <Select
-                  value={fieldDraft.attribute || "mindrayProjects"}
-                  onValueChange={(v) =>
-                    setFieldDraft((d) => ({
-                      ...d,
-                      mapEntity: "assay",
-                      type: "string_array",
-                      attribute: v,
-                      key:
-                        fieldMode === "create" && (!d.key || d.key === "mindrayProjects" || d.key === "newProjects")
-                          ? v
-                          : d.key,
-                      label:
-                        fieldMode === "create" && (!d.label || d.label === "迈瑞开展项目" || d.label === "主导新增项目")
-                          ? ASSAY_WRITE_OPTIONS.find((o) => o.value === v)?.label || d.label
-                          : d.label,
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ASSAY_WRITE_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-            {fieldDraft.mapEntity === "hospital" ? (
-              <div className="space-y-2">
-                <Label>实体属性</Label>
-                <Select
-                  value={fieldDraft.attribute || undefined}
-                  onValueChange={(v) =>
-                    setFieldDraft((d) => applyHospitalAttribute(d, v, fieldMode))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择字段" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    <SelectGroup>
-                      <SelectLabel>表列</SelectLabel>
-                      {hospitalAttrOptions
-                        .filter(
-                          (o) =>
-                            o.value !== NEW_ARCHIVE_ATTR &&
-                            !o.value.startsWith("archive.") &&
-                            !o.value.startsWith("attributes.") &&
-                            !o.value.startsWith("metrics."),
-                        )
-                        .map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.value}
-                          </SelectItem>
-                        ))}
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel>属性</SelectLabel>
-                      {hospitalAttrOptions
-                        .filter((o) => o.value.startsWith("attributes."))
-                        .map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.value}
-                          </SelectItem>
-                        ))}
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel>指标</SelectLabel>
-                      {hospitalAttrOptions
-                        .filter((o) => o.value.startsWith("metrics."))
-                        .map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.value}
-                          </SelectItem>
-                        ))}
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel>档案扩展</SelectLabel>
-                      {hospitalAttrOptions
-                        .filter((o) => o.value.startsWith("archive."))
-                        .map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.value.replace(/^archive\./, "")}
-                          </SelectItem>
-                        ))}
-                    </SelectGroup>
-                    {fieldDraft.attribute &&
-                    fieldDraft.attribute !== NEW_ARCHIVE_ATTR &&
-                    !hospitalAttrOptions.some(
-                      (o) => o.value === fieldDraft.attribute,
-                    ) ? (
-                      <SelectGroup>
-                        <SelectLabel>当前</SelectLabel>
-                        <SelectItem value={fieldDraft.attribute}>
-                          {fieldDraft.attribute}
-                        </SelectItem>
-                      </SelectGroup>
-                    ) : null}
-                  </SelectContent>
-                </Select>
-                {resolveTarget(fieldDraft) ? (
-                  <p className="font-mono text-xs text-muted-foreground">
-                    → {resolveTarget(fieldDraft)}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
+            <div className="space-y-2">
+              <Label>目录字段</Label>
+              <Select
+                value={fieldDraft.catalogTarget || fieldDraft.attribute || undefined}
+                onValueChange={(v) => {
+                  const field = catalogByTarget.get(v);
+                  if (!field) return;
+                  setFieldDraft((d) => applyCatalogField(d, field, fieldMode));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择目录字段" />
+                </SelectTrigger>
+                <SelectContent className="max-h-80">
+                  {(fieldDraft.mapEntity === "assay"
+                    ? (catalogByDomain.hospital || []).filter(
+                        (f) =>
+                          f.optionsSource === "assay_projects" ||
+                          f.storageTarget.includes("mindrayProjects") ||
+                          f.storageTarget.includes("newProjects"),
+                      )
+                    : catalogByDomain[fieldDraft.mapEntity] || []
+                  ).map((f) => (
+                    <SelectItem key={f.code} value={f.storageTarget}>
+                      {f.section ? `${f.section} / ` : ""}
+                      {f.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {resolveTarget(fieldDraft) ? (
+                <p className="font-mono text-xs text-muted-foreground">
+                  → {resolveTarget(fieldDraft)}
+                </p>
+              ) : null}
+            </div>
             <div className="space-y-2">
               <Label>默认值（可选）</Label>
               <Input

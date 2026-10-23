@@ -95,7 +95,7 @@ func (l *SurveyLogic) CreateTemplate(req *types.CreateSurveyTemplateRequest) (*t
 	if len(schemaBytes) == 0 {
 		schemaBytes = []byte(`{"fields":[],"sections":["未分组"]}`)
 	}
-	if err := validateSurveySchemaFields(schemaBytes); err != nil {
+	if err := l.validateSurveySchemaFields(schemaBytes); err != nil {
 		return nil, err
 	}
 
@@ -146,7 +146,7 @@ func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRe
 	if err != nil {
 		return nil, NewCodeError(400, "schema 不是合法 JSON")
 	}
-	if err := validateSurveySchemaFields(schemaBytes); err != nil {
+	if err := l.validateSurveySchemaFields(schemaBytes); err != nil {
 		return nil, err
 	}
 
@@ -579,9 +579,17 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		}
 		target = strings.TrimSpace(target)
 		setArchive := func(k string, v string) {
+			// customer_level / usage_location live only in hospital_attributes
+			switch k {
+			case "customerLevel", "customer_level", "usageLocation", "usage_location":
+				return
+			}
 			archive[k] = model.NormalizeArchiveValue(k, v)
 		}
 		switch {
+		case strings.HasPrefix(target, "eqa."):
+			// EQA answers are written by EqaLogic.WritebackFromSurveyAnswers only.
+			return
 		case strings.HasPrefix(target, "hospital.attributes."):
 			attributes[strings.TrimPrefix(target, "hospital.attributes.")] = value
 		case strings.HasPrefix(target, "hospital.metrics."):
@@ -595,19 +603,22 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 			case "name", "province", "city", "district", "level", "type", "address", "remark",
 				"customerCode", "region", "branchOffice":
 				cols[key] = value
-			case "devices":
-				// handled below
+			case "devices", "eqa_year", "eqa_scope", "customer_level", "hospital_name":
+				// devices handled below; EQA / catalog keys ignored without target
 			default:
 				if attrKey, ok := model.KnownAttributeKeys[key]; ok {
 					attributes[attrKey] = value
+					return
 				}
 				if metricKey, ok := model.KnownMetricKeys[key]; ok {
 					metrics[metricKey] = value
+					return
 				}
-				setArchive(key, value)
+				// no invent-into-archive for unknown keys
 			}
 		default:
-			setArchive(key, value)
+			// Unknown targets are ignored (do not dump into archive).
+			return
 		}
 	}
 
@@ -708,6 +719,10 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		mergedArchive["otherAnalyzers"] = strings.Join(uniquePreserve(otherAnalyzers), "；")
 	}
 	mergedArchive = model.NormalizeArchive(mergedArchive)
+	delete(mergedArchive, "customerLevel")
+	delete(mergedArchive, "customer_level")
+	delete(mergedArchive, "usageLocation")
+	delete(mergedArchive, "usage_location")
 
 	district := strings.TrimSpace(cols["district"])
 	address := strings.TrimSpace(cols["address"])
@@ -719,21 +734,7 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 	region := firstNonEmpty(cols["region"], archiveString(mergedArchive, "region"))
 	branchOffice := firstNonEmpty(cols["branchOffice"], cols["branch_office"], archiveString(mergedArchive, "branchOffice"))
 
-	// Pull known attribute/metric keys from archive into dual-write maps (compat with old targets).
-	for archiveKey, attrKey := range model.KnownAttributeKeys {
-		if _, ok := attributes[attrKey]; !ok {
-			if v := archiveString(mergedArchive, archiveKey); v != "" {
-				attributes[attrKey] = v
-			}
-		}
-	}
-	for archiveKey, metricKey := range model.KnownMetricKeys {
-		if _, ok := metrics[metricKey]; !ok {
-			if v := archiveString(mergedArchive, archiveKey); v != "" {
-				metrics[metricKey] = v
-			}
-		}
-	}
+	// Attributes/metrics come only from explicit hospital.attributes.* / hospital.metrics.* targets.
 
 	var hospitalID int64
 	if existing == nil {
@@ -1021,9 +1022,9 @@ func normalizeAnswers(in map[string]any) map[string]any {
 }
 
 
-// validateSurveySchemaFields requires every collectable field to map to a known DB target
-// (hospital.* or eqa.*). Unmapped / free-form fields are rejected.
-func validateSurveySchemaFields(schemaBytes []byte) error {
+// validateSurveySchemaFields requires every collectable field to map to an active
+// collectable_fields.storage_target. Unmapped / invented targets are rejected.
+func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
 	if len(schemaBytes) == 0 {
 		return nil
 	}
@@ -1044,6 +1045,11 @@ func validateSurveySchemaFields(schemaBytes []byte) error {
 	if err := json.Unmarshal(schemaBytes, &parsed); err != nil {
 		return NewCodeError(400, "schema 解析失败")
 	}
+	catalog, err := l.svcCtx.CollectableFieldModel.ActiveTargetSet(l.ctx)
+	if err != nil {
+		l.Errorf("load collectable fields: %v", err)
+		return ErrInternal
+	}
 	seen := map[string]struct{}{}
 	check := func(key, label, typ, target string) error {
 		key = strings.TrimSpace(key)
@@ -1063,8 +1069,11 @@ func validateSurveySchemaFields(schemaBytes []byte) error {
 			return nil
 		}
 		target = strings.TrimSpace(target)
-		if !isValidSurveyFieldTarget(target) {
-			return NewCodeError(400, "字段「"+label+"」必须绑定到系统已有的数据库字段（hospital.* 或 eqa.*）")
+		if target == "" {
+			return NewCodeError(400, "字段「"+label+"」必须绑定到系统字段目录中的 storage_target")
+		}
+		if _, ok := catalog[target]; !ok {
+			return NewCodeError(400, "字段「"+label+"」的映射「"+target+"」不在可采集字段目录中")
 		}
 		return nil
 	}
@@ -1084,14 +1093,6 @@ func validateSurveySchemaFields(schemaBytes []byte) error {
 		}
 	}
 	return nil
-}
-
-func isValidSurveyFieldTarget(target string) bool {
-	t := strings.TrimSpace(target)
-	if t == "" {
-		return false
-	}
-	return strings.HasPrefix(t, "hospital.") || strings.HasPrefix(t, "eqa.")
 }
 
 func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any) error {

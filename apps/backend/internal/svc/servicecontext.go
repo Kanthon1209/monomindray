@@ -19,7 +19,8 @@ type ServiceContext struct {
 	CustomerModel   model.CustomerModel
 	SurveyModel     model.SurveyModel
 	MasterDataModel model.MasterDataModel
-	EqaModel        model.EqaModel
+	EqaModel             model.EqaModel
+	CollectableFieldModel model.CollectableFieldModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -47,6 +48,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		CustomerModel:   model.NewCustomerModel(pool),
 		SurveyModel:     model.NewSurveyModel(pool),
 		MasterDataModel: model.NewMasterDataModel(pool),
-		EqaModel:        model.NewEqaModel(pool),
+		EqaModel:             model.NewEqaModel(pool),
+		CollectableFieldModel: model.NewCollectableFieldModel(pool),
 	}
 }

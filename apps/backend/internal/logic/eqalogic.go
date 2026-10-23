@@ -378,21 +378,39 @@ func (l *EqaLogic) buildEqaSchema() (json.RawMessage, error) {
 	for _, r := range rows {
 		byCode[r.Code] = r
 	}
+
+	levelOptions := []string{"战略客户", "重点客户", "普通客户", "潜在客户"}
+	if cf, err := l.svcCtx.CollectableFieldModel.FindByStorageTarget(l.ctx, "hospital.attributes.customer_level"); err == nil && cf != nil {
+		var enums []string
+		if json.Unmarshal(cf.EnumValues, &enums) == nil && len(enums) > 0 {
+			levelOptions = enums
+		}
+	}
+
 	type field struct {
-		Key      string   `json:"key"`
-		Label    string   `json:"label"`
-		Section  string   `json:"section"`
-		Type     string   `json:"type"`
-		Target   string   `json:"target"`
-		Required bool     `json:"required"`
-		Options  []string `json:"options,omitempty"`
+		Key           string   `json:"key"`
+		Label         string   `json:"label"`
+		Section       string   `json:"section"`
+		Type          string   `json:"type"`
+		Target        string   `json:"target"`
+		Required      bool     `json:"required"`
+		Options       []string `json:"options,omitempty"`
+		OptionsSource string   `json:"optionsSource,omitempty"`
 	}
 	fields := []field{
+		{
+			Key: "hospital_name", Label: "医院名称", Section: "基本信息", Type: "text",
+			Target: "hospital.name", Required: true, OptionsSource: "hospitals",
+		},
+		{
+			Key: "customer_level", Label: "客户等级", Section: "基本信息", Type: "enum",
+			Target: "hospital.attributes.customer_level", Options: levelOptions,
+		},
 		{Key: "eqa_year", Label: "参评年份", Section: "基本信息", Type: "number", Target: "eqa.year", Required: true},
 		{Key: "eqa_scope", Label: "参评范围", Section: "基本信息", Type: "enum", Target: "eqa.scope", Required: true, Options: []string{"national", "provincial"}},
 	}
 	for _, r := range rows {
-		if r.ValueType == "group" {
+		if r.ValueType != "boolean" {
 			continue
 		}
 		section := "其他"
@@ -401,15 +419,9 @@ func (l *EqaLogic) buildEqaSchema() (json.RawMessage, error) {
 				section = p.Name
 			}
 		}
-		ftype := r.ValueType
-		if ftype == "boolean" {
-			ftype = "boolean"
-		}
-		var enums []string
-		_ = json.Unmarshal(r.EnumValues, &enums)
 		fields = append(fields, field{
-			Key: r.Code, Label: r.Name, Section: section, Type: ftype,
-			Target: "eqa.field." + r.Code, Options: enums,
+			Key: r.Code, Label: r.Name, Section: section, Type: "boolean",
+			Target: "eqa.field." + r.Code,
 		})
 	}
 	sections := []string{"基本信息"}

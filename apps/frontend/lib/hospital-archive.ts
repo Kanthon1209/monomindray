@@ -96,7 +96,6 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "branchOffice", label: "分公司", section: "客户基础" },
   { key: "customerName", label: "客户名称", section: "客户基础" },
   { key: "customerCode", label: "客户代码", section: "客户基础" },
-  { key: "customerLevel", label: "客户级别", section: "客户基础" },
   { key: "model", label: "机型", section: "设备信息" },
   { key: "serialNo", label: "序列号", section: "设备信息" },
   { key: "contactName", label: "负责人", section: "联系人" },
@@ -104,7 +103,6 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "installedAt", label: "安装日期", section: "设备信息" },
   { key: "enabledAt", label: "启用日期", section: "设备信息" },
   { key: "annualRevenue", label: "医院年收入（亿）", section: "经营数据", valueType: "number" },
-  { key: "usageLocation", label: "使用位置", section: "经营数据" },
   { key: "projectCount", label: "开展项目数", section: "项目与试剂", valueType: "number" },
   { key: "mindrayReagentCount", label: "迈瑞试剂项目数", section: "项目与试剂", valueType: "number" },
   { key: "matchingRate", label: "配套率", section: "项目与试剂" },
@@ -177,7 +175,7 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
 ];
 
 /** 看板默认列（关键指标，适配窄侧栏） */
-export const DASHBOARD_PRIMARY_COLUMNS: ArchiveFieldKey[] = [
+export const DASHBOARD_PRIMARY_COLUMNS: Array<ArchiveFieldKey | "customerLevel"> = [
   "customerName",
   "customerLevel",
   "mindrayReagentCount",
@@ -197,12 +195,14 @@ export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
 ];
 
 /** @deprecated 使用 PRIMARY + EXTRA */
-export const DASHBOARD_LIST_COLUMNS: ArchiveFieldKey[] = [
+export const DASHBOARD_LIST_COLUMNS: Array<ArchiveFieldKey | "customerLevel"> = [
   ...DASHBOARD_PRIMARY_COLUMNS,
   ...DASHBOARD_EXTRA_COLUMNS,
 ];
 
 export function archiveFieldLabel(key: ArchiveFieldKey | string) {
+  if (key === "customerLevel") return "客户等级";
+  if (key === "usageLocation") return "使用地点";
   return ARCHIVE_FIELD_DEFS.find((f) => f.key === key)?.label || key;
 }
 
@@ -262,6 +262,8 @@ export const HOSPITAL_COLUMN_TARGETS = HOSPITAL_COLUMNS.map((c) => ({
 
 /** 可扩展标签（hospital_attributes） */
 export const HOSPITAL_ATTRIBUTE_KEYS = [
+  "customer_level",
+  "usage_location",
   "svip_level",
   "dual_major",
   "sales_group",
@@ -371,11 +373,13 @@ export function resolveArchiveField(
     level?: string;
     remark?: string;
     deviceModels?: string[];
+    attributes?: Record<string, string>;
     archive?: Record<string, ArchiveValue>;
   },
-  key: ArchiveFieldKey,
+  key: ArchiveFieldKey | "customerLevel",
 ): string {
   const archive = hospital.archive || {};
+  const attrs = hospital.attributes || {};
   switch (key) {
     case "region":
       return (
@@ -389,7 +393,11 @@ export function resolveArchiveField(
     case "customerName":
       return formatArchiveValue(archive.customerName) || hospital.name || "";
     case "customerLevel":
-      return formatArchiveValue(archive.customerLevel) || hospital.level || "";
+      return (
+        attrs.customer_level ||
+        formatArchiveValue(archive.customerLevel) ||
+        ""
+      );
     case "model":
       return formatArchiveValue(archive.model) || hospital.deviceModels?.[0] || "";
     case "mindrayProjects":

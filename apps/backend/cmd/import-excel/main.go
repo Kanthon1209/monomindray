@@ -223,6 +223,17 @@ func main() {
 	fmt.Println("import stats:", stats)
 }
 
+
+func stripMigratedArchiveKeys(archive map[string]any) {
+	if archive == nil {
+		return
+	}
+	delete(archive, "customerLevel")
+	delete(archive, "customer_level")
+	delete(archive, "usageLocation")
+	delete(archive, "usage_location")
+}
+
 func upsertHospital(ctx context.Context, hm model.HospitalModel, pool *pgxpool.Pool, name, province, city, level, typ string, archive map[string]any) (int64, error) {
 	if city == "" {
 		city = "未知"
@@ -258,18 +269,23 @@ func upsertHospital(ctx context.Context, hm model.HospitalModel, pool *pgxpool.P
 	}
 
 	if existing == nil {
+		attrsArchive := map[string]any{}
+		for k, v := range archive {
+			attrsArchive[k] = v
+		}
+		stripMigratedArchiveKeys(archive)
 		h := &model.Hospital{
 			Name: name, Province: province, City: city, Level: level, Type: typ,
 			Status: "active", Archive: archive,
-			CustomerCode: str(archive["customerCode"]),
-			Region:       str(archive["region"]),
-			BranchOffice: str(archive["branchOffice"]),
+			CustomerCode: str(attrsArchive["customerCode"]),
+			Region:       str(attrsArchive["region"]),
+			BranchOffice: str(attrsArchive["branchOffice"]),
 		}
 		id, err := hm.Insert(ctx, h)
 		if err != nil {
 			return 0, err
 		}
-		_ = dualWriteImport(ctx, pool, id, archive)
+		_ = dualWriteImport(ctx, pool, id, attrsArchive)
 		return id, nil
 	}
 
@@ -296,6 +312,11 @@ func upsertHospital(ctx context.Context, hm model.HospitalModel, pool *pgxpool.P
 		}
 		merged[k] = v
 	}
+	attrsArchive := map[string]any{}
+	for k, v := range merged {
+		attrsArchive[k] = v
+	}
+	stripMigratedArchiveKeys(merged)
 	existing.Archive = merged
 	if level != "" && level != "二级甲等" {
 		existing.Level = level
@@ -313,7 +334,7 @@ func upsertHospital(ctx context.Context, hm model.HospitalModel, pool *pgxpool.P
 	if err := hm.Update(ctx, existing); err != nil {
 		return 0, err
 	}
-	_ = dualWriteImport(ctx, pool, existing.Id, merged)
+	_ = dualWriteImport(ctx, pool, existing.Id, attrsArchive)
 	return existing.Id, nil
 }
 

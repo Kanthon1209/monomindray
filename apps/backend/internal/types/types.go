@@ -522,6 +522,24 @@ type (
 		Participation int64  `json:"participation"`
 		ItemCount     int64  `json:"itemCount"`
 	}
+
+	CollectableFieldInfo struct {
+		Code          string   `json:"code"`
+		Domain        string   `json:"domain"`
+		StorageTarget string   `json:"storageTarget"`
+		ValueType     string   `json:"valueType"`
+		Label         string   `json:"label"`
+		Section       string   `json:"section"`
+		EnumValues    []string `json:"enumValues,omitempty"`
+		OptionsSource string   `json:"optionsSource,omitempty"`
+		SortOrder     int64    `json:"sortOrder"`
+	}
+	ListCollectableFieldsRequest struct {
+		Domain string `form:"domain,optional"`
+	}
+	ListCollectableFieldsResponse struct {
+		Items []CollectableFieldInfo `json:"items"`
+	}
 	EqaDashboardResponse struct {
 		Year                 int64              `json:"year"`
 		TotalParticipations  int64              `json:"totalParticipations"`

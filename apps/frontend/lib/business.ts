@@ -860,3 +860,45 @@ export async function searchHospitalsForSurvey(keyword: string, limit = 20) {
     })),
   };
 }
+
+// ---- collectable fields catalog ----
+
+export type CollectableField = {
+  code: string;
+  domain: string;
+  storageTarget: string;
+  valueType: string;
+  label: string;
+  section: string;
+  enumValues?: string[];
+  optionsSource?: string;
+  sortOrder?: number;
+};
+
+export async function listCollectableFields(domain?: string) {
+  const { data, error } = await apiFetch<{ items: any[] }>(
+    `/collectable-fields${qs({ domain: domain || undefined })}`,
+  );
+  if (error) {
+    return { error, items: [] as CollectableField[] };
+  }
+  return {
+    items: (data?.items || []).map(
+      (raw): CollectableField => ({
+        code: String(raw.code || ""),
+        domain: String(raw.domain || ""),
+        storageTarget: String(raw.storageTarget || raw.storage_target || ""),
+        valueType: String(raw.valueType || raw.value_type || "text"),
+        label: String(raw.label || ""),
+        section: String(raw.section || ""),
+        enumValues: Array.isArray(raw.enumValues)
+          ? raw.enumValues.map(String)
+          : Array.isArray(raw.enum_values)
+            ? raw.enum_values.map(String)
+            : [],
+        optionsSource: raw.optionsSource || raw.options_source || undefined,
+        sortOrder: Number(raw.sortOrder ?? raw.sort_order ?? 0),
+      }),
+    ),
+  };
+}
