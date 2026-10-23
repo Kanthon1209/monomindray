@@ -370,7 +370,7 @@ func (l *EqaLogic) EnsureEqaTemplate() (*types.SurveyTemplateResponse, error) {
 }
 
 func (l *EqaLogic) buildEqaSchema() (json.RawMessage, error) {
-	levelOptions := []string{"战略客户", "重点客户", "普通客户", "潜在客户"}
+	levelOptions := []string{"V1", "V2", "V3", "非V"}
 	if cf, err := l.svcCtx.CollectableFieldModel.FindByStorageTarget(l.ctx, "hospital.attributes.customer_level"); err == nil && cf != nil {
 		var enums []string
 		if json.Unmarshal(cf.EnumValues, &enums) == nil && len(enums) > 0 {

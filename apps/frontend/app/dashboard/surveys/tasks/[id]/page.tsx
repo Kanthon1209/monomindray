@@ -47,16 +47,7 @@ const HOSPITAL_LEVEL_OPTIONS = [
   "二级甲等",
   "二级乙等",
   "一级",
-];
-const CUSTOMER_LEVEL_OPTIONS = [
-  "战略客户",
-  "重点客户",
-  "普通客户",
-  "潜在客户",
-  "SVIP",
-  "VIP",
-  "非V客户",
-  "V客户",
+  "未定级",
 ];
 const TYPE_OPTIONS = ["综合医院", "专科医院", "中医医院", "妇幼保健院"];
 
@@ -70,26 +61,12 @@ function isHospitalNameField(field: SurveyField): boolean {
   return label.includes("客户名称") || label.includes("医院名称");
 }
 
-function customerLevelPresets(field: SurveyField): string[] | null {
+/** Options come from template/catalog; only hospital.level keeps a UI fallback. */
+function hospitalLevelPresets(field: SurveyField): string[] | null {
   if (Array.isArray(field.options) && field.options.length) return field.options;
   const t = (field.target || "").trim();
   const key = field.key || "";
-  const label = field.label || "";
-  if (
-    key === "customerLevel" ||
-    key === "customer_level" ||
-    t.includes("customerLevel") ||
-    t.includes("customer_level") ||
-    t.includes("customer.level") ||
-    t === "hospital.attributes.customer_level" ||
-    label.includes("客户等级") ||
-    label.includes("客户级别")
-  ) {
-    return CUSTOMER_LEVEL_OPTIONS;
-  }
   if (key === "level" || t === "hospital.level") {
-    // 模板里「客户等级」常误绑 hospital.level；按文案优先客户等级预设
-    if (label.includes("客户")) return CUSTOMER_LEVEL_OPTIONS;
     return HOSPITAL_LEVEL_OPTIONS;
   }
   return null;
@@ -454,7 +431,7 @@ export default function SurveyTaskFillPage() {
         />
       );
     }
-    const levelPresets = customerLevelPresets(field);
+    const levelPresets = hospitalLevelPresets(field);
     if (levelPresets) {
       return (
         <Select
@@ -463,7 +440,7 @@ export default function SurveyTaskFillPage() {
           disabled={disabled}
         >
           <SelectTrigger>
-            <SelectValue placeholder="选择等级" />
+            <SelectValue placeholder="请选择" />
           </SelectTrigger>
           <SelectContent>
             {levelPresets.map((o) => (

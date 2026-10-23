@@ -80,12 +80,19 @@ export default function DashboardPage() {
   }, [hospitals]);
 
   const levelOptions = useMemo(() => {
-    const set = new Set<string>();
+    // Mindray 客户等级（公司视角）；医院等级(二甲/三甲)不在此列
+    const set = new Set<string>(["V1", "V2", "V3", "非V"]);
     for (const h of hospitals) {
       const level = resolveArchiveField(h, "customerLevel").trim();
       if (level) set.add(level);
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-CN"));
+    const order = ["V1", "V2", "V3", "非V"];
+    return Array.from(set).sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia >= 0 || ib >= 0) return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+      return a.localeCompare(b, "zh-CN");
+    });
   }, [hospitals]);
 
   return (

@@ -39,7 +39,7 @@ export function FilterBar({
           options={regionOptions}
         />
         <FilterSelect
-          label="客户级别"
+          label="客户等级"
           value={filters.customerLevel}
           onChange={(v) => onFilterChange("customerLevel", v)}
           options={[

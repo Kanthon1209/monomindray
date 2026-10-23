@@ -192,7 +192,7 @@ export const DASHBOARD_LIST_COLUMNS: Array<ArchiveFieldKey | "customerLevel" | "
 
 export function archiveFieldLabel(key: ArchiveFieldKey | string) {
   if (key === "customerLevel") return "客户等级";
-  if (key === "usageLocation") return "使用地点";
+  if (key === "usageLocation") return "使用位置";
   if (key === "assays") return "开展项目";
   return ARCHIVE_FIELD_DEFS.find((f) => f.key === key)?.label || key;
 }

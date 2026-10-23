@@ -24,6 +24,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -67,6 +75,7 @@ export default function AssayProjectsPage() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm("line"));
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [openLines, setOpenLines] = useState<Record<string, boolean>>({});
   const [openCats, setOpenCats] = useState<Record<string, boolean>>({});
@@ -103,9 +112,19 @@ export default function AssayProjectsPage() {
     if (user && isAdmin(user)) load();
   }, [user, load]);
 
-  const resetForm = (kind: FormState["kind"] = "line", parentCode = "") => {
-    setForm(emptyForm(kind, parentCode));
+  const closeDialog = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setEditingId(null);
+      setForm(emptyForm("line"));
+    }
+  };
+
+  const openCreate = (kind: FormState["kind"] = "line", parentCode = "") => {
     setEditingId(null);
+    setForm(emptyForm(kind, parentCode));
+    setError(null);
+    setDialogOpen(true);
   };
 
   const startEdit = (code: string) => {
@@ -120,6 +139,8 @@ export default function AssayProjectsPage() {
       sortOrder: String(p.sortOrder ?? 0),
       status: p.status || "active",
     });
+    setError(null);
+    setDialogOpen(true);
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -147,7 +168,7 @@ export default function AssayProjectsPage() {
       setError(res.error);
       return;
     }
-    resetForm(form.kind, form.parentCode);
+    closeDialog(false);
     await load();
   };
 
@@ -164,7 +185,7 @@ export default function AssayProjectsPage() {
       setError(res.error);
       return;
     }
-    if (editingId === p.id) resetForm();
+    if (editingId === p.id) closeDialog(false);
     await load();
   };
 
@@ -220,118 +241,24 @@ export default function AssayProjectsPage() {
               <Button variant="outline" size="icon" className="h-10 w-10" onClick={load} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
+              <Button onClick={() => openCreate("line")}>
+                <Plus className="mr-2 h-4 w-4" />
+                新增产线
+              </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6 px-0">
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-          <form onSubmit={onSubmit} className="grid gap-3 rounded-lg border p-4 md:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label>层级 *</Label>
-              <Select
-                value={form.kind}
-                onValueChange={(v) => {
-                  const kind = v as FormState["kind"];
-                  setForm((f) => ({
-                    ...f,
-                    kind,
-                    parentCode: kind === "line" ? "" : f.parentCode,
-                  }));
-                }}
-                disabled={!!editingId}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="line">产线</SelectItem>
-                  <SelectItem value="category">类别</SelectItem>
-                  <SelectItem value="item">细项</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {form.kind !== "line" ? (
-              <div className="space-y-1.5 md:col-span-2 lg:col-span-1">
-                <Label>父节点 *</Label>
-                <Select
-                  value={form.parentCode || undefined}
-                  onValueChange={(v) => setForm((f) => ({ ...f, parentCode: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择父节点" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {parentOptions.map((o) => (
-                      <SelectItem key={o.code} value={o.code}>
-                        {o.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-            <div className="space-y-1.5">
-              <Label>名称 *</Label>
-              <Input
-                required
-                value={form.name}
-                placeholder={form.kind === "item" ? "如 ALT" : "如 生化项目"}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>编码 *</Label>
-              <Input
-                required
-                value={form.code}
-                placeholder={form.kind === "item" ? "biochem.liver.alt" : "biochem"}
-                onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                disabled={!!editingId}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>排序</Label>
-              <Input
-                type="number"
-                value={form.sortOrder}
-                onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>状态</Label>
-              <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">启用</SelectItem>
-                  <SelectItem value="inactive">停用</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end gap-2 md:col-span-2 lg:col-span-3">
-              <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                {editingId ? "保存修改" : `新增${kindLabel(form.kind)}`}
-              </Button>
-              {editingId ? (
-                <Button type="button" variant="outline" onClick={() => resetForm()}>
-                  取消编辑
-                </Button>
-              ) : null}
-              <Button type="button" variant="ghost" onClick={() => resetForm("line")}>
-                清空
-              </Button>
-            </div>
-          </form>
+          {error && !dialogOpen ? <p className="text-sm text-destructive">{error}</p> : null}
 
           {loading ? (
             <div className="flex justify-center py-12 text-muted-foreground">
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           ) : tree.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">暂无目录节点，请先新增产线</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              暂无目录节点，点击右上角「新增产线」开始
+            </p>
           ) : (
             <div className="space-y-3">
               {tree.map((line) => {
@@ -363,13 +290,7 @@ export default function AssayProjectsPage() {
                       <Button size="sm" variant="ghost" onClick={() => startEdit(line.code)}>
                         编辑
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          resetForm("category", line.code);
-                        }}
-                      >
+                      <Button size="sm" variant="ghost" onClick={() => openCreate("category", line.code)}>
                         +类别
                       </Button>
                       <Button size="sm" variant="ghost" className="text-destructive" onClick={() => onDelete(line.code)}>
@@ -379,7 +300,9 @@ export default function AssayProjectsPage() {
                     {lineOpen ? (
                       <div className="space-y-2 border-t px-3 py-2">
                         {(line.children || []).map((cat) => {
-                          const items = (cat.children || []).filter((i) => matchKw(i.name, i.code) || matchKw(cat.name, cat.code));
+                          const items = (cat.children || []).filter(
+                            (i) => matchKw(i.name, i.code) || matchKw(cat.name, cat.code),
+                          );
                           if (keyword.trim() && !matchKw(cat.name, cat.code) && items.length === 0) return null;
                           const catOpen = !!openCats[cat.code];
                           return (
@@ -402,7 +325,7 @@ export default function AssayProjectsPage() {
                                 <Button size="sm" variant="ghost" onClick={() => startEdit(cat.code)}>
                                   编辑
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => resetForm("item", cat.code)}>
+                                <Button size="sm" variant="ghost" onClick={() => openCreate("item", cat.code)}>
                                   +细项
                                 </Button>
                                 <Button
@@ -471,6 +394,125 @@ export default function AssayProjectsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={closeDialog}>
+        <DialogContent className="flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <DialogHeader className="shrink-0 border-b px-5 py-4 pr-10">
+            <DialogTitle>
+              {editingId ? `编辑${kindLabel(form.kind)}` : `新增${kindLabel(form.kind)}`}
+            </DialogTitle>
+            <DialogDescription>
+              {form.kind === "line"
+                ? "产线是顶层节点，例如生化、免疫。"
+                : form.kind === "category"
+                  ? "类别挂在产线下，例如肝功类、肿瘤标志物。"
+                  : "细项是叶子节点，医院开展项目只挂细项。"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={onSubmit}
+            className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 pt-4"
+          >
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>层级 *</Label>
+                <Select
+                  value={form.kind}
+                  onValueChange={(v) => {
+                    const kind = v as FormState["kind"];
+                    setForm((f) => ({
+                      ...f,
+                      kind,
+                      parentCode: kind === "line" ? "" : f.parentCode,
+                    }));
+                  }}
+                  disabled={!!editingId}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="line">产线</SelectItem>
+                    <SelectItem value="category">类别</SelectItem>
+                    <SelectItem value="item">细项</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.kind !== "line" ? (
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label>父节点 *</Label>
+                  <Select
+                    value={form.parentCode || undefined}
+                    onValueChange={(v) => setForm((f) => ({ ...f, parentCode: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择父节点" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {parentOptions.map((o) => (
+                        <SelectItem key={o.code} value={o.code}>
+                          {o.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>名称 *</Label>
+                <Input
+                  required
+                  value={form.name}
+                  placeholder={form.kind === "item" ? "如 ALT" : "如 生化项目"}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>编码 *</Label>
+                <Input
+                  required
+                  value={form.code}
+                  placeholder={form.kind === "item" ? "biochem.liver.alt" : "biochem"}
+                  onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                  disabled={!!editingId}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>排序</Label>
+                <Input
+                  type="number"
+                  value={form.sortOrder}
+                  onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>状态</Label>
+                <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">启用</SelectItem>
+                    <SelectItem value="inactive">停用</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <DialogFooter className="sticky bottom-0 z-10 -mx-5 gap-2 border-t bg-background px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:justify-end [&>button]:w-full sm:[&>button]:w-auto">
+              <Button type="button" variant="outline" onClick={() => closeDialog(false)} disabled={saving}>
+                取消
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {editingId ? "保存修改" : `新增${kindLabel(form.kind)}`}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
