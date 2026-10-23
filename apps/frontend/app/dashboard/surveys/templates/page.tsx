@@ -242,6 +242,40 @@ function slugifyKey(label: string): string {
   return `field_${Date.now().toString(36)}`;
 }
 
+/** Answer-bag key: derived from catalog code/target; admins never type this. */
+function deriveFieldKeyFromCatalog(field: {
+  code: string;
+  storageTarget: string;
+}): string {
+  const strip = (raw: string) =>
+    raw
+      .replace(/^hospital\.(attributes|metrics|archive)\./, "")
+      .replace(/^hospital\./, "")
+      .replace(/^eqa\.field\./, "")
+      .replace(/^eqa\./, "")
+      .replace(/[^a-zA-Z0-9_]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  for (const src of [field.code, field.storageTarget]) {
+    const key = strip(src || "");
+    if (key && /^[a-zA-Z_]/.test(key)) return key;
+  }
+  return `field_${Date.now().toString(36)}`;
+}
+
+function ensureUniqueFieldKey(
+  base: string,
+  existingKeys: string[],
+  excludeKey?: string | null,
+): string {
+  const taken = new Set(existingKeys.filter((k) => k !== excludeKey));
+  let candidate = base;
+  let n = 2;
+  while (taken.has(candidate)) {
+    candidate = `${base}_${n++}`;
+  }
+  return candidate;
+}
+
 function normalizeSchema(schema: SurveySchema | undefined): SurveySchema {
   const fields = schema?.fields || [];
   const fromFields: string[] = [];
@@ -351,20 +385,14 @@ function applyCatalogField(
     optionsSource: (field.optionsSource as SurveyField["optionsSource"]) || undefined,
   };
   if (mode === "create") {
-    if (!next.key) {
-      // prefer last segment; allow dots for eqa.field codes via ensure path,
-      // template editor uses underscore-safe key derived from code
-      const code = field.code.replace(/^hospital\.(attributes|metrics|archive)\./, "")
-        .replace(/^hospital\./, "")
-        .replace(/^eqa\.field\./, "")
-        .replace(/^eqa\./, "");
-      next.key = code.replace(/[^a-zA-Z0-9_]+/g, "_");
-    }
+    // Always derive from catalog so admins never hand-edit keys
+    next.key = deriveFieldKeyFromCatalog(field);
     if (!next.label) next.label = field.label;
     if (!next.section || next.section === "未分组") {
       next.section = field.section || next.section || "未分组";
     }
   }
+  // edit mode: keep existing key for answer-bag backward compatibility
   return next;
 }
 
@@ -546,14 +574,8 @@ export default function SurveyTemplatesPage() {
     const template = items.find((t) => t.id === editingTemplateId);
     if (!template) return;
     const label = fieldDraft.label.trim();
-    let key = fieldDraft.key.trim();
     if (!label) {
       setError("请填写字段名称");
-      return;
-    }
-    if (!key) key = slugifyKey(label);
-    if (!/^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(key)) {
-      setError("字段 key 仅允许字母、数字、下划线与点，且不能以数字开头");
       return;
     }
     const section = fieldDraft.section.trim() || "未分组";
@@ -569,6 +591,29 @@ export default function SurveyTemplatesPage() {
 
     const schema = normalizeSchema(template.schema);
     const cat = catalogByTarget.get(target);
+    const existingKeys = (schema.fields || []).map((f) => f.key);
+    let key: string;
+    if (fieldMode === "edit" && editingOriginalKey) {
+      // Preserve original key so existing answer bags stay aligned
+      key = editingOriginalKey;
+    } else {
+      const base =
+        (fieldDraft.key.trim() &&
+        /^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(fieldDraft.key.trim())
+          ? fieldDraft.key.trim()
+          : null) ||
+        (cat
+          ? deriveFieldKeyFromCatalog(cat)
+          : deriveFieldKeyFromCatalog({
+              code: target,
+              storageTarget: target,
+            }));
+      key = ensureUniqueFieldKey(base, existingKeys);
+    }
+    if (!/^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(key)) {
+      setError("自动生成的字段 key 无效，请重新选择目录字段");
+      return;
+    }
     const fieldType = cat?.valueType || resolveFieldTypeFromMapping(fieldDraft);
     const optionsSource =
       (cat?.optionsSource as SurveyField["optionsSource"] | undefined) ||
@@ -598,16 +643,8 @@ export default function SurveyTemplatesPage() {
         setError("原字段不存在");
         return;
       }
-      if (key !== editingOriginalKey && fields.some((f) => f.key === key)) {
-        setError("字段 key 已存在");
-        return;
-      }
       fields[idx] = nextField;
     } else {
-      if (fields.some((f) => f.key === key)) {
-        setError("字段 key 已存在");
-        return;
-      }
       fields.push(nextField);
     }
 
@@ -739,10 +776,11 @@ export default function SurveyTemplatesPage() {
                         {f.required ? <Badge variant="outline">必填</Badge> : null}
                       </div>
                     </div>
-                    <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                      {f.key}
-                      {f.target ? ` → ${f.target}` : ""}
-                    </p>
+                    {f.target ? (
+                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                        → {f.target}
+                      </p>
+                    ) : null}
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {typeLabel(f.type || "text")}
                     </p>
@@ -1028,36 +1066,15 @@ export default function SurveyTemplatesPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-5 py-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>显示名称</Label>
-                <Input
-                  value={fieldDraft.label}
-                  onChange={(e) => {
-                    const label = e.target.value;
-                    setFieldDraft((d) => ({
-                      ...d,
-                      label,
-                      key:
-                        fieldMode === "create" && !d.key
-                          ? slugifyKey(label)
-                          : d.key,
-                    }));
-                  }}
-                  placeholder="例如：医院名称"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>字段 key</Label>
-                <Input
-                  value={fieldDraft.key}
-                  onChange={(e) =>
-                    setFieldDraft((d) => ({ ...d, key: e.target.value.trim() }))
-                  }
-                  placeholder="例如：name"
-                  className="font-mono"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label>显示名称</Label>
+              <Input
+                value={fieldDraft.label}
+                onChange={(e) =>
+                  setFieldDraft((d) => ({ ...d, label: e.target.value }))
+                }
+                placeholder="例如：医院名称"
+              />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
