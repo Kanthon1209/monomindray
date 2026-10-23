@@ -145,10 +145,8 @@ export default function SurveyReviewPage() {
                   items.map((item) => (
                     <Fragment key={item.id}>
                       <TableRow>
-                        <TableCell>
-                          <div className="text-base font-semibold tracking-tight text-foreground">
-                            {item.hospitalName || "—"}
-                          </div>
+                        <TableCell className="font-medium">
+                          {item.hospitalName || "—"}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {item.campaignTitle || "—"}
@@ -194,15 +192,13 @@ export default function SurveyReviewPage() {
                       {expandedId === item.id ? (
                         <TableRow>
                           <TableCell colSpan={6} className="bg-muted/30">
-                            <div className="mb-3 border-b border-border/60 pb-3">
-                              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                客户
-                              </div>
-                              <div className="mt-1 text-xl font-semibold tracking-tight text-foreground">
-                                {item.hospitalName || "—"}
+                            <div className="mb-3 border-b border-border/60 pb-3 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">客户：</span>
+                                <span className="font-medium">{item.hospitalName || "—"}</span>
                               </div>
                               {item.campaignTitle ? (
-                                <div className="mt-1 text-sm text-muted-foreground">
+                                <div className="mt-1 text-muted-foreground">
                                   发放：{item.campaignTitle}
                                 </div>
                               ) : null}
@@ -257,7 +253,7 @@ export default function SurveyReviewPage() {
                 const open = expandedId === item.id;
                 return (
                   <MobileCardItem key={item.id}>
-                    <div className="text-lg font-semibold tracking-tight">
+                    <div className="font-medium">
                       {item.hospitalName || "—"}
                     </div>
                     <div className="text-sm text-muted-foreground">
@@ -302,13 +298,9 @@ export default function SurveyReviewPage() {
                     </div>
                     {open ? (
                       <div className="space-y-3 rounded-md bg-muted/30 p-3">
-                        <div className="border-b border-border/60 pb-2">
-                          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                            客户
-                          </div>
-                          <div className="mt-1 text-lg font-semibold tracking-tight">
-                            {item.hospitalName || "—"}
-                          </div>
+                        <div className="border-b border-border/60 pb-2 text-sm">
+                          <span className="text-muted-foreground">客户：</span>
+                          <span className="font-medium">{item.hospitalName || "—"}</span>
                         </div>
                         <SurveyAnswersView
                           answers={item.answers || {}}
