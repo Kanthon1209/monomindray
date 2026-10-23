@@ -77,6 +77,7 @@ services:
   # Ops UI — http://<host>/pgadmin  (also :5050). Set strong PGADMIN_PASSWORD.
   # ERD: 右键数据库 → ERD For Database
   pgadmin:
+    profiles: ["observability"]
     image: dpage/pgadmin4:8.14
     container_name: mindray-pgadmin
     restart: unless-stopped
@@ -104,6 +105,7 @@ services:
 
   # Observability — Loki logs + Tempo traces via /grafana. Keep memory tight.
   loki:
+    profiles: ["observability"]
     image: grafana/loki:3.4.2
     container_name: mindray-loki
     restart: unless-stopped
@@ -116,6 +118,7 @@ services:
       - mindray
 
   tempo:
+    profiles: ["observability"]
     image: grafana/tempo:2.7.1
     container_name: mindray-tempo
     restart: unless-stopped
@@ -128,6 +131,7 @@ services:
       - mindray
 
   alloy:
+    profiles: ["observability"]
     image: grafana/alloy:v1.8.1
     container_name: mindray-alloy
     restart: unless-stopped
@@ -148,6 +152,7 @@ services:
       - mindray
 
   grafana:
+    profiles: ["observability"]
     image: grafana/grafana:11.5.2
     container_name: mindray-grafana
     restart: unless-stopped
