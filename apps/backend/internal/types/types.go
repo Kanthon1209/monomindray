@@ -354,19 +354,20 @@ type (
 	}
 
 	SurveySubmissionInfo struct {
-		Id            int64          `json:"id"`
-		AssignmentId  int64          `json:"assignmentId"`
-		CampaignTitle string         `json:"campaignTitle,omitempty"`
-		AssigneeName  string         `json:"assigneeName,omitempty"`
-		AssigneeEmail string         `json:"assigneeEmail,omitempty"`
-		CollectorName string         `json:"collectorName,omitempty"`
-		HospitalId    *int64         `json:"hospitalId,omitempty"`
-		HospitalName  string         `json:"hospitalName,omitempty"`
-		Answers       map[string]any `json:"answers"`
-		Status        string         `json:"status"`
-		SubmittedAt   string         `json:"submittedAt,omitempty"`
-		ReviewedAt    string         `json:"reviewedAt,omitempty"`
-		ReviewNote    string         `json:"reviewNote,omitempty"`
+		Id            int64           `json:"id"`
+		AssignmentId  int64           `json:"assignmentId"`
+		CampaignTitle string          `json:"campaignTitle,omitempty"`
+		AssigneeName  string          `json:"assigneeName,omitempty"`
+		AssigneeEmail string          `json:"assigneeEmail,omitempty"`
+		CollectorName string          `json:"collectorName,omitempty"`
+		HospitalId    *int64          `json:"hospitalId,omitempty"`
+		HospitalName  string          `json:"hospitalName,omitempty"`
+		Answers       map[string]any  `json:"answers"`
+		Schema        json.RawMessage `json:"schema,omitempty"`
+		Status        string          `json:"status"`
+		SubmittedAt   string          `json:"submittedAt,omitempty"`
+		ReviewedAt    string          `json:"reviewedAt,omitempty"`
+		ReviewNote    string          `json:"reviewNote,omitempty"`
 	}
 	ListSurveySubmissionsRequest struct {
 		Status   string `form:"status,optional"`

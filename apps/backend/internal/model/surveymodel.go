@@ -71,6 +71,7 @@ type SurveySubmission struct {
 	HospitalId     *int64
 	HospitalName   string
 	Answers        map[string]any
+	Schema         json.RawMessage
 	Status         string
 	CollectedBy    *int64
 	SubmittedAt    *time.Time
@@ -608,12 +609,14 @@ func (m *surveyModel) FindSubmissionByAssignment(ctx context.Context, assignment
 	return m.scanSubmission(m.conn.QueryRow(ctx, `
 		SELECT s.id, s.assignment_id, s.hospital_id, s.answers, s.status, s.collected_by, s.submitted_at,
 		       s.reviewed_by, s.reviewed_at, s.review_note, s.created_at, s.updated_at,
-		       COALESCE(c.title,''), COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(cu.name,'')
+		       COALESCE(c.title,''), COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(cu.name,''),
+		       COALESCE(h.name,'')
 		FROM survey_submissions s
 		JOIN survey_assignments a ON a.id = s.assignment_id
 		JOIN survey_campaigns c ON c.id = a.campaign_id
 		LEFT JOIN users u ON u.id = a.assignee_id
 		LEFT JOIN users cu ON cu.id = s.collected_by
+		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
 		WHERE s.assignment_id=$1`, assignmentID))
 }
 
@@ -621,12 +624,14 @@ func (m *surveyModel) FindSubmissionById(ctx context.Context, id int64) (*Survey
 	return m.scanSubmission(m.conn.QueryRow(ctx, `
 		SELECT s.id, s.assignment_id, s.hospital_id, s.answers, s.status, s.collected_by, s.submitted_at,
 		       s.reviewed_by, s.reviewed_at, s.review_note, s.created_at, s.updated_at,
-		       COALESCE(c.title,''), COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(cu.name,'')
+		       COALESCE(c.title,''), COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(cu.name,''),
+		       COALESCE(h.name,'')
 		FROM survey_submissions s
 		JOIN survey_assignments a ON a.id = s.assignment_id
 		JOIN survey_campaigns c ON c.id = a.campaign_id
 		LEFT JOIN users u ON u.id = a.assignee_id
 		LEFT JOIN users cu ON cu.id = s.collected_by
+		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
 		WHERE s.id=$1`, id))
 }
 
@@ -636,7 +641,7 @@ func (m *surveyModel) scanSubmission(row pgx.Row) (*SurveySubmission, error) {
 	err := row.Scan(
 		&s.Id, &s.AssignmentId, &s.HospitalId, &answersRaw, &s.Status, &s.CollectedBy, &s.SubmittedAt,
 		&s.ReviewedBy, &s.ReviewedAt, &s.ReviewNote, &s.CreatedAt, &s.UpdatedAt,
-		&s.CampaignTitle, &s.AssigneeName, &s.AssigneeEmail, &s.CollectorName,
+		&s.CampaignTitle, &s.AssigneeName, &s.AssigneeEmail, &s.CollectorName, &s.HospitalName,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -755,12 +760,15 @@ func (m *surveyModel) ListSubmissions(ctx context.Context, f SurveySubmissionFil
 	rows, err := m.conn.Query(ctx, fmt.Sprintf(`
 		SELECT s.id, s.assignment_id, s.hospital_id, s.answers, s.status, s.collected_by, s.submitted_at,
 		       s.reviewed_by, s.reviewed_at, s.review_note, s.created_at, s.updated_at,
-		       COALESCE(c.title,''), COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(cu.name,'')
+		       COALESCE(c.title,''), COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(cu.name,''),
+		       COALESCE(t.schema, '{}'::jsonb), COALESCE(h.name,'')
 		FROM survey_submissions s
 		JOIN survey_assignments a ON a.id = s.assignment_id
 		JOIN survey_campaigns c ON c.id = a.campaign_id
+		LEFT JOIN survey_templates t ON t.id = c.template_id
 		LEFT JOIN users u ON u.id = a.assignee_id
 		LEFT JOIN users cu ON cu.id = s.collected_by
+		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
 		WHERE %s
 		ORDER BY s.submitted_at DESC NULLS LAST, s.id DESC
 		LIMIT $%d OFFSET $%d`, whereSQL, len(args)-1, len(args)), args...)
@@ -772,10 +780,11 @@ func (m *surveyModel) ListSubmissions(ctx context.Context, f SurveySubmissionFil
 	for rows.Next() {
 		var s SurveySubmission
 		var answersRaw []byte
+		var schemaRaw []byte
 		if err := rows.Scan(
 			&s.Id, &s.AssignmentId, &s.HospitalId, &answersRaw, &s.Status, &s.CollectedBy, &s.SubmittedAt,
 			&s.ReviewedBy, &s.ReviewedAt, &s.ReviewNote, &s.CreatedAt, &s.UpdatedAt,
-			&s.CampaignTitle, &s.AssigneeName, &s.AssigneeEmail, &s.CollectorName,
+			&s.CampaignTitle, &s.AssigneeName, &s.AssigneeEmail, &s.CollectorName, &schemaRaw, &s.HospitalName,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -784,6 +793,7 @@ func (m *surveyModel) ListSubmissions(ctx context.Context, f SurveySubmissionFil
 			return nil, 0, err
 		}
 		s.Answers = answers
+		s.Schema = json.RawMessage(schemaRaw)
 		items = append(items, s)
 	}
 	return items, total, rows.Err()

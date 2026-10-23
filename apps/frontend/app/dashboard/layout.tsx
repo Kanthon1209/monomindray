@@ -245,7 +245,11 @@ function AppSidebar() {
                 </SidebarMenuItem>
               ) : null}
 
-              {navItems.slice(4).map((item) => {
+              {navItems.slice(4).filter((item) => {
+                // 室间质评 is an admin catalog/dashboard; collectors fill EQA via surveys.
+                if (item.href === "/dashboard/eqa") return admin;
+                return true;
+              }).map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (
                   <SidebarMenuItem key={item.href}>

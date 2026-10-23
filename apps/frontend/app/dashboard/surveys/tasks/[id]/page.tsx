@@ -145,6 +145,13 @@ export default function SurveyTaskFillPage() {
           next[f.key] = normalizeAssayBlockAnswer(undefined);
         }
       }
+      if (res.assignment.hospitalId && res.assignment.hospitalName) {
+        const boundName = res.assignment.hospitalName;
+        for (const f of res.assignment.schema?.fields || []) {
+          if (f.type === "repeat") continue;
+          if (isHospitalNameField(f)) next[f.key] = boundName;
+        }
+      }
       setAnswers(next);
       setLinkedHospitalId(
         res.assignment.hospitalId
@@ -172,10 +179,22 @@ export default function SurveyTaskFillPage() {
   const devicesField = repeatFields.find((f) => f.key === "devices") || null;
 
   const readOnly = assignment?.status === "submitted";
-  const lockedSet = useMemo(
-    () => new Set(assignment?.lockedKeys || []),
-    [assignment],
+  const hospitalBound = !!(
+    assignment?.hospitalId && Number(assignment.hospitalId) > 0
   );
+  const lockedSet = useMemo(() => {
+    const s = new Set(assignment?.lockedKeys || []);
+    if (
+      assignment?.hospitalId &&
+      Number(assignment.hospitalId) > 0
+    ) {
+      for (const f of assignment.schema?.fields || []) {
+        if (f.type === "repeat") continue;
+        if (isHospitalNameField(f)) s.add(f.key);
+      }
+    }
+    return s;
+  }, [assignment]);
 
   const setField = (key: string, value: any) => {
     if (lockedSet.has(key)) return;
@@ -254,6 +273,7 @@ export default function SurveyTaskFillPage() {
   };
 
   const applyHospitalPick = (hospital: HospitalSearchOption) => {
+    if (hospitalBound) return;
     setLinkedHospitalId(Number(hospital.id));
     setAnswers((prev) => {
       const next = { ...prev };
@@ -421,6 +441,21 @@ export default function SurveyTaskFillPage() {
       );
     }
     if (isHospitalNameField(field)) {
+      if (disabled || hospitalBound) {
+        return (
+          <Input
+            value={
+              (value == null || value === "") && assignment?.hospitalName
+                ? assignment.hospitalName
+                : value == null
+                  ? ""
+                  : String(value)
+            }
+            disabled
+            readOnly
+          />
+        );
+      }
       return (
         <HospitalNameTypeahead
           value={value == null ? "" : String(value)}

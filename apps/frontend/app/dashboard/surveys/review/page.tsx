@@ -35,6 +35,7 @@ import {
   MobileCardItem,
   MobileCardList,
 } from "@/components/mobile-data-list";
+import { SurveyAnswersView } from "@/components/survey-answers-view";
 
 export default function SurveyReviewPage() {
   const { user } = useAuth();
@@ -119,6 +120,7 @@ export default function SurveyReviewPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>客户</TableHead>
                   <TableHead>发放</TableHead>
                   <TableHead>采集员</TableHead>
                   <TableHead>提交时间</TableHead>
@@ -129,13 +131,13 @@ export default function SurveyReviewPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       加载中…
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       暂无待审答卷
                     </TableCell>
                   </TableRow>
@@ -143,7 +145,12 @@ export default function SurveyReviewPage() {
                   items.map((item) => (
                     <Fragment key={item.id}>
                       <TableRow>
-                        <TableCell className="font-medium">
+                        <TableCell>
+                          <div className="text-base font-semibold tracking-tight text-foreground">
+                            {item.hospitalName || "—"}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
                           {item.campaignTitle || "—"}
                         </TableCell>
                         <TableCell>
@@ -186,15 +193,24 @@ export default function SurveyReviewPage() {
                       </TableRow>
                       {expandedId === item.id ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="bg-muted/30">
-                            <div className="grid gap-2 text-sm md:grid-cols-2">
-                              {Object.entries(item.answers || {}).map(([k, v]) => (
-                                <div key={k}>
-                                  <span className="text-muted-foreground">{k}：</span>
-                                  <span>{v || "—"}</span>
+                          <TableCell colSpan={6} className="bg-muted/30">
+                            <div className="mb-3 border-b border-border/60 pb-3">
+                              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                客户
+                              </div>
+                              <div className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+                                {item.hospitalName || "—"}
+                              </div>
+                              {item.campaignTitle ? (
+                                <div className="mt-1 text-sm text-muted-foreground">
+                                  发放：{item.campaignTitle}
                                 </div>
-                              ))}
+                              ) : null}
                             </div>
+                            <SurveyAnswersView
+                              answers={item.answers || {}}
+                              fields={item.schema?.fields}
+                            />
                             <div className="mt-3 flex flex-wrap items-center gap-2">
                               <Input
                                 className="max-w-md"
@@ -241,7 +257,12 @@ export default function SurveyReviewPage() {
                 const open = expandedId === item.id;
                 return (
                   <MobileCardItem key={item.id}>
-                    <div className="font-medium">{item.campaignTitle || "—"}</div>
+                    <div className="text-lg font-semibold tracking-tight">
+                      {item.hospitalName || "—"}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {item.campaignTitle || "—"}
+                    </div>
                     <div className="text-sm">
                       {item.assigneeName || item.collectorName || "—"}
                     </div>
@@ -281,14 +302,19 @@ export default function SurveyReviewPage() {
                     </div>
                     {open ? (
                       <div className="space-y-3 rounded-md bg-muted/30 p-3">
-                        <div className="grid gap-2 text-sm">
-                          {Object.entries(item.answers || {}).map(([k, v]) => (
-                            <div key={k}>
-                              <span className="text-muted-foreground">{k}：</span>
-                              <span>{v || "—"}</span>
-                            </div>
-                          ))}
+                        <div className="border-b border-border/60 pb-2">
+                          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            客户
+                          </div>
+                          <div className="mt-1 text-lg font-semibold tracking-tight">
+                            {item.hospitalName || "—"}
+                          </div>
                         </div>
+                        <SurveyAnswersView
+                          answers={item.answers || {}}
+                          fields={item.schema?.fields}
+                          className="grid gap-2 text-sm"
+                        />
                         <Input
                           className="w-full"
                           placeholder="驳回原因（必填）"

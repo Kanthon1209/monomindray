@@ -437,7 +437,11 @@ export interface SurveySubmission {
   assigneeEmail?: string;
   collectorName?: string;
   hospitalId?: string;
+  /** Bound hospital display name from assignment/hospital master. */
+  hospitalName?: string;
   answers: Record<string, any>;
+  /** Template schema snapshot when API provides it (for review labels). */
+  schema?: SurveySchema;
   status: string;
   submittedAt?: string;
   reviewedAt?: string;
@@ -529,7 +533,9 @@ function mapSubmission(raw: any): SurveySubmission {
     assigneeEmail: raw.assigneeEmail || undefined,
     collectorName: raw.collectorName || undefined,
     hospitalId: raw.hospitalId != null ? String(raw.hospitalId) : undefined,
+    hospitalName: raw.hospitalName || undefined,
     answers: raw.answers || {},
+    schema: raw.schema ? parseSchema(raw.schema) : undefined,
     status: raw.status,
     submittedAt: raw.submittedAt || undefined,
     reviewedAt: raw.reviewedAt || undefined,

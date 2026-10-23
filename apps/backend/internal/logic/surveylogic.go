@@ -237,6 +237,9 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 	c.Defaults = mergeTemplateDefaults(tpl.Schema, c.Defaults)
 	c.LockedKeys = mergeTemplateLocked(tpl.Schema, c.LockedKeys)
 
+	// Bound hospital ⇒ lock customer/hospital name fields so collectors cannot retarget.
+	c.LockedKeys = uniqueStrings(append(c.LockedKeys, hospitalNameFieldKeys(tpl.Schema)...))
+
 	specs := make([]model.SurveyAssignmentSpec, 0, len(hospitalIDs))
 	for _, hid := range hospitalIDs {
 		h, err := l.svcCtx.HospitalModel.FindById(l.ctx, hid)
@@ -249,7 +252,7 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 		specs = append(specs, model.SurveyAssignmentSpec{
 			AssigneeID: assigneeID,
 			HospitalID: hid,
-			Prefill:    filterPrefillBySchema(tpl.Schema, hospitalPrefillAnswers(h)),
+			Prefill:    mapHospitalToSchemaAnswers(tpl.Schema, h),
 		})
 	}
 
@@ -375,8 +378,9 @@ func (l *SurveyLogic) GetMyAssignment(id int64) (*types.SurveyAssignmentResponse
 		note = sub.ReviewNote
 	}
 	answers = mergePrefillAnswers(a.Schema, a.CampaignDefaults, answers)
-	locked := effectiveLockedKeys(a.Schema, a.LockedKeys)
-	answers = applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, answers)
+	locked := assignmentEffectiveLockedKeys(a)
+	answers = applyLockedAnswers(a.Schema, a.CampaignDefaults, locked, answers)
+	answers = forceAssignedHospitalAnswers(a, answers)
 	answers = pruneAnswersToSchema(a.Schema, answers)
 	info := toSurveyAssignmentInfo(a, answers, note)
 	info.LockedKeys = locked
@@ -392,11 +396,13 @@ func (l *SurveyLogic) SaveDraft(id int64, req *types.SaveSurveyAnswersRequest) (
 	if err != nil {
 		return nil, err
 	}
-	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, normalizeAnswers(req.Answers))
+	locked := assignmentEffectiveLockedKeys(a)
+	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, locked, normalizeAnswers(req.Answers))
+	answers = forceAssignedHospitalAnswers(a, answers)
 	answers = pruneAnswersToSchema(a.Schema, answers)
-	hid := req.HospitalId
+	hid := a.HospitalId
 	if hid == nil {
-		hid = a.HospitalId
+		hid = req.HospitalId
 	}
 	sub, err := l.svcCtx.SurveyModel.UpsertDraft(l.ctx, id, uid, answers, hid)
 	if err != nil {
@@ -421,14 +427,16 @@ func (l *SurveyLogic) Submit(id int64, req *types.SaveSurveyAnswersRequest) (*ty
 	if a.CampaignStatus == "closed" {
 		return nil, NewCodeError(400, "该发放已关闭，无法提交")
 	}
-	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, a.LockedKeys, normalizeAnswers(req.Answers))
+	locked := assignmentEffectiveLockedKeys(a)
+	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, locked, normalizeAnswers(req.Answers))
+	answers = forceAssignedHospitalAnswers(a, answers)
 	answers = pruneAnswersToSchema(a.Schema, answers)
 	if err := validateRequiredAnswers(a.Schema, answers); err != nil {
 		return nil, err
 	}
-	hid := req.HospitalId
+	hid := a.HospitalId
 	if hid == nil {
-		hid = a.HospitalId
+		hid = req.HospitalId
 	}
 	sub, err := l.svcCtx.SurveyModel.Submit(l.ctx, id, uid, answers, hid)
 	if err != nil {
@@ -985,7 +993,8 @@ func toSurveySubmissionInfo(s *model.SurveySubmission) types.SurveySubmissionInf
 	info := types.SurveySubmissionInfo{
 		Id: s.Id, AssignmentId: s.AssignmentId, CampaignTitle: s.CampaignTitle,
 		AssigneeName: s.AssigneeName, AssigneeEmail: s.AssigneeEmail, CollectorName: s.CollectorName,
-		HospitalId: s.HospitalId, HospitalName: s.HospitalName, Answers: s.Answers, Status: s.Status, ReviewNote: s.ReviewNote,
+		HospitalId: s.HospitalId, HospitalName: s.HospitalName, Answers: s.Answers, Schema: s.Schema,
+		Status: s.Status, ReviewNote: s.ReviewNote,
 	}
 	if s.SubmittedAt != nil {
 		info.SubmittedAt = formatTime(*s.SubmittedAt)
@@ -1165,6 +1174,111 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any)
 		return NewCodeError(400, "请填写必填项："+strings.Join(missing, "、"))
 	}
 	return nil
+}
+
+
+func isHospitalNameSchemaField(f schemaFieldMeta) bool {
+	t := strings.TrimSpace(f.Target)
+	if t == "hospital.name" || t == "hospital.archive.customerName" {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(f.OptionsSource), "hospitals") {
+		return true
+	}
+	k := strings.ToLower(strings.TrimSpace(f.Key))
+	if k == "name" || k == "hospitalname" || k == "customername" {
+		return true
+	}
+	label := f.Label
+	return strings.Contains(label, "客户名称") || strings.Contains(label, "医院名称")
+}
+
+func hospitalNameFieldKeys(schemaJSON json.RawMessage) []string {
+	out := make([]string, 0)
+	for _, f := range parseSchemaFields(schemaJSON) {
+		if strings.TrimSpace(f.Key) == "" || strings.EqualFold(strings.TrimSpace(f.Type), "repeat") {
+			continue
+		}
+		if isHospitalNameSchemaField(f) {
+			out = append(out, f.Key)
+		}
+	}
+	return uniqueStrings(out)
+}
+
+func assignmentEffectiveLockedKeys(a *model.SurveyAssignment) []string {
+	locked := effectiveLockedKeys(a.Schema, a.LockedKeys)
+	if a != nil && a.HospitalId != nil && *a.HospitalId > 0 {
+		locked = uniqueStrings(append(locked, hospitalNameFieldKeys(a.Schema)...))
+	}
+	return locked
+}
+
+func forceAssignedHospitalAnswers(a *model.SurveyAssignment, answers map[string]any) map[string]any {
+	if a == nil || a.HospitalId == nil || *a.HospitalId <= 0 {
+		return answers
+	}
+	name := strings.TrimSpace(a.HospitalName)
+	if name == "" {
+		return answers
+	}
+	out := map[string]any{}
+	for k, v := range answers {
+		out[k] = v
+	}
+	for _, k := range hospitalNameFieldKeys(a.Schema) {
+		out[k] = name
+	}
+	return out
+}
+
+// mapHospitalToSchemaAnswers maps hospital columns onto template field keys by target/key.
+func mapHospitalToSchemaAnswers(schemaJSON json.RawMessage, h *model.Hospital) map[string]any {
+	if h == nil {
+		return map[string]any{}
+	}
+	raw := hospitalPrefillAnswers(h)
+	out := map[string]any{}
+	for _, f := range parseSchemaFields(schemaJSON) {
+		key := strings.TrimSpace(f.Key)
+		if key == "" || strings.EqualFold(strings.TrimSpace(f.Type), "repeat") {
+			continue
+		}
+		target := strings.TrimSpace(f.Target)
+		var val any
+		switch {
+		case target == "hospital.name" || target == "hospital.archive.customerName":
+			val = h.Name
+		case strings.HasPrefix(target, "hospital.archive."):
+			ak := strings.TrimPrefix(target, "hospital.archive.")
+			if v, ok := raw[ak]; ok {
+				val = v
+			}
+		case strings.HasPrefix(target, "hospital.attributes."), strings.HasPrefix(target, "hospital.metrics."):
+			// attributes/metrics are not part of hospitalPrefillAnswers
+		case strings.HasPrefix(target, "hospital."):
+			col := strings.TrimPrefix(target, "hospital.")
+			if v, ok := raw[col]; ok {
+				val = v
+			}
+		default:
+			if v, ok := raw[key]; ok {
+				val = v
+			}
+		}
+		if isHospitalNameSchemaField(f) && anyToString(val) == "" {
+			val = h.Name
+		}
+		if anyToString(val) != "" {
+			out[key] = val
+		}
+	}
+	if schemaHasDevicesRepeat(schemaJSON) {
+		if _, ok := out["devices"]; !ok {
+			out["devices"] = []any{}
+		}
+	}
+	return out
 }
 
 func hospitalPrefillAnswers(h *model.Hospital) map[string]any {
@@ -1358,10 +1472,13 @@ func uniqueStrings(vals []string) []string {
 }
 
 type schemaFieldMeta struct {
-	Key     string `json:"key"`
-	Type    string `json:"type"`
-	Default string `json:"default"`
-	Locked  bool   `json:"locked"`
+	Key           string `json:"key"`
+	Type          string `json:"type"`
+	Default       string `json:"default"`
+	Locked        bool   `json:"locked"`
+	Target        string `json:"target"`
+	Label         string `json:"label"`
+	OptionsSource string `json:"optionsSource"`
 }
 
 func parseSchemaFields(schemaJSON json.RawMessage) []schemaFieldMeta {
