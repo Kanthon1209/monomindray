@@ -1,9 +1,8 @@
 name: ci-cd
 
+# Automatic push/PR triggers disabled — deploy is done by building on the box
+# and copying artifacts to ECS. Re-enable push/pull_request when needed.
 on:
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       image_tag:
