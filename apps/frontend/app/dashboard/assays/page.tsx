@@ -175,9 +175,27 @@ export default function AssayProjectsPage() {
     await load();
   };
 
+  const childCount = (code: string) => {
+    for (const line of tree) {
+      if (line.code === code) return (line.children || []).length;
+      for (const cat of line.children || []) {
+        if (cat.code === code) return (cat.children || []).length;
+      }
+    }
+    return 0;
+  };
+
   const onDelete = async (code: string) => {
     const p = flatItems.find((x) => x.code === code);
-    if (!p) return;
+    if (!p) {
+      setError(`找不到节点「${code}」，请点刷新后重试`);
+      return;
+    }
+    const kids = childCount(code);
+    if (kids > 0) {
+      setError(`「${p.name}」下还有 ${kids} 个子节点，请先删除子节点`);
+      return;
+    }
     const tip =
       p.usageCount > 0
         ? `「${p.name}」已被 ${p.usageCount} 家医院引用，将标记为停用。继续？`
@@ -244,9 +262,9 @@ export default function AssayProjectsPage() {
               <Button variant="outline" size="icon" className="h-10 w-10" onClick={load} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-              <Button onClick={() => openCreate("line")}>
+              <Button onClick={() => openCreate("item")}>
                 <Plus className="mr-2 h-4 w-4" />
-                新增产线
+                新增
               </Button>
             </div>
           </div>
@@ -260,7 +278,7 @@ export default function AssayProjectsPage() {
             </div>
           ) : tree.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              暂无目录节点，点击右上角「新增产线」开始
+              暂无目录节点，点击右上角「新增」开始
             </p>
           ) : (
             <div className="space-y-3">
@@ -294,7 +312,7 @@ export default function AssayProjectsPage() {
                         编辑
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => openCreate("category", line.code)}>
-                        +类别
+                        创建类别
                       </Button>
                       <Button size="sm" variant="ghost" className="text-destructive" onClick={() => onDelete(line.code)}>
                         <Trash2 className="h-4 w-4" />
@@ -329,7 +347,7 @@ export default function AssayProjectsPage() {
                                   编辑
                                 </Button>
                                 <Button size="sm" variant="ghost" onClick={() => openCreate("item", cat.code)}>
-                                  +细项
+                                  创建细项
                                 </Button>
                                 <Button
                                   size="sm"
@@ -386,7 +404,7 @@ export default function AssayProjectsPage() {
                           );
                         })}
                         {(line.children || []).length === 0 ? (
-                          <p className="px-1 py-2 text-xs text-muted-foreground">暂无类别，点击「+类别」添加</p>
+                          <p className="px-1 py-2 text-xs text-muted-foreground">暂无类别，点击「创建类别」添加</p>
                         ) : null}
                       </div>
                     ) : null}
@@ -449,6 +467,7 @@ export default function AssayProjectsPage() {
                   <Select
                     value={form.parentCode || undefined}
                     onValueChange={(v) => setForm((f) => ({ ...f, parentCode: v }))}
+                    disabled={!!editingId}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="选择父节点" />

@@ -177,6 +177,10 @@ func (l *AssayProjectLogic) Delete(id int64) error {
 		return err
 	}
 	if err := l.svcCtx.MasterDataModel.DeleteAssayProject(l.ctx, id); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "child nodes") || strings.Contains(msg, "not found") {
+			return NewCodeError(http.StatusBadRequest, msg)
+		}
 		l.Errorf("delete assay project: %v", err)
 		return ErrInternal
 	}

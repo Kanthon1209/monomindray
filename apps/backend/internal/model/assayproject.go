@@ -338,6 +338,16 @@ func (m *masterDataModel) UpdateAssayProject(ctx context.Context, id int64, in A
 	if id <= 0 || name == "" || code == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
+	existing, err := m.GetAssayProject(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, nil
+	}
+	// Parent + kind are immutable after create (tree topology stays stable).
+	in.Kind = existing.Kind
+	in.ParentCode = existing.ParentCode
 	kind, parent, err := m.validateAssayTreeInput(ctx, in)
 	if err != nil {
 		return nil, err
@@ -370,6 +380,21 @@ func (m *masterDataModel) UpdateAssayProject(ctx context.Context, id int64, in A
 }
 
 func (m *masterDataModel) DeleteAssayProject(ctx context.Context, id int64) error {
+	p, err := m.GetAssayProject(ctx, id)
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		return fmt.Errorf("project not found")
+	}
+	var childCount int64
+	if err := m.conn.QueryRow(ctx, `
+		SELECT COUNT(*) FROM assay_projects WHERE parent_code=$1`, p.Code).Scan(&childCount); err != nil {
+		return err
+	}
+	if childCount > 0 {
+		return fmt.Errorf("仍有 %d 个子节点，请先删除子节点", childCount)
+	}
 	var usage int64
 	_ = m.conn.QueryRow(ctx, `
 		SELECT COUNT(*) FROM hospital_assays WHERE assay_project_id=$1`, id).Scan(&usage)
@@ -378,7 +403,7 @@ func (m *masterDataModel) DeleteAssayProject(ctx context.Context, id int64) erro
 			UPDATE assay_projects SET status='inactive', updated_at=NOW() WHERE id=$1`, id)
 		return err
 	}
-	_, err := m.conn.Exec(ctx, `DELETE FROM assay_projects WHERE id=$1`, id)
+	_, err = m.conn.Exec(ctx, `DELETE FROM assay_projects WHERE id=$1`, id)
 	return err
 }
 
