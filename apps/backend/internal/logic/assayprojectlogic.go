@@ -33,10 +33,9 @@ func (l *AssayProjectLogic) List(req *types.ListAssayProjectsRequest) (*types.Li
 	if size <= 0 {
 		size = 50
 	}
+	// Empty / "all" = every kind (line|category|item). qs() on the web client
+	// strips kind=all, so defaulting to "item" here made line/category Edit silent-no-op.
 	kind := strings.TrimSpace(req.Kind)
-	if kind == "" {
-		kind = "item" // admin list defaults to leaves
-	}
 	f := model.AssayProjectFilter{
 		Keyword: req.Keyword,
 		Company: req.Company,

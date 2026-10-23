@@ -129,7 +129,10 @@ export default function AssayProjectsPage() {
 
   const startEdit = (code: string) => {
     const p = flatItems.find((x) => x.code === code);
-    if (!p) return;
+    if (!p) {
+      setError(`找不到节点「${code}」，请点刷新后重试`);
+      return;
+    }
     setEditingId(p.id);
     setForm({
       name: p.name,
