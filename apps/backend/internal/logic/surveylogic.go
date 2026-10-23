@@ -531,6 +531,12 @@ func (l *SurveyLogic) ApproveSubmission(id int64, req *types.ReviewSurveySubmiss
 		return nil, ErrInternal
 	}
 
+	// EQA writeback when answers contain eqa_year/eqa_scope or EQA field codes
+	if err := NewEqaLogic(l.ctx, l.svcCtx).WritebackFromSurveyAnswers(uid, hospitalID, sub.Answers); err != nil {
+		l.Errorf("eqa writeback: %v", err)
+		return nil, ErrInternal
+	}
+
 	sub, err = l.svcCtx.SurveyModel.FindSubmissionById(l.ctx, id)
 	if err != nil || sub == nil {
 		return nil, ErrInternal

@@ -241,6 +241,50 @@ export default function SurveyTaskFillPage() {
         />
       );
     }
+    if (field.type === "boolean") {
+      return (
+        <label className="flex min-h-10 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-4 rounded border"
+            checked={!!value}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.checked)}
+          />
+          <span>{value ? "是" : "否"}</span>
+        </label>
+      );
+    }
+    if (field.type === "enum" && Array.isArray(field.options) && field.options.length) {
+      return (
+        <Select
+          value={String(value || "")}
+          onValueChange={onChange}
+          disabled={disabled}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="请选择" />
+          </SelectTrigger>
+          <SelectContent>
+            {field.options.map((o) => (
+              <SelectItem key={o} value={o}>
+                {o === "national" ? "国家" : o === "provincial" ? "省级" : o}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+    if (field.type === "number") {
+      return (
+        <Input
+          type="number"
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
+        />
+      );
+    }
     if (field.key === "level") {
       return (
         <Select

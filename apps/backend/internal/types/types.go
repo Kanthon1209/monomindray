@@ -415,4 +415,102 @@ type (
 	ListAssayProjectOptionsResponse struct {
 		Items []AssayProjectOption `json:"items"`
 	}
+
+	OkResponse struct {
+		Ok bool `json:"ok"`
+	}
+
+	EqaFieldNode struct {
+		Code       string         `json:"code"`
+		Name       string         `json:"name"`
+		ValueType  string         `json:"valueType"`
+		ParentCode string         `json:"parentCode,omitempty"`
+		EnumValues []string       `json:"enumValues,omitempty"`
+		SortOrder  int64          `json:"sortOrder"`
+		Children   []EqaFieldNode `json:"children"`
+	}
+	EqaFieldTreeResponse struct {
+		Items []EqaFieldNode `json:"items"`
+	}
+	EqaParticipationItemInfo struct {
+		Id        int64  `json:"id,omitempty"`
+		FieldCode string `json:"fieldCode"`
+		FieldName string `json:"fieldName,omitempty"`
+		Value     bool   `json:"value"`
+	}
+	EqaParticipationInfo struct {
+		Id           int64                       `json:"id"`
+		HospitalId   int64                       `json:"hospitalId"`
+		HospitalName string                      `json:"hospitalName,omitempty"`
+		Year         int64                       `json:"year"`
+		Scope        string                      `json:"scope"`
+		Tags         []string                    `json:"tags"`
+		OwnerUserId  int64                       `json:"ownerUserId,omitempty"`
+		OwnerName    string                      `json:"ownerName,omitempty"`
+		ItemCount    int64                       `json:"itemCount"`
+		Items        []EqaParticipationItemInfo  `json:"items,omitempty"`
+		CreatedAt    string                      `json:"createdAt,omitempty"`
+		UpdatedAt    string                      `json:"updatedAt,omitempty"`
+	}
+	EqaParticipationItemInput struct {
+		FieldCode string `json:"fieldCode"`
+		Value     bool   `json:"value"`
+	}
+	CreateEqaParticipationRequest struct {
+		HospitalId  int64                        `json:"hospitalId"`
+		Year        int64                        `json:"year"`
+		Scope       string                       `json:"scope"`
+		Tags        []string                     `json:"tags,optional"`
+		OwnerUserId int64                        `json:"ownerUserId,optional"`
+		Items       []EqaParticipationItemInput  `json:"items,optional"`
+	}
+	UpdateEqaParticipationRequest struct {
+		Year        int64                        `json:"year,optional"`
+		Scope       string                       `json:"scope,optional"`
+		Tags        []string                     `json:"tags,optional"`
+		OwnerUserId int64                        `json:"ownerUserId,optional"`
+		ClearOwner  bool                         `json:"clearOwner,optional"`
+		Items       []EqaParticipationItemInput  `json:"items,optional"`
+	}
+	EqaParticipationResponse struct {
+		Participation EqaParticipationInfo `json:"participation"`
+	}
+	ListEqaParticipationsRequest struct {
+		Year        int64  `form:"year,optional"`
+		Scope       string `form:"scope,optional"`
+		HospitalId  int64  `form:"hospitalId,optional"`
+		OwnerUserId int64  `form:"ownerUserId,optional"`
+		Page        int64  `form:"page,optional"`
+		PageSize    int64  `form:"pageSize,optional"`
+	}
+	ListEqaParticipationsResponse struct {
+		Total int64                   `json:"total"`
+		Items []EqaParticipationInfo  `json:"items"`
+	}
+	EqaDashboardRequest struct {
+		Year int64 `form:"year,optional"`
+	}
+	EqaScopeCount struct {
+		Scope string `json:"scope"`
+		Count int64  `json:"count"`
+	}
+	EqaItemCount struct {
+		FieldCode string `json:"fieldCode"`
+		FieldName string `json:"fieldName"`
+		Count     int64  `json:"count"`
+	}
+	EqaOwnerProgress struct {
+		OwnerUserId   int64  `json:"ownerUserId,omitempty"`
+		OwnerName     string `json:"ownerName"`
+		Participation int64  `json:"participation"`
+		ItemCount     int64  `json:"itemCount"`
+	}
+	EqaDashboardResponse struct {
+		Year                 int64              `json:"year"`
+		TotalParticipations  int64              `json:"totalParticipations"`
+		CoverageHospitals    int64              `json:"coverageHospitals"`
+		ByScope              []EqaScopeCount    `json:"byScope"`
+		TopItems             []EqaItemCount     `json:"topItems"`
+		OwnerProgress        []EqaOwnerProgress `json:"ownerProgress"`
+	}
 )

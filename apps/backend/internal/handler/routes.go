@@ -30,6 +30,10 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 
 			// Active assay dictionary for survey fill (collectors + admins)
 			{Method: http.MethodGet, Path: "/api/v1/assay-projects/options", Handler: ListAssayProjectOptionsHandler(svcCtx)},
+
+			{Method: http.MethodGet, Path: "/api/v1/eqa/fields", Handler: ListEqaFieldsHandler(svcCtx)},
+			{Method: http.MethodGet, Path: "/api/v1/eqa/participations", Handler: ListEqaParticipationsHandler(svcCtx)},
+			{Method: http.MethodGet, Path: "/api/v1/eqa/participations/:id", Handler: GetEqaParticipationHandler(svcCtx)},
 		},
 		rest.WithJwt(svcCtx.Config.Auth.AccessSecret),
 	)
@@ -79,6 +83,12 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/api/v1/surveys/submissions", Handler: ListSurveySubmissionsHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/surveys/submissions/:id/approve", Handler: ApproveSurveySubmissionHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/surveys/submissions/:id/reject", Handler: RejectSurveySubmissionHandler(svcCtx)},
+
+		{Method: http.MethodGet, Path: "/api/v1/eqa/dashboard", Handler: EqaDashboardHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/eqa/participations", Handler: CreateEqaParticipationHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/api/v1/eqa/participations/:id", Handler: UpdateEqaParticipationHandler(svcCtx)},
+		{Method: http.MethodDelete, Path: "/api/v1/eqa/participations/:id", Handler: DeleteEqaParticipationHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/eqa/survey-template/ensure", Handler: EnsureEqaSurveyTemplateHandler(svcCtx)},
 	}
 
 	// 仅管理员：看板 / 医院 / 设备 / 客户 / 用户管理 / 问卷管理审核

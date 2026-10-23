@@ -360,6 +360,7 @@ export interface SurveyField {
   optionsSource?: "assay_projects";
   default?: string;
   locked?: boolean;
+  options?: string[];
   itemLabel?: string;
   fields?: SurveyField[];
 }

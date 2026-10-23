@@ -65,6 +65,7 @@ const navItems = [
   { title: "客户管理", href: "/dashboard/customers", icon: Building2 },
   { title: "设备管理", href: "/dashboard/devices", icon: Cpu },
   { title: "检测项目", href: "/dashboard/assays", icon: FlaskConical },
+  { title: "室间质评", href: "/dashboard/eqa", icon: ClipboardList },
   { title: "系统设置", href: "/dashboard/settings", icon: Settings },
 ];
 
