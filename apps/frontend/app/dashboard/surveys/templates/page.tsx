@@ -180,6 +180,23 @@ function resolveOptionsSource(
   return undefined;
 }
 
+
+function resolveEnumOptions(
+  options: string[] | undefined,
+  target: string | undefined,
+  catalogByTarget: Map<string, CollectableField>,
+): string[] {
+  if (options?.length) return options.map(String);
+  const t = (target || "").trim();
+  if (!t) return [];
+  const cat = catalogByTarget.get(t);
+  if (cat?.enumValues?.length) return cat.enumValues.map(String);
+  return [];
+}
+
+function formatEnumOptions(values: string[]): string {
+  return values.join(" / ");
+}
 function typeLabel(type: string): string {
   switch (type) {
     case "text":
@@ -726,6 +743,22 @@ export default function SurveyTemplatesPage() {
                       {f.key}
                       {f.target ? ` → ${f.target}` : ""}
                     </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {typeLabel(f.type || "text")}
+                    </p>
+                    {(() => {
+                      const enumOpts = resolveEnumOptions(
+                        f.options,
+                        f.target,
+                        catalogByTarget,
+                      );
+                      if (!enumOpts.length) return null;
+                      return (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          可选值：{formatEnumOptions(enumOpts)}
+                        </p>
+                      );
+                    })()}
                     {f.default ? (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
                         默认：{f.default}
@@ -1146,6 +1179,22 @@ export default function SurveyTemplatesPage() {
                   → {resolveTarget(fieldDraft)}
                 </p>
               ) : null}
+              {(() => {
+                const enumOpts = resolveEnumOptions(
+                  fieldDraft.options,
+                  resolveTarget(fieldDraft) || fieldDraft.catalogTarget || fieldDraft.attribute,
+                  catalogByTarget,
+                );
+                if (!enumOpts.length) return null;
+                return (
+                  <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    <div className="font-medium text-foreground">可选值（系统预置，不可修改）</div>
+                    <div className="mt-1 leading-relaxed">
+                      {formatEnumOptions(enumOpts)}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             <div className="space-y-2">
               <Label>默认值（可选）</Label>
