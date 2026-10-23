@@ -137,6 +137,84 @@ function fieldTypeFromArchive(
   return "text";
 }
 
+/** 数值类医院指标（其余 metrics 按文本） */
+const NUMERIC_METRIC_CODES = new Set([
+  "sample_volume_own",
+  "sample_volume_total",
+  "hospital_annual_revenue",
+  "iot_stock",
+  "iot_forecast",
+  "iot_increment",
+  "iot_growth_rate",
+  "reagent_revenue",
+  "reagent_revenue_target",
+]);
+
+const DATE_ARCHIVE_KEYS = new Set(["installedAt", "enabledAt"]);
+const ENUM_ARCHIVE_KEYS = new Set(["customerLevel", "svipLevel", "dualMajorType"]);
+
+/**
+ * 字段类型一律由绑定的数据库字段决定，模板编辑器不可手改。
+ */
+function resolveFieldTypeFromMapping(draft: FieldDraft): string {
+  if (draft.mapEntity === "assay") return "string_array";
+
+  const attr = (draft.attribute || "").trim();
+  if (!attr || attr === NEW_ARCHIVE_ATTR) return "text";
+
+  if (attr.startsWith("archive.")) {
+    const key = attr.slice("archive.".length).trim();
+    if (DATE_ARCHIVE_KEYS.has(key)) return "date";
+    if (ENUM_ARCHIVE_KEYS.has(key)) return "enum";
+    const def = ARCHIVE_FIELD_DEFS.find((d) => d.key === key);
+    if (def?.valueType) return fieldTypeFromArchive(def.valueType);
+    return "text";
+  }
+  if (attr.startsWith("attributes.")) return "text";
+  if (attr.startsWith("metrics.")) {
+    const code = attr.slice("metrics.".length).trim();
+    return NUMERIC_METRIC_CODES.has(code) ? "number" : "text";
+  }
+
+  // 医院表列
+  if (attr === "level" || attr === "type" || attr === "status") return "enum";
+  return "text";
+}
+
+function resolveOptionsSource(
+  draft: FieldDraft,
+): SurveyField["optionsSource"] | undefined {
+  if (draft.mapEntity === "assay") return "assay_projects";
+  if (draft.mapEntity !== "hospital") return undefined;
+  const attr = (draft.attribute || "").trim();
+  if (attr === "name" || attr === "archive.customerName") return "hospitals";
+  return undefined;
+}
+
+function typeLabel(type: string): string {
+  switch (type) {
+    case "text":
+      return "文本";
+    case "number":
+      return "数字";
+    case "date":
+      return "日期";
+    case "boolean":
+      return "是/否";
+    case "enum":
+      return "单选";
+    case "string_array":
+      return "多选数组";
+    case "competitor_list":
+      return "竞品列表";
+    case "multi_enum":
+    case "multi_select":
+      return "多选";
+    default:
+      return type || "文本";
+  }
+}
+
 function statusBadge(status: string) {
   switch (status) {
     case "active":
@@ -189,7 +267,6 @@ function draftFromField(field: SurveyField): FieldDraft {
   base.key = field.key;
   base.label = field.label;
   base.required = !!field.required;
-  base.type = field.type || "text";
   base.defaultValue = field.default || "";
   base.locked = !!field.locked;
 
@@ -201,8 +278,8 @@ function draftFromField(field: SurveyField): FieldDraft {
     field.key === "newProjects"
   ) {
     base.mapEntity = "assay";
-    base.type = "string_array";
     base.attribute = assayOpt?.value || field.key || "mindrayProjects";
+    base.type = resolveFieldTypeFromMapping(base);
     return base;
   }
 
@@ -210,37 +287,44 @@ function draftFromField(field: SurveyField): FieldDraft {
     // 历史未映射字段：打开编辑时强制改为医院.name，保存前必须选好映射
     base.mapEntity = "hospital";
     base.attribute = "name";
+    base.type = resolveFieldTypeFromMapping(base);
     return base;
   }
   if (target.startsWith("hospital.archive.")) {
     const key = target.slice("hospital.archive.".length).trim();
     base.mapEntity = "hospital";
     base.attribute = key ? `archive.${key}` : "name";
+    base.type = resolveFieldTypeFromMapping(base);
     return base;
   }
   if (target.startsWith("hospital.attributes.")) {
     base.mapEntity = "hospital";
     base.attribute = `attributes.${target.slice("hospital.attributes.".length)}`;
+    base.type = resolveFieldTypeFromMapping(base);
     return base;
   }
   if (target.startsWith("hospital.metrics.")) {
     base.mapEntity = "hospital";
     base.attribute = `metrics.${target.slice("hospital.metrics.".length)}`;
+    base.type = resolveFieldTypeFromMapping(base);
     return base;
   }
   const col = HOSPITAL_COLUMNS.find((c) => c.target === target);
   if (col) {
     base.mapEntity = "hospital";
     base.attribute = col.column;
+    base.type = resolveFieldTypeFromMapping(base);
     return base;
   }
   if (/^hospital\.[a-zA-Z_]+$/.test(target)) {
     base.mapEntity = "hospital";
     base.attribute = target.slice("hospital.".length);
+    base.type = resolveFieldTypeFromMapping(base);
     return base;
   }
   base.mapEntity = "hospital";
   base.attribute = "name";
+  base.type = resolveFieldTypeFromMapping(base);
   return base;
 }
 
@@ -290,7 +374,6 @@ function applyHospitalAttribute(
     if (def) {
       if (!next.key) next.key = def.key;
       if (!next.label) next.label = def.label;
-      next.type = fieldTypeFromArchive(def.valueType);
       if (!next.section || next.section === "未分组") next.section = def.section;
     } else if (!next.key) {
       next.key = archiveKey;
@@ -299,6 +382,8 @@ function applyHospitalAttribute(
   if (mode === "create" && attribute !== NEW_ARCHIVE_ATTR && !attribute.startsWith("archive.")) {
     if (!next.key) next.key = attribute;
   }
+  // 类型始终跟随绑定字段，创建/编辑都不可手改
+  next.type = resolveFieldTypeFromMapping(next);
   return next;
 }
 
@@ -488,10 +573,8 @@ export default function SurveyTemplatesPage() {
     }
 
     const schema = normalizeSchema(template.schema);
-    const fieldType =
-      fieldDraft.mapEntity === "assay"
-        ? "string_array"
-        : fieldDraft.type || "text";
+    const fieldType = resolveFieldTypeFromMapping(fieldDraft);
+    const optionsSource = resolveOptionsSource(fieldDraft);
     const nextField: SurveyField = {
       key,
       label,
@@ -499,9 +582,7 @@ export default function SurveyTemplatesPage() {
       required: fieldDraft.required,
       type: fieldType,
       target,
-      ...(fieldDraft.mapEntity === "assay"
-        ? { optionsSource: "assay_projects" as const }
-        : {}),
+      ...(optionsSource ? { optionsSource } : {}),
       ...(fieldDraft.defaultValue.trim()
         ? { default: fieldDraft.defaultValue.trim() }
         : {}),
@@ -982,18 +1063,13 @@ export default function SurveyTemplatesPage() {
               <div className="space-y-2">
                 <Label>类型</Label>
                 <Select
-                  value={
-                    fieldDraft.mapEntity === "assay"
-                      ? "string_array"
-                      : fieldDraft.type
-                  }
-                  onValueChange={(v) =>
-                    setFieldDraft((d) => ({ ...d, type: v }))
-                  }
-                  disabled={fieldDraft.mapEntity === "assay"}
+                  value={resolveFieldTypeFromMapping(fieldDraft)}
+                  disabled
                 >
-                  <SelectTrigger>
-                    <SelectValue />
+                  <SelectTrigger className="opacity-80">
+                    <SelectValue>
+                      {typeLabel(resolveFieldTypeFromMapping(fieldDraft))}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="text">文本</SelectItem>
@@ -1002,8 +1078,12 @@ export default function SurveyTemplatesPage() {
                     <SelectItem value="boolean">是/否</SelectItem>
                     <SelectItem value="enum">单选</SelectItem>
                     <SelectItem value="string_array">多选数组</SelectItem>
+                    <SelectItem value="competitor_list">竞品列表</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  类型由绑定的数据库字段决定，不可修改。
+                </p>
               </div>
             </div>
             <div className="space-y-2">
@@ -1025,14 +1105,19 @@ export default function SurveyTemplatesPage() {
                         newArchiveKey: "",
                       };
                     }
-                    return {
-                      ...d,
-                      mapEntity: "hospital",
-                      attribute: d.attribute && d.attribute !== NEW_ARCHIVE_ATTR
-                        ? d.attribute
-                        : "name",
-                      newArchiveKey: "",
-                    };
+                    {
+                      const next: FieldDraft = {
+                        ...d,
+                        mapEntity: "hospital",
+                        attribute:
+                          d.attribute && d.attribute !== NEW_ARCHIVE_ATTR
+                            ? d.attribute
+                            : "name",
+                        newArchiveKey: "",
+                      };
+                      next.type = resolveFieldTypeFromMapping(next);
+                      return next;
+                    }
                   })
                 }
               >
