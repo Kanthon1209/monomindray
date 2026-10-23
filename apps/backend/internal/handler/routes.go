@@ -30,6 +30,7 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 
 			// Active assay dictionary for survey fill (collectors + admins)
 			{Method: http.MethodGet, Path: "/api/v1/assay-projects/options", Handler: ListAssayProjectOptionsHandler(svcCtx)},
+			{Method: http.MethodGet, Path: "/api/v1/assay-projects/tree", Handler: ListAssayTreeHandler(svcCtx)},
 
 			// Hospital name typeahead for survey fill (collectors + admins)
 			{Method: http.MethodGet, Path: "/api/v1/hospitals/search", Handler: SearchHospitalsHandler(svcCtx)},
@@ -75,6 +76,9 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodGet, Path: "/api/v1/assay-projects/:id", Handler: GetAssayProjectHandler(svcCtx)},
 		{Method: http.MethodPut, Path: "/api/v1/assay-projects/:id", Handler: UpdateAssayProjectHandler(svcCtx)},
 		{Method: http.MethodDelete, Path: "/api/v1/assay-projects/:id", Handler: DeleteAssayProjectHandler(svcCtx)},
+
+		{Method: http.MethodGet, Path: "/api/v1/hospitals/:id/assays", Handler: ListHospitalAssaysHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/api/v1/hospitals/:id/assays", Handler: ReplaceHospitalAssaysHandler(svcCtx)},
 
 		{Method: http.MethodGet, Path: "/api/v1/surveys/templates", Handler: ListSurveyTemplatesHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/surveys/templates", Handler: CreateSurveyTemplateHandler(svcCtx)},

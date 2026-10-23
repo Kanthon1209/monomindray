@@ -65,25 +65,25 @@ type (
 	}
 
 	HospitalInfo struct {
-		Id            int64             `json:"id"`
-		Name          string            `json:"name"`
-		Province      string            `json:"province"`
-		City          string            `json:"city"`
-		District      string            `json:"district,omitempty"`
-		Level         string            `json:"level"`
-		Type          string            `json:"type"`
-		Status        string            `json:"status"`
-		Address       string            `json:"address,omitempty"`
-		Remark        string            `json:"remark,omitempty"`
-		CustomerCode  string            `json:"customerCode,omitempty"`
-		Region        string            `json:"region,omitempty"`
-		BranchOffice  string            `json:"branchOffice,omitempty"`
-		Archive       map[string]any    `json:"archive,omitempty"`
-		Attributes    map[string]string `json:"attributes,omitempty"`
-		Metrics       map[string]string `json:"metrics,omitempty"`
-		DeviceCount   int               `json:"deviceCount"`
-		DeviceModels  []string          `json:"deviceModels"`
-		CreatedAt     string            `json:"createdAt,omitempty"`
+		Id           int64             `json:"id"`
+		Name         string            `json:"name"`
+		Province     string            `json:"province"`
+		City         string            `json:"city"`
+		District     string            `json:"district,omitempty"`
+		Level        string            `json:"level"`
+		Type         string            `json:"type"`
+		Status       string            `json:"status"`
+		Address      string            `json:"address,omitempty"`
+		Remark       string            `json:"remark,omitempty"`
+		CustomerCode string            `json:"customerCode,omitempty"`
+		Region       string            `json:"region,omitempty"`
+		BranchOffice string            `json:"branchOffice,omitempty"`
+		Archive      map[string]any    `json:"archive,omitempty"`
+		Attributes   map[string]string `json:"attributes,omitempty"`
+		Metrics      map[string]string `json:"metrics,omitempty"`
+		DeviceCount  int               `json:"deviceCount"`
+		DeviceModels []string          `json:"deviceModels"`
+		CreatedAt    string            `json:"createdAt,omitempty"`
 	}
 	HospitalUpsertRequest struct {
 		Name         string `json:"name"`
@@ -309,31 +309,31 @@ type (
 		PageSize int    `form:"pageSize,optional"`
 	}
 	ListSurveyCampaignsResponse struct {
-		Total int64                 `json:"total"`
-		Items []SurveyCampaignInfo  `json:"items"`
+		Total int64                `json:"total"`
+		Items []SurveyCampaignInfo `json:"items"`
 	}
 	SurveyCampaignResponse struct {
 		Campaign SurveyCampaignInfo `json:"campaign"`
 	}
 
 	SurveyAssignmentInfo struct {
-		Id               int64          `json:"id"`
-		CampaignId       int64          `json:"campaignId"`
-		CampaignTitle    string         `json:"campaignTitle,omitempty"`
-		CampaignStatus   string         `json:"campaignStatus,omitempty"`
-		DueAt            string         `json:"dueAt,omitempty"`
-		Status           string         `json:"status"`
-		HospitalId       *int64         `json:"hospitalId,omitempty"`
-		HospitalName     string         `json:"hospitalName,omitempty"`
-		TemplateId       int64          `json:"templateId"`
-		TemplateCode     string         `json:"templateCode,omitempty"`
-		TemplateTitle    string         `json:"templateTitle,omitempty"`
+		Id               int64           `json:"id"`
+		CampaignId       int64           `json:"campaignId"`
+		CampaignTitle    string          `json:"campaignTitle,omitempty"`
+		CampaignStatus   string          `json:"campaignStatus,omitempty"`
+		DueAt            string          `json:"dueAt,omitempty"`
+		Status           string          `json:"status"`
+		HospitalId       *int64          `json:"hospitalId,omitempty"`
+		HospitalName     string          `json:"hospitalName,omitempty"`
+		TemplateId       int64           `json:"templateId"`
+		TemplateCode     string          `json:"templateCode,omitempty"`
+		TemplateTitle    string          `json:"templateTitle,omitempty"`
 		Schema           json.RawMessage `json:"schema,omitempty"`
-		SubmissionId     *int64         `json:"submissionId,omitempty"`
-		SubmissionStatus string         `json:"submissionStatus,omitempty"`
-		Answers          map[string]any `json:"answers,omitempty"`
-		LockedKeys       []string       `json:"lockedKeys,omitempty"`
-		ReviewNote       string         `json:"reviewNote,omitempty"`
+		SubmissionId     *int64          `json:"submissionId,omitempty"`
+		SubmissionStatus string          `json:"submissionStatus,omitempty"`
+		Answers          map[string]any  `json:"answers,omitempty"`
+		LockedKeys       []string        `json:"lockedKeys,omitempty"`
+		ReviewNote       string          `json:"reviewNote,omitempty"`
 	}
 	ListMySurveyAssignmentsRequest struct {
 		Status   string `form:"status,optional"`
@@ -373,8 +373,8 @@ type (
 		PageSize int    `form:"pageSize,optional"`
 	}
 	ListSurveySubmissionsResponse struct {
-		Total int64                   `json:"total"`
-		Items []SurveySubmissionInfo  `json:"items"`
+		Total int64                  `json:"total"`
+		Items []SurveySubmissionInfo `json:"items"`
 	}
 	SurveySubmissionResponse struct {
 		Submission SurveySubmissionInfo `json:"submission"`
@@ -383,11 +383,14 @@ type (
 		Note string `json:"note,optional"`
 	}
 
-	// ---- assay projects (检测项目字典) ----
+	// ---- assay projects (检测项目字典 / 层级树) ----
 	AssayProjectInfo struct {
 		Id           int64    `json:"id"`
 		Code         string   `json:"code,omitempty"`
 		Name         string   `json:"name"`
+		ParentCode   string   `json:"parentCode,omitempty"`
+		Kind         string   `json:"kind,omitempty"` // line|category|item
+		SortOrder    int      `json:"sortOrder,omitempty"`
 		LineCategory string   `json:"lineCategory,omitempty"`
 		Company      string   `json:"company,omitempty"`
 		Aliases      []string `json:"aliases"`
@@ -398,14 +401,25 @@ type (
 		CreatedAt  string `json:"createdAt,omitempty"`
 		UpdatedAt  string `json:"updatedAt,omitempty"`
 	}
+	AssayTreeNode struct {
+		Code      string          `json:"code"`
+		Name      string          `json:"name"`
+		Kind      string          `json:"kind"`
+		SortOrder int             `json:"sortOrder"`
+		Children  []AssayTreeNode `json:"children,omitempty"`
+	}
+	ListAssayTreeResponse struct {
+		Items []AssayTreeNode `json:"items"`
+	}
 	ListAssayProjectsRequest struct {
-		Keyword  string `form:"keyword,optional"`
-		Company  string `form:"company,optional"`
-		Line     string `form:"line,optional"`
-		Status   string `form:"status,optional"`
+		Keyword   string `form:"keyword,optional"`
+		Company   string `form:"company,optional"`
+		Line      string `form:"line,optional"`
+		Status    string `form:"status,optional"`
+		Kind      string `form:"kind,optional"`      // line|category|item|all
 		Ownership string `form:"ownership,optional"` // own | competitor | all
-		Page     int    `form:"page,optional"`
-		PageSize int    `form:"pageSize,optional"`
+		Page      int    `form:"page,optional"`
+		PageSize  int    `form:"pageSize,optional"`
 	}
 	ListAssayProjectsResponse struct {
 		Total     int64              `json:"total"`
@@ -415,6 +429,9 @@ type (
 	AssayProjectUpsertRequest struct {
 		Code         string   `json:"code,optional"`
 		Name         string   `json:"name"`
+		ParentCode   string   `json:"parentCode,optional"`
+		Kind         string   `json:"kind,optional"`
+		SortOrder    int      `json:"sortOrder,optional"`
 		LineCategory string   `json:"lineCategory,optional"`
 		Company      string   `json:"company,optional"`
 		Aliases      []string `json:"aliases,optional"`
@@ -424,13 +441,21 @@ type (
 		Project AssayProjectInfo `json:"project"`
 	}
 	AssayProjectOption struct {
-		Id         int64  `json:"id"`
-		Name       string `json:"name"`
-		Company    string `json:"company,omitempty"`
-		Ownership  string `json:"ownership"`
+		Id        int64  `json:"id"`
+		Code      string `json:"code,omitempty"`
+		Name      string `json:"name"`
+		Company   string `json:"company,omitempty"`
+		Ownership string `json:"ownership"`
 	}
 	ListAssayProjectOptionsResponse struct {
 		Items []AssayProjectOption `json:"items"`
+	}
+	HospitalAssaysResponse struct {
+		Codes []string `json:"codes"`
+	}
+	ReplaceHospitalAssaysRequest struct {
+		Codes  []string `json:"codes"`
+		Source string   `json:"source,optional"` // own|competitor|...
 	}
 
 	OkResponse struct {
@@ -456,38 +481,38 @@ type (
 		Value     bool   `json:"value"`
 	}
 	EqaParticipationInfo struct {
-		Id           int64                       `json:"id"`
-		HospitalId   int64                       `json:"hospitalId"`
-		HospitalName string                      `json:"hospitalName,omitempty"`
-		Year         int64                       `json:"year"`
-		Scope        string                      `json:"scope"`
-		Tags         []string                    `json:"tags"`
-		OwnerUserId  int64                       `json:"ownerUserId,omitempty"`
-		OwnerName    string                      `json:"ownerName,omitempty"`
-		ItemCount    int64                       `json:"itemCount"`
-		Items        []EqaParticipationItemInfo  `json:"items,omitempty"`
-		CreatedAt    string                      `json:"createdAt,omitempty"`
-		UpdatedAt    string                      `json:"updatedAt,omitempty"`
+		Id           int64                      `json:"id"`
+		HospitalId   int64                      `json:"hospitalId"`
+		HospitalName string                     `json:"hospitalName,omitempty"`
+		Year         int64                      `json:"year"`
+		Scope        string                     `json:"scope"`
+		Tags         []string                   `json:"tags"`
+		OwnerUserId  int64                      `json:"ownerUserId,omitempty"`
+		OwnerName    string                     `json:"ownerName,omitempty"`
+		ItemCount    int64                      `json:"itemCount"`
+		Items        []EqaParticipationItemInfo `json:"items,omitempty"`
+		CreatedAt    string                     `json:"createdAt,omitempty"`
+		UpdatedAt    string                     `json:"updatedAt,omitempty"`
 	}
 	EqaParticipationItemInput struct {
 		FieldCode string `json:"fieldCode"`
 		Value     bool   `json:"value"`
 	}
 	CreateEqaParticipationRequest struct {
-		HospitalId  int64                        `json:"hospitalId"`
-		Year        int64                        `json:"year"`
-		Scope       string                       `json:"scope"`
-		Tags        []string                     `json:"tags,optional"`
-		OwnerUserId int64                        `json:"ownerUserId,optional"`
-		Items       []EqaParticipationItemInput  `json:"items,optional"`
+		HospitalId  int64                       `json:"hospitalId"`
+		Year        int64                       `json:"year"`
+		Scope       string                      `json:"scope"`
+		Tags        []string                    `json:"tags,optional"`
+		OwnerUserId int64                       `json:"ownerUserId,optional"`
+		Items       []EqaParticipationItemInput `json:"items,optional"`
 	}
 	UpdateEqaParticipationRequest struct {
-		Year        int64                        `json:"year,optional"`
-		Scope       string                       `json:"scope,optional"`
-		Tags        []string                     `json:"tags,optional"`
-		OwnerUserId int64                        `json:"ownerUserId,optional"`
-		ClearOwner  bool                         `json:"clearOwner,optional"`
-		Items       []EqaParticipationItemInput  `json:"items,optional"`
+		Year        int64                       `json:"year,optional"`
+		Scope       string                      `json:"scope,optional"`
+		Tags        []string                    `json:"tags,optional"`
+		OwnerUserId int64                       `json:"ownerUserId,optional"`
+		ClearOwner  bool                        `json:"clearOwner,optional"`
+		Items       []EqaParticipationItemInput `json:"items,optional"`
 	}
 	EqaParticipationResponse struct {
 		Participation EqaParticipationInfo `json:"participation"`
@@ -501,8 +526,8 @@ type (
 		PageSize    int64  `form:"pageSize,optional"`
 	}
 	ListEqaParticipationsResponse struct {
-		Total int64                   `json:"total"`
-		Items []EqaParticipationInfo  `json:"items"`
+		Total int64                  `json:"total"`
+		Items []EqaParticipationInfo `json:"items"`
 	}
 	EqaDashboardRequest struct {
 		Year int64 `form:"year,optional"`
@@ -541,11 +566,11 @@ type (
 		Items []CollectableFieldInfo `json:"items"`
 	}
 	EqaDashboardResponse struct {
-		Year                 int64              `json:"year"`
-		TotalParticipations  int64              `json:"totalParticipations"`
-		CoverageHospitals    int64              `json:"coverageHospitals"`
-		ByScope              []EqaScopeCount    `json:"byScope"`
-		TopItems             []EqaItemCount     `json:"topItems"`
-		OwnerProgress        []EqaOwnerProgress `json:"ownerProgress"`
+		Year                int64              `json:"year"`
+		TotalParticipations int64              `json:"totalParticipations"`
+		CoverageHospitals   int64              `json:"coverageHospitals"`
+		ByScope             []EqaScopeCount    `json:"byScope"`
+		TopItems            []EqaItemCount     `json:"topItems"`
+		OwnerProgress       []EqaOwnerProgress `json:"ownerProgress"`
 	}
 )

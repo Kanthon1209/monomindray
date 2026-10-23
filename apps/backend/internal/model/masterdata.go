@@ -20,6 +20,10 @@ type MasterDataModel interface {
 	ReplaceOwnAssays(ctx context.Context, hospitalID int64, names []string, flagNew bool) error
 	UpsertAssayRow(ctx context.Context, hospitalID int64, projectName, source, brand, instrument string, flags []string) error
 	SyncAssaysFromArchive(ctx context.Context, hospitalID int64, archive map[string]any) error
+	ReplaceHospitalAssaysByCodes(ctx context.Context, hospitalID int64, codes []string, source string) error
+	ListHospitalAssayCodes(ctx context.Context, hospitalID int64) ([]string, error)
+	ListAssayTree(ctx context.Context) ([]AssayTreeNode, error)
+	GetAssayProjectByCode(ctx context.Context, code string) (*AssayProject, error)
 
 	ListAssayProjects(ctx context.Context, f AssayProjectFilter) ([]AssayProject, int64, error)
 	GetAssayProject(ctx context.Context, id int64) (*AssayProject, error)
@@ -69,7 +73,6 @@ func (m *masterDataModel) UpsertAttributes(ctx context.Context, hospitalID int64
 	return nil
 }
 
-
 func (m *masterDataModel) ListAttributesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64]map[string]string, error) {
 	out := map[int64]map[string]string{}
 	if len(hospitalIDs) == 0 {
@@ -116,29 +119,22 @@ func (m *masterDataModel) ListAttributes(ctx context.Context, hospitalID int64) 
 }
 
 func (m *masterDataModel) EnsureAssayProject(ctx context.Context, name, line, company string) (int64, error) {
+	// Hierarchical catalog: never invent flat rows. Resolve existing item by exact name.
+	_ = line
+	_ = company
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return 0, nil
 	}
-	company = strings.TrimSpace(company)
-	own := IsOwnCompany(company)
 	var id int64
 	err := m.conn.QueryRow(ctx, `
-		INSERT INTO assay_projects (name, line_category, company, is_own_menu, updated_at)
-		VALUES ($1,$2,$3,$4,NOW())
-		ON CONFLICT (name) DO UPDATE SET
-			line_category = CASE WHEN EXCLUDED.line_category <> '' THEN EXCLUDED.line_category ELSE assay_projects.line_category END,
-			company = CASE
-				WHEN assay_projects.company = '' AND EXCLUDED.company <> '' THEN EXCLUDED.company
-				ELSE assay_projects.company
-			END,
-			is_own_menu = CASE
-				WHEN assay_projects.company = '' AND EXCLUDED.company <> '' THEN EXCLUDED.is_own_menu
-				ELSE (LOWER(assay_projects.company) LIKE '%mindray%' OR assay_projects.company = '迈瑞' OR assay_projects.company LIKE '迈瑞%')
-			END,
-			updated_at = NOW()
-		RETURNING id`, name, strings.TrimSpace(line), company, own).Scan(&id)
-	return id, err
+		SELECT id FROM assay_projects
+		WHERE kind = 'item' AND status = 'active' AND name = $1
+		ORDER BY id ASC LIMIT 1`, name).Scan(&id)
+	if err != nil {
+		return 0, nil
+	}
+	return id, nil
 }
 
 func (m *masterDataModel) UpsertAssayRow(ctx context.Context, hospitalID int64, projectName, source, brand, instrument string, flags []string) error {
@@ -160,13 +156,17 @@ func (m *masterDataModel) UpsertAssayRow(ctx context.Context, hospitalID int64, 
 	if err != nil {
 		return err
 	}
+	if pid == 0 {
+		// Unknown leaf name under hierarchical catalog — skip rather than invent.
+		return nil
+	}
 	if flags == nil {
 		flags = []string{}
 	}
 	_, err = m.conn.Exec(ctx, `
 		INSERT INTO hospital_assays (hospital_id, assay_project_id, project_name, source, brand, instrument, flags)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		hospitalID, nullIfZero(pid), projectName, source, strings.TrimSpace(brand), strings.TrimSpace(instrument), flags)
+		hospitalID, pid, projectName, source, strings.TrimSpace(brand), strings.TrimSpace(instrument), flags)
 	return err
 }
 
@@ -202,6 +202,15 @@ func (m *masterDataModel) ReplaceOwnAssays(ctx context.Context, hospitalID int64
 
 func (m *masterDataModel) SyncAssaysFromArchive(ctx context.Context, hospitalID int64, archive map[string]any) error {
 	if hospitalID <= 0 || archive == nil {
+		return nil
+	}
+	// Hierarchical catalog: do not wipe offerings when archive has no legacy project lists
+	// (assay_block writeback owns hospital_assays for own items).
+	hasLegacy := len(ToStringSlice(archive["mindrayProjects"])) > 0 ||
+		len(ToStringSlice(archive["newProjects"])) > 0 ||
+		len(ToStringSlice(archive["missingProjects"])) > 0 ||
+		len(ToCompetitorList(archive["competitorProjectDistribution"])) > 0
+	if !hasLegacy {
 		return nil
 	}
 	_, err := m.conn.Exec(ctx, `DELETE FROM hospital_assays WHERE hospital_id=$1`, hospitalID)
@@ -394,19 +403,19 @@ var KnownAttributeKeys = map[string]string{
 
 // KnownMetricKeys maps survey/archive keys to hospital_metrics codes.
 var KnownMetricKeys = map[string]string{
-	"mindraySampleVolume":     "sample_volume_own",
-	"totalSampleVolume":       "sample_volume_total",
-	"matchingRate":            "matching_rate",
-	"qcVendor":                "qc_vendor",
-	"qcLevels":                "qc_levels",
-	"qcCycle":                 "qc_cycle",
-	"annualRevenue":           "hospital_annual_revenue",
-	"iotStock23":              "iot_stock",
-	"iotForecast24":           "iot_forecast",
-	"iotIncrement24":          "iot_increment",
-	"iotGrowthRate24":         "iot_growth_rate",
-	"hospitalReagentOutput":   "reagent_revenue",
-	"reagentOutputTarget":     "reagent_revenue_target",
+	"mindraySampleVolume":   "sample_volume_own",
+	"totalSampleVolume":     "sample_volume_total",
+	"matchingRate":          "matching_rate",
+	"qcVendor":              "qc_vendor",
+	"qcLevels":              "qc_levels",
+	"qcCycle":               "qc_cycle",
+	"annualRevenue":         "hospital_annual_revenue",
+	"iotStock23":            "iot_stock",
+	"iotForecast24":         "iot_forecast",
+	"iotIncrement24":        "iot_increment",
+	"iotGrowthRate24":       "iot_growth_rate",
+	"hospitalReagentOutput": "reagent_revenue",
+	"reagentOutputTarget":   "reagent_revenue_target",
 }
 
 // KnownRoleKeys maps archive/survey field keys to assignment roles.

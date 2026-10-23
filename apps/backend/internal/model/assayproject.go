@@ -9,8 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// OwnCompanyNames: assay projects whose company matches are treated as 自有 (Mindray).
-// Comparison is case-insensitive for Latin; Chinese names matched as-is / prefix.
+// IsOwnCompany: assay projects whose company matches are treated as 自有 (Mindray).
 func IsOwnCompany(company string) bool {
 	c := strings.TrimSpace(company)
 	if c == "" {
@@ -26,7 +25,7 @@ func IsOwnCompany(company string) bool {
 	return false
 }
 
-// OwnershipLabel returns "own" or "competitor" from company (never stored as source of truth on dictionary).
+// OwnershipLabel returns "own" or "competitor" from company.
 func OwnershipLabel(company string) string {
 	if IsOwnCompany(company) {
 		return "own"
@@ -38,29 +37,44 @@ type AssayProject struct {
 	Id           int64
 	Code         string
 	Name         string
+	ParentCode   string
+	Kind         string // line | category | item
+	SortOrder    int
 	LineCategory string
 	Company      string
 	Aliases      []string
-	IsOwnMenu    bool // legacy mirror of IsOwnCompany(Company)
+	IsOwnMenu    bool
 	Status       string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
-	UsageCount   int64 // hospitals referencing this project
+	UsageCount   int64
+}
+
+type AssayTreeNode struct {
+	Code      string          `json:"code"`
+	Name      string          `json:"name"`
+	Kind      string          `json:"kind"`
+	SortOrder int             `json:"sortOrder"`
+	Children  []AssayTreeNode `json:"children,omitempty"`
 }
 
 type AssayProjectFilter struct {
-	Keyword  string
-	Company  string
-	Line     string
-	Status   string
-	OwnOnly  *bool // filter by derived ownership
-	Limit    int
-	Offset   int
+	Keyword string
+	Company string
+	Line    string
+	Status  string
+	Kind    string // line|category|item|"" (all)
+	OwnOnly *bool
+	Limit   int
+	Offset  int
 }
 
 type AssayProjectInput struct {
 	Code         string
 	Name         string
+	ParentCode   string
+	Kind         string
+	SortOrder    int
 	LineCategory string
 	Company      string
 	Aliases      []string
@@ -92,8 +106,12 @@ func (m *masterDataModel) ListAssayProjects(ctx context.Context, f AssayProjectF
 		args = append(args, st)
 		i++
 	}
+	if kind := strings.TrimSpace(f.Kind); kind != "" && kind != "all" {
+		where = append(where, fmt.Sprintf("p.kind = $%d", i))
+		args = append(args, kind)
+		i++
+	}
 	if f.OwnOnly != nil {
-		// Approximate SQL filter aligned with IsOwnCompany
 		if *f.OwnOnly {
 			where = append(where, `(LOWER(p.company) LIKE '%mindray%' OR p.company = '迈瑞' OR p.company LIKE '迈瑞%')`)
 		} else {
@@ -114,12 +132,13 @@ func (m *masterDataModel) ListAssayProjects(ctx context.Context, f AssayProjectF
 	}
 	listArgs := append(append([]any{}, args...), limit, offset)
 	listSQL := fmt.Sprintf(`
-		SELECT p.id, p.code, p.name, p.line_category, p.company, p.aliases, p.is_own_menu, p.status,
+		SELECT p.id, p.code, p.name, COALESCE(p.parent_code,''), COALESCE(p.kind,'item'), COALESCE(p.sort_order,0),
+		       p.line_category, p.company, p.aliases, p.is_own_menu, p.status,
 		       p.created_at, p.updated_at,
 		       COALESCE((SELECT COUNT(DISTINCT hospital_id) FROM hospital_assays ha WHERE ha.assay_project_id = p.id), 0)
 		FROM assay_projects p
 		WHERE %s
-		ORDER BY p.company ASC, p.name ASC
+		ORDER BY p.kind ASC, p.sort_order ASC, p.name ASC
 		LIMIT $%d OFFSET $%d`, whereSQL, i, i+1)
 
 	rows, err := m.conn.Query(ctx, listSQL, listArgs...)
@@ -131,8 +150,9 @@ func (m *masterDataModel) ListAssayProjects(ctx context.Context, f AssayProjectF
 	out := make([]AssayProject, 0)
 	for rows.Next() {
 		var p AssayProject
-		if err := rows.Scan(&p.Id, &p.Code, &p.Name, &p.LineCategory, &p.Company, &p.Aliases,
-			&p.IsOwnMenu, &p.Status, &p.CreatedAt, &p.UpdatedAt, &p.UsageCount); err != nil {
+		if err := rows.Scan(&p.Id, &p.Code, &p.Name, &p.ParentCode, &p.Kind, &p.SortOrder,
+			&p.LineCategory, &p.Company, &p.Aliases, &p.IsOwnMenu, &p.Status,
+			&p.CreatedAt, &p.UpdatedAt, &p.UsageCount); err != nil {
 			return nil, 0, err
 		}
 		if p.Aliases == nil {
@@ -143,15 +163,94 @@ func (m *masterDataModel) ListAssayProjects(ctx context.Context, f AssayProjectF
 	return out, total, rows.Err()
 }
 
+func (m *masterDataModel) ListAssayTree(ctx context.Context) ([]AssayTreeNode, error) {
+	rows, err := m.conn.Query(ctx, `
+		SELECT code, name, COALESCE(parent_code,''), kind, sort_order
+		FROM assay_projects
+		WHERE status = 'active'
+		ORDER BY kind ASC, sort_order ASC, name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type flat struct {
+		Code, Name, Parent, Kind string
+		Sort                     int
+	}
+	all := make([]flat, 0)
+	byParent := map[string][]flat{}
+	for rows.Next() {
+		var f flat
+		if err := rows.Scan(&f.Code, &f.Name, &f.Parent, &f.Kind, &f.Sort); err != nil {
+			return nil, err
+		}
+		all = append(all, f)
+		byParent[f.Parent] = append(byParent[f.Parent], f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var build func(parent string) []AssayTreeNode
+	build = func(parent string) []AssayTreeNode {
+		kids := byParent[parent]
+		out := make([]AssayTreeNode, 0, len(kids))
+		for _, k := range kids {
+			n := AssayTreeNode{
+				Code:      k.Code,
+				Name:      k.Name,
+				Kind:      k.Kind,
+				SortOrder: k.Sort,
+			}
+			if k.Kind != "item" {
+				n.Children = build(k.Code)
+			}
+			out = append(out, n)
+		}
+		return out
+	}
+	return build(""), nil
+}
+
 func (m *masterDataModel) GetAssayProject(ctx context.Context, id int64) (*AssayProject, error) {
 	var p AssayProject
 	err := m.conn.QueryRow(ctx, `
-		SELECT p.id, p.code, p.name, p.line_category, p.company, p.aliases, p.is_own_menu, p.status,
+		SELECT p.id, p.code, p.name, COALESCE(p.parent_code,''), COALESCE(p.kind,'item'), COALESCE(p.sort_order,0),
+		       p.line_category, p.company, p.aliases, p.is_own_menu, p.status,
 		       p.created_at, p.updated_at,
 		       COALESCE((SELECT COUNT(DISTINCT hospital_id) FROM hospital_assays ha WHERE ha.assay_project_id = p.id), 0)
 		FROM assay_projects p WHERE p.id=$1`, id).Scan(
-		&p.Id, &p.Code, &p.Name, &p.LineCategory, &p.Company, &p.Aliases,
-		&p.IsOwnMenu, &p.Status, &p.CreatedAt, &p.UpdatedAt, &p.UsageCount)
+		&p.Id, &p.Code, &p.Name, &p.ParentCode, &p.Kind, &p.SortOrder,
+		&p.LineCategory, &p.Company, &p.Aliases, &p.IsOwnMenu, &p.Status,
+		&p.CreatedAt, &p.UpdatedAt, &p.UsageCount)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if p.Aliases == nil {
+		p.Aliases = []string{}
+	}
+	return &p, nil
+}
+
+func (m *masterDataModel) GetAssayProjectByCode(ctx context.Context, code string) (*AssayProject, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, nil
+	}
+	var p AssayProject
+	err := m.conn.QueryRow(ctx, `
+		SELECT p.id, p.code, p.name, COALESCE(p.parent_code,''), COALESCE(p.kind,'item'), COALESCE(p.sort_order,0),
+		       p.line_category, p.company, p.aliases, p.is_own_menu, p.status,
+		       p.created_at, p.updated_at,
+		       COALESCE((SELECT COUNT(DISTINCT hospital_id) FROM hospital_assays ha WHERE ha.assay_project_id = p.id), 0)
+		FROM assay_projects p WHERE p.code=$1`, code).Scan(
+		&p.Id, &p.Code, &p.Name, &p.ParentCode, &p.Kind, &p.SortOrder,
+		&p.LineCategory, &p.Company, &p.Aliases, &p.IsOwnMenu, &p.Status,
+		&p.CreatedAt, &p.UpdatedAt, &p.UsageCount)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -166,8 +265,13 @@ func (m *masterDataModel) GetAssayProject(ctx context.Context, id int64) (*Assay
 
 func (m *masterDataModel) CreateAssayProject(ctx context.Context, in AssayProjectInput) (*AssayProject, error) {
 	name := strings.TrimSpace(in.Name)
-	if name == "" {
-		return nil, fmt.Errorf("name required")
+	code := strings.TrimSpace(in.Code)
+	if name == "" || code == "" {
+		return nil, fmt.Errorf("code and name required")
+	}
+	kind := strings.TrimSpace(in.Kind)
+	if kind == "" {
+		kind = "item"
 	}
 	company := strings.TrimSpace(in.Company)
 	status := strings.TrimSpace(in.Status)
@@ -176,12 +280,17 @@ func (m *masterDataModel) CreateAssayProject(ctx context.Context, in AssayProjec
 	}
 	aliases := normalizeAliases(in.Aliases)
 	own := IsOwnCompany(company)
+	parent := strings.TrimSpace(in.ParentCode)
+	var parentAny any
+	if parent != "" {
+		parentAny = parent
+	}
 	var id int64
 	err := m.conn.QueryRow(ctx, `
-		INSERT INTO assay_projects (code, name, line_category, company, aliases, is_own_menu, status, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+		INSERT INTO assay_projects (code, name, parent_code, kind, sort_order, line_category, company, aliases, is_own_menu, status, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
 		RETURNING id`,
-		strings.TrimSpace(in.Code), name, strings.TrimSpace(in.LineCategory),
+		code, name, parentAny, kind, in.SortOrder, strings.TrimSpace(in.LineCategory),
 		company, aliases, own, status).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -191,8 +300,13 @@ func (m *masterDataModel) CreateAssayProject(ctx context.Context, in AssayProjec
 
 func (m *masterDataModel) UpdateAssayProject(ctx context.Context, id int64, in AssayProjectInput) (*AssayProject, error) {
 	name := strings.TrimSpace(in.Name)
-	if id <= 0 || name == "" {
+	code := strings.TrimSpace(in.Code)
+	if id <= 0 || name == "" || code == "" {
 		return nil, fmt.Errorf("invalid input")
+	}
+	kind := strings.TrimSpace(in.Kind)
+	if kind == "" {
+		kind = "item"
 	}
 	company := strings.TrimSpace(in.Company)
 	status := strings.TrimSpace(in.Status)
@@ -201,12 +315,17 @@ func (m *masterDataModel) UpdateAssayProject(ctx context.Context, id int64, in A
 	}
 	aliases := normalizeAliases(in.Aliases)
 	own := IsOwnCompany(company)
+	parent := strings.TrimSpace(in.ParentCode)
+	var parentAny any
+	if parent != "" {
+		parentAny = parent
+	}
 	tag, err := m.conn.Exec(ctx, `
 		UPDATE assay_projects SET
-			code=$2, name=$3, line_category=$4, company=$5, aliases=$6,
-			is_own_menu=$7, status=$8, updated_at=NOW()
+			code=$2, name=$3, parent_code=$4, kind=$5, sort_order=$6, line_category=$7,
+			company=$8, aliases=$9, is_own_menu=$10, status=$11, updated_at=NOW()
 		WHERE id=$1`,
-		id, strings.TrimSpace(in.Code), name, strings.TrimSpace(in.LineCategory),
+		id, code, name, parentAny, kind, in.SortOrder, strings.TrimSpace(in.LineCategory),
 		company, aliases, own, status)
 	if err != nil {
 		return nil, err
@@ -218,7 +337,6 @@ func (m *masterDataModel) UpdateAssayProject(ctx context.Context, id int64, in A
 }
 
 func (m *masterDataModel) DeleteAssayProject(ctx context.Context, id int64) error {
-	// Soft-delete preferred if in use; hard delete when unused
 	var usage int64
 	_ = m.conn.QueryRow(ctx, `
 		SELECT COUNT(*) FROM hospital_assays WHERE assay_project_id=$1`, id).Scan(&usage)
@@ -249,6 +367,91 @@ func (m *masterDataModel) ListAssayCompanies(ctx context.Context) ([]string, err
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// ListHospitalAssayCodes returns leaf codes currently offered at a hospital (source=own by default all).
+func (m *masterDataModel) ListHospitalAssayCodes(ctx context.Context, hospitalID int64) ([]string, error) {
+	rows, err := m.conn.Query(ctx, `
+		SELECT COALESCE(ap.code, '')
+		FROM hospital_assays ha
+		LEFT JOIN assay_projects ap ON ap.id = ha.assay_project_id
+		WHERE ha.hospital_id=$1 AND ap.kind='item' AND TRIM(COALESCE(ap.code,'')) <> ''
+		ORDER BY ap.sort_order, ap.name`, hospitalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	seen := map[string]struct{}{}
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ReplaceHospitalAssaysByCodes replaces all hospital_assays for a hospital with the given item codes.
+// Only kind=item codes are accepted; unknown codes are rejected.
+func (m *masterDataModel) ReplaceHospitalAssaysByCodes(ctx context.Context, hospitalID int64, codes []string, source string) error {
+	if hospitalID <= 0 {
+		return nil
+	}
+	if source == "" {
+		source = "own"
+	}
+	seen := map[string]struct{}{}
+	clean := make([]string, 0, len(codes))
+	for _, c := range codes {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		clean = append(clean, c)
+	}
+
+	tx, err := m.conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM hospital_assays WHERE hospital_id=$1 AND source=$2`, hospitalID, source); err != nil {
+		return err
+	}
+	for _, code := range clean {
+		var id int64
+		var name, kind string
+		err := tx.QueryRow(ctx, `
+			SELECT id, name, kind FROM assay_projects WHERE code=$1 AND status='active'`, code).
+			Scan(&id, &name, &kind)
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("unknown assay code: %s", code)
+		}
+		if err != nil {
+			return err
+		}
+		if kind != "item" {
+			return fmt.Errorf("assay code is not an item: %s", code)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO hospital_assays (hospital_id, assay_project_id, project_name, source, brand, instrument, flags)
+			VALUES ($1,$2,$3,$4,'','','{}')`,
+			hospitalID, id, name, source); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func normalizeAliases(in []string) []string {

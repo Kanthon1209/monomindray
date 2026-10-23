@@ -218,6 +218,8 @@ function typeLabel(type: string): string {
       return "多选";
     case "eqa_block":
       return "EQA 复合块";
+    case "assay_block":
+      return "检测项目树";
     default:
       return type || "文本";
   }
@@ -740,6 +742,28 @@ export default function SurveyTemplatesPage() {
     await persistSchema(template, { fields, sections });
   };
 
+  const onInsertAssayBlock = async (template: SurveyTemplate, section?: string) => {
+    const schema = normalizeSchema(template.schema);
+    if ((schema.fields || []).some((f) => f.type === "assay_block")) {
+      setError("该模板已有检测项目块，每个模板只需一个");
+      return;
+    }
+    const sec = (section || "检测项目").trim() || "检测项目";
+    const key = ensureUniqueFieldKey("assays", (schema.fields || []).map((f) => f.key));
+    const nextField: SurveyField = {
+      key,
+      label: "检测项目开展",
+      section: sec,
+      type: "assay_block",
+      target: "assay.block",
+    };
+    const fields = [...(schema.fields || []), nextField];
+    const sections = [...(schema.sections || [])];
+    if (!sections.includes(sec)) sections.push(sec);
+    setError(null);
+    await persistSchema(template, { fields, sections });
+  };
+
   const onDeleteSection = async (template: SurveyTemplate, section: string) => {
 
     const schema = normalizeSchema(template.schema);
@@ -819,6 +843,10 @@ export default function SurveyTemplatesPage() {
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         国考/省考可选 → 展开科目复选（字典）
                       </p>
+                    ) : f.type === "assay_block" ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        产线 → 类别 → 叶子项目复选（字典树）
+                      </p>
                     ) : f.target ? (
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                         → {f.target}
@@ -880,24 +908,44 @@ export default function SurveyTemplatesPage() {
             </div>
             <div>
               <p className="mb-2 text-sm font-medium text-muted-foreground">特殊块</p>
-              <button
-                type="button"
-                className="flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:min-w-[160px]"
-                disabled={
-                  saving ||
-                  (normalizeSchema(item.schema).fields || []).some(
-                    (f) => f.type === "eqa_block",
-                  )
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void onInsertEqaBlock(item);
-                }}
-                title="插入 EQA 复合块"
-              >
-                <Plus className="h-5 w-5" />
-                <span>插入 EQA</span>
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:min-w-[140px]"
+                  disabled={
+                    saving ||
+                    (normalizeSchema(item.schema).fields || []).some(
+                      (f) => f.type === "eqa_block",
+                    )
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onInsertEqaBlock(item);
+                  }}
+                  title="插入 EQA 复合块"
+                >
+                  <Plus className="h-5 w-5" />
+                  <span>插入 EQA</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:min-w-[140px]"
+                  disabled={
+                    saving ||
+                    (normalizeSchema(item.schema).fields || []).some(
+                      (f) => f.type === "assay_block",
+                    )
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onInsertAssayBlock(item);
+                  }}
+                  title="插入检测项目树"
+                >
+                  <Plus className="h-5 w-5" />
+                  <span>插入检测项目</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1251,6 +1299,7 @@ export default function SurveyTemplatesPage() {
                         (f) =>
                           f.domain !== "eqa" &&
                           f.valueType !== "eqa_block" &&
+                          f.valueType !== "assay_block" &&
                           !f.storageTarget.startsWith("eqa."),
                       )
                   ).map((f) => (

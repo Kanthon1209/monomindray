@@ -1,0 +1,197 @@
+生化项目
+    肝功类	
+        ALT
+        AST
+        ALP
+        γ-GT
+        T-bil-V
+        D-bil-V
+        TP
+        ALB
+        GLB
+        TBA
+        CHE
+        PA
+        ADA
+        5′-NT
+        AFU
+    肾功类	
+        CREA-S
+        UA
+        UREA
+        CO2
+        CysC
+        β2-mG
+        β2-mG-U
+        MALB
+        RBP
+        TPUC
+    血脂类	
+        TC
+        TG
+        HDL-C
+        LDL-C
+        ApoA1
+        ApoB
+        LP(a)
+        sd-LDLC
+        HCY
+        ACE
+    心血管类	
+        LDH
+        α-HBDH
+        CK
+        CK-MB
+        MYO
+        D-Dimer
+    糖代谢类	
+        Glu-O
+        Glu-HK
+        HbA1c
+        FUN
+        β-HB
+    胰腺类	
+        α-AMY
+        LIP
+    离子及贫血类	
+        K
+        NA
+        CL
+        Ca
+        P
+        Mg
+        Fe
+        FER
+        TRF
+        G6PD
+        UIBC
+    特种蛋白类	
+        IgA
+        IgG
+        IgM
+        IgE
+        C3
+        C4
+        ASO
+        RF
+        CRP
+        HS-CRP
+
+免疫项目
+    肿标	
+        AFP
+        CEA
+        CA125
+        CA15-3
+        CA19-9
+        CA72-4
+        Total-PSA
+        fPSA
+        CA50
+        CA242
+        ProGRP
+        Cyfra21-1
+        NSE
+        PG I
+        SCCA
+        HE4
+        G-17
+        S100
+        PIVKA-II
+        H.pylori IgG
+    激素	
+        β-HCG
+        LH
+        FSH
+        PROG
+        PRL
+        TESTO
+        E2
+        DHEA-S
+        E3
+        ACTH
+        Cortisol
+        AMH
+        hGH
+        IGF-1
+        IGFBP-3
+        SHBG
+        Free Testo
+    甲功	
+        TSH
+        T3
+        T4
+        FT3
+        FT4
+        TG
+        rT3
+        Anti-TPO
+        Anti-Tg
+        TRAb
+    心肌	
+        CK-MB
+        Myoglobin（MYO）
+        Myoglobin  STAT
+        hs-cTnI
+        Troponin I（TnI）
+        NT-proBNP
+        BNP
+        ST2
+        hs-cTnT
+        D-Dimer
+    传染病	
+        HBsAg
+        Anti-HBs
+        HBeAg
+        HBeAg Q
+        Anti-HBe 
+        Anti-HBe Q
+        Anti-HBc
+        Anti-HBc Q
+        Anti-HCV
+        Anti-TP
+        HIV
+        Anti-HBc IgM
+        HAV IgM
+        Anti-HAV
+        HEV IgM
+        HEV IgG
+    TORCH	
+        Toxo IgG
+        Toxo IgM
+        RV IgG
+        RV IgM
+        CMV IgG
+        CMV IgM
+        HSV-1 IgG
+        HSV-2 IgG
+        HSV-1+2 IgG
+        HSV-1+2 IgM
+    过敏	
+        IGE
+    肝纤	
+        PIIINP
+        CIV
+        HA
+        LN
+    贫血	
+        Folate 
+        VitB12
+        FERR
+    糖尿病	
+        C-Peptide
+        Insulin
+    PCT	PCT
+        IL-6
+        sCD14-ST
+    骨代谢	
+        VD
+        PTH 
+        CT
+        TP1NP
+        OC
+        β-CTx
+        Renin
+        ALD
+        Renin
+        ALD

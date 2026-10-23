@@ -19,6 +19,10 @@ import {
   EqaParticipationField,
   normalizeEqaBlockAnswer,
 } from "@/components/eqa-participation-field";
+import {
+  AssayTreeField,
+  normalizeAssayBlockAnswer,
+} from "@/components/assay-tree-field";
 import { HospitalNameTypeahead } from "@/components/hospital-name-typeahead";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -176,6 +180,9 @@ export default function SurveyTaskFillPage() {
       for (const f of res.assignment.schema?.fields || []) {
         if (f.type === "eqa_block" && (next[f.key] == null || typeof next[f.key] !== "object")) {
           next[f.key] = normalizeEqaBlockAnswer(undefined);
+        }
+        if (f.type === "assay_block" && (next[f.key] == null || typeof next[f.key] !== "object")) {
+          next[f.key] = normalizeAssayBlockAnswer(undefined);
         }
       }
       setAnswers(next);
@@ -567,7 +574,10 @@ export default function SurveyTaskFillPage() {
 
           {sections.map(([section, fields]) => {
             const eqaFields = fields.filter((f) => f.type === "eqa_block");
-            const scalarFields = fields.filter((f) => f.type !== "eqa_block");
+            const assayFields = fields.filter((f) => f.type === "assay_block");
+            const scalarFields = fields.filter(
+              (f) => f.type !== "eqa_block" && f.type !== "assay_block",
+            );
             const mostlyBoolean =
               scalarFields.length > 0 &&
               scalarFields.filter((f) => f.type === "boolean").length >=
@@ -590,6 +600,21 @@ export default function SurveyTaskFillPage() {
                         enableNational: field.enableNational !== false,
                         enableProvincial: field.enableProvincial !== false,
                       }}
+                      onChange={(v) => setField(field.key, v)}
+                    />
+                  </div>
+                ))}
+                {assayFields.map((field) => (
+                  <div key={field.key} className="space-y-2">
+                    <Label>
+                      {field.label}
+                      {field.required ? (
+                        <span className="text-destructive"> *</span>
+                      ) : null}
+                    </Label>
+                    <AssayTreeField
+                      value={answers[field.key]}
+                      disabled={readOnly || lockedSet.has(field.key)}
                       onChange={(v) => setField(field.key, v)}
                     />
                   </div>

@@ -516,6 +516,11 @@ func (l *SurveyLogic) ApproveSubmission(id int64, req *types.ReviewSurveySubmiss
 		l.Errorf("eqa writeback: %v", err)
 		return nil, ErrInternal
 	}
+	// Assay tree block → hospital_assays by leaf codes
+	if err := NewAssayProjectLogic(l.ctx, l.svcCtx).WritebackFromSurveyAnswers(hospitalID, sub.Answers); err != nil {
+		l.Errorf("assay writeback: %v", err)
+		return nil, ErrInternal
+	}
 
 	sub, err = l.svcCtx.SurveyModel.FindSubmissionById(l.ctx, id)
 	if err != nil || sub == nil {
@@ -590,6 +595,9 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		case strings.HasPrefix(target, "eqa."):
 			// EQA answers are written by EqaLogic.WritebackFromSurveyAnswers only.
 			return
+		case strings.HasPrefix(target, "assay."):
+			// Assay block written by AssayProjectLogic.WritebackFromSurveyAnswers only.
+			return
 		case strings.HasPrefix(target, "hospital.attributes."):
 			attributes[strings.TrimPrefix(target, "hospital.attributes.")] = value
 		case strings.HasPrefix(target, "hospital.metrics."):
@@ -624,7 +632,7 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	if len(schema.Fields) > 0 {
 		for _, f := range schema.Fields {
-			if strings.EqualFold(f.Type, "repeat") || strings.EqualFold(f.Type, "eqa_block") {
+			if strings.EqualFold(f.Type, "repeat") || strings.EqualFold(f.Type, "eqa_block") || strings.EqualFold(f.Type, "assay_block") {
 				continue
 			}
 			applyTarget(f.Target, f.Key, answerString(answers, f.Key))
@@ -1065,7 +1073,7 @@ func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
 			return NewCodeError(400, "字段 key「devices」仅可用于「可重复组(repeat)」或「多选数组(string_array)」")
 		}
 		typNorm := strings.ToLower(strings.TrimSpace(typ))
-		if typNorm == "repeat" || typNorm == "eqa_block" {
+		if typNorm == "repeat" || typNorm == "eqa_block" || typNorm == "assay_block" {
 			return nil
 		}
 		target = strings.TrimSpace(target)
@@ -1123,6 +1131,9 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any)
 		}
 		if strings.EqualFold(f.Type, "eqa_block") {
 			// EQA block: neither/both/one scope is valid; no required scalar.
+			continue
+		}
+		if strings.EqualFold(f.Type, "assay_block") {
 			continue
 		}
 		if strings.EqualFold(f.Type, "repeat") {

@@ -833,6 +833,48 @@ export async function listAssayProjectOptions() {
   };
 }
 
+export type AssayTreeNode = {
+  code: string;
+  name: string;
+  kind: "line" | "category" | "item" | string;
+  sortOrder?: number;
+  children?: AssayTreeNode[];
+};
+
+export async function fetchAssayTree() {
+  const { data, error } = await apiFetch<{ items: AssayTreeNode[] }>(
+    "/assay-projects/tree",
+  );
+  if (error) {
+    return { error, items: [] as AssayTreeNode[] };
+  }
+  return { items: (data?.items || []) as AssayTreeNode[] };
+}
+
+export async function fetchHospitalAssays(hospitalId: string) {
+  const { data, error } = await apiFetch<{ codes: string[] }>(
+    `/hospitals/${hospitalId}/assays`,
+  );
+  if (error) return { error, codes: [] as string[] };
+  return { codes: data?.codes || [] };
+}
+
+export async function replaceHospitalAssays(
+  hospitalId: string,
+  codes: string[],
+  source?: string,
+) {
+  const { data, error } = await apiFetch<{ codes: string[] }>(
+    `/hospitals/${hospitalId}/assays`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ codes, source: source || "own" }),
+    },
+  );
+  if (error) return { error, codes: [] as string[] };
+  return { codes: data?.codes || [] };
+}
+
 export type HospitalSearchOption = {
   id: string;
   name: string;
