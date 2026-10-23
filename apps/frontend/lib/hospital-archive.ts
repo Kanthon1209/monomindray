@@ -42,10 +42,7 @@ export type ArchiveFieldKey =
   | "qcLevels"
   | "qcCycle"
   | "reagentSupplier"
-  | "mindrayProjects"
-  | "newProjects"
   | "unusedProjects"
-  | "missingProjects"
   | "archiveRemark"
   // 竞品结构化
   | "competitorProjectDistribution"
@@ -113,15 +110,7 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "qcLevels", label: "质控水平数", section: "质控" },
   { key: "qcCycle", label: "质控周期", section: "质控" },
   { key: "reagentSupplier", label: "试剂供应商", section: "项目与试剂" },
-  {
-    key: "mindrayProjects",
-    label: "迈瑞开展项目",
-    section: "项目与试剂",
-    valueType: "string_array",
-  },
-  { key: "newProjects", label: "主导新增项目", section: "项目与试剂", valueType: "string_array" },
   { key: "unusedProjects", label: "未使用迈瑞项目及品牌及供应商", section: "竞品与标本" },
-  { key: "missingProjects", label: "迈瑞没有项目名称及品牌", section: "竞品与标本" },
   {
     key: "competitorProjectDistribution",
     label: "竞品仪器项目分布",
@@ -175,11 +164,12 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
 ];
 
 /** 看板默认列（关键指标，适配窄侧栏） */
-export const DASHBOARD_PRIMARY_COLUMNS: Array<ArchiveFieldKey | "customerLevel"> = [
+/** Primary dashboard columns; "assays" is resolved from hospital.assayNames (not archive). */
+export const DASHBOARD_PRIMARY_COLUMNS: Array<ArchiveFieldKey | "customerLevel" | "assays"> = [
   "customerName",
   "customerLevel",
   "mindrayReagentCount",
-  "mindrayProjects",
+  "assays",
 ];
 
 /** 展开后追加列 */
@@ -195,7 +185,7 @@ export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
 ];
 
 /** @deprecated 使用 PRIMARY + EXTRA */
-export const DASHBOARD_LIST_COLUMNS: Array<ArchiveFieldKey | "customerLevel"> = [
+export const DASHBOARD_LIST_COLUMNS: Array<ArchiveFieldKey | "customerLevel" | "assays"> = [
   ...DASHBOARD_PRIMARY_COLUMNS,
   ...DASHBOARD_EXTRA_COLUMNS,
 ];
@@ -203,6 +193,7 @@ export const DASHBOARD_LIST_COLUMNS: Array<ArchiveFieldKey | "customerLevel"> = 
 export function archiveFieldLabel(key: ArchiveFieldKey | string) {
   if (key === "customerLevel") return "客户等级";
   if (key === "usageLocation") return "使用地点";
+  if (key === "assays") return "开展项目";
   return ARCHIVE_FIELD_DEFS.find((f) => f.key === key)?.label || key;
 }
 
@@ -400,8 +391,6 @@ export function resolveArchiveField(
       );
     case "model":
       return formatArchiveValue(archive.model) || hospital.deviceModels?.[0] || "";
-    case "mindrayProjects":
-    case "newProjects":
     case "competitorProjectDistribution":
       return formatArchiveValue(archiveRaw(hospital, key));
     case "archiveRemark":

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import {
+  fetchHospitalAssays,
   getHospital,
   listCustomers,
   listDevices,
@@ -41,6 +42,7 @@ export function HospitalDetailSheet({
   const [hospital, setHospital] = useState<Hospital | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [assayNames, setAssayNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,10 +52,11 @@ export function HospitalDetailSheet({
     const load = async () => {
       setLoading(true);
       setError(null);
-      const [hRes, dRes, cRes] = await Promise.all([
+      const [hRes, dRes, cRes, aRes] = await Promise.all([
         getHospital(hospitalId),
         listDevices(hospitalId),
         listCustomers({ hospitalId, page: 1, pageSize: 20 }),
+        fetchHospitalAssays(hospitalId),
       ]);
       if (cancelled) return;
       if (hRes.error) {
@@ -61,10 +64,15 @@ export function HospitalDetailSheet({
         setHospital(null);
         setDevices([]);
         setCustomers([]);
+        setAssayNames([]);
       } else {
         setHospital(hRes.hospital || null);
         setDevices(dRes.items);
         setCustomers(cRes.items);
+        const fromApi = aRes.names?.length
+          ? aRes.names
+          : hRes.hospital?.assayNames || [];
+        setAssayNames(fromApi);
       }
       setLoading(false);
     };
@@ -115,6 +123,10 @@ export function HospitalDetailSheet({
     const order: string[] = [];
     const grouped = new Map<string, typeof ARCHIVE_FIELD_DEFS>();
     for (const field of ARCHIVE_FIELD_DEFS) {
+      // Retired flat project lists — shown from hospital_assays below.
+      if ((field.key as string) === "mindrayProjects" || (field.key as string) === "newProjects" || (field.key as string) === "missingProjects") {
+        continue;
+      }
       if (!grouped.has(field.section)) {
         grouped.set(field.section, []);
         order.push(field.section);
@@ -156,7 +168,26 @@ export function HospitalDetailSheet({
           ) : error ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : (
-            sections.map((group) => (
+            <>
+            <section className="space-y-2">
+              <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
+                检测项目开展
+              </h3>
+              <div className="rounded-lg border bg-background px-3 py-3 text-sm md:px-4">
+                {assayNames.length === 0 ? (
+                  <span className="text-muted-foreground">暂无开展项目（问卷「检测项目」块审批后写入）</span>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {assayNames.map((n) => (
+                      <Badge key={n} variant="secondary" className="font-normal">
+                        {n}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+            {sections.map((group) => (
               <section key={group.section} className="space-y-2">
                 <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
                   {group.section}
@@ -179,7 +210,8 @@ export function HospitalDetailSheet({
                   ))}
                 </div>
               </section>
-            ))
+            ))}
+            </>
           )}
         </div>
       </DialogContent>

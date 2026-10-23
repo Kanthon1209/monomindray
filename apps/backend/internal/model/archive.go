@@ -18,10 +18,12 @@ var splitProjectsRe = regexp.MustCompile(`[/、,，;；|＋+]+`)
 var numberedSegRe = regexp.MustCompile(`(?m)^\s*\d+[\.、．\)]\s*`)
 
 // NormalizeArchiveValue coerces Excel-ish values into queryable JSON shapes.
-// mindrayProjects -> []string; competitorProjectDistribution -> []map.
+// mindrayProjects/newProjects are retired (hospital_assays); kept only for legacy parse.
+// competitorProjectDistribution -> []map.
 func NormalizeArchiveValue(key string, raw any) any {
 	switch key {
 	case "mindrayProjects", "newProjects":
+		// Legacy shape only; do not treat as source of truth for hospital assays.
 		return ToStringSlice(raw)
 	case "competitorProjectDistribution":
 		return ToCompetitorList(raw)

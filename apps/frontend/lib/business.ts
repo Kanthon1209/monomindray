@@ -72,6 +72,7 @@ function mapHospital(raw: any): Hospital {
     attributes: raw.attributes || undefined,
     metrics: raw.metrics || undefined,
     archive: raw.archive || {},
+    assayNames: Array.isArray(raw.assayNames) ? raw.assayNames.map(String) : [],
   };
 }
 
@@ -716,6 +717,9 @@ export interface AssayProject {
   id: string;
   code?: string;
   name: string;
+  parentCode?: string;
+  kind?: "line" | "category" | "item" | string;
+  sortOrder?: number;
   lineCategory?: string;
   company?: string;
   aliases: string[];
@@ -731,6 +735,9 @@ function mapAssayProject(raw: any): AssayProject {
     id: String(raw.id),
     code: raw.code || undefined,
     name: raw.name,
+    parentCode: raw.parentCode || undefined,
+    kind: raw.kind || undefined,
+    sortOrder: raw.sortOrder ?? 0,
     lineCategory: raw.lineCategory || undefined,
     company: raw.company || undefined,
     aliases: Array.isArray(raw.aliases) ? raw.aliases : [],
@@ -748,6 +755,7 @@ export async function listAssayProjects(params?: {
   line?: string;
   status?: string;
   ownership?: string;
+  kind?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -762,6 +770,7 @@ export async function listAssayProjects(params?: {
       line: params?.line,
       status: params?.status,
       ownership: params?.ownership,
+      kind: params?.kind,
       page: params?.page ?? 1,
       pageSize: params?.pageSize ?? 100,
     })}`,
@@ -779,6 +788,9 @@ export async function listAssayProjects(params?: {
 export async function createAssayProject(payload: {
   code?: string;
   name: string;
+  parentCode?: string;
+  kind?: string;
+  sortOrder?: number;
   lineCategory?: string;
   company?: string;
   aliases?: string[];
@@ -797,6 +809,9 @@ export async function updateAssayProject(
   payload: {
     code?: string;
     name: string;
+    parentCode?: string;
+    kind?: string;
+    sortOrder?: number;
     lineCategory?: string;
     company?: string;
     aliases?: string[];
@@ -852,11 +867,11 @@ export async function fetchAssayTree() {
 }
 
 export async function fetchHospitalAssays(hospitalId: string) {
-  const { data, error } = await apiFetch<{ codes: string[] }>(
+  const { data, error } = await apiFetch<{ codes: string[]; names?: string[] }>(
     `/hospitals/${hospitalId}/assays`,
   );
-  if (error) return { error, codes: [] as string[] };
-  return { codes: data?.codes || [] };
+  if (error) return { error, codes: [] as string[], names: [] as string[] };
+  return { codes: data?.codes || [], names: data?.names || [] };
 }
 
 export async function replaceHospitalAssays(

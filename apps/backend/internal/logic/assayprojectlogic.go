@@ -125,8 +125,14 @@ func (l *AssayProjectLogic) Create(req *types.AssayProjectUpsertRequest) (*types
 		Company: req.Company, Aliases: req.Aliases, Status: req.Status,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+		msg := err.Error()
+		if strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique") {
 			return nil, NewCodeError(http.StatusConflict, "项目编码已存在")
+		}
+		if strings.Contains(msg, "requires parent") || strings.Contains(msg, "must not have") ||
+			strings.Contains(msg, "parent not found") || strings.Contains(msg, "parent must be") ||
+			strings.Contains(msg, "invalid kind") {
+			return nil, NewCodeError(http.StatusBadRequest, msg)
 		}
 		l.Errorf("create assay project: %v", err)
 		return nil, ErrInternal
@@ -149,8 +155,14 @@ func (l *AssayProjectLogic) Update(id int64, req *types.AssayProjectUpsertReques
 		Company: req.Company, Aliases: req.Aliases, Status: req.Status,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+		msg := err.Error()
+		if strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique") {
 			return nil, NewCodeError(http.StatusConflict, "项目编码已存在")
+		}
+		if strings.Contains(msg, "requires parent") || strings.Contains(msg, "must not have") ||
+			strings.Contains(msg, "parent not found") || strings.Contains(msg, "parent must be") ||
+			strings.Contains(msg, "invalid kind") {
+			return nil, NewCodeError(http.StatusBadRequest, msg)
 		}
 		l.Errorf("update assay project: %v", err)
 		return nil, ErrInternal
@@ -198,9 +210,7 @@ func (l *AssayProjectLogic) Options() (*types.ListAssayProjectOptionsResponse, e
 }
 
 func (l *AssayProjectLogic) ListHospitalAssays(hospitalID int64) (*types.HospitalAssaysResponse, error) {
-	if err := requireAdminCtx(l.ctx); err != nil {
-		return nil, err
-	}
+	// Any logged-in caller (dashboard detail + survey fill)
 	codes, err := l.svcCtx.MasterDataModel.ListHospitalAssayCodes(l.ctx, hospitalID)
 	if err != nil {
 		l.Errorf("list hospital assays: %v", err)
@@ -209,7 +219,16 @@ func (l *AssayProjectLogic) ListHospitalAssays(hospitalID int64) (*types.Hospita
 	if codes == nil {
 		codes = []string{}
 	}
-	return &types.HospitalAssaysResponse{Codes: codes}, nil
+	names := make([]string, 0, len(codes))
+	for _, code := range codes {
+		p, e := l.svcCtx.MasterDataModel.GetAssayProjectByCode(l.ctx, code)
+		if e == nil && p != nil {
+			names = append(names, p.Name)
+		} else {
+			names = append(names, code)
+		}
+	}
+	return &types.HospitalAssaysResponse{Codes: codes, Names: names}, nil
 }
 
 func (l *AssayProjectLogic) ReplaceHospitalAssays(hospitalID int64, req *types.ReplaceHospitalAssaysRequest) (*types.HospitalAssaysResponse, error) {

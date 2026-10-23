@@ -7,14 +7,12 @@ import { ArrowLeft, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
 
 import {
   getMySurveyAssignment,
-  listAssayProjectOptions,
   saveSurveyDraft,
   submitSurveyAssignment,
   type HospitalSearchOption,
   type SurveyAssignment,
   type SurveyField,
 } from "@/lib/business";
-import { AssayMultiSelect } from "@/components/assay-multi-select";
 import {
   EqaParticipationField,
   normalizeEqaBlockAnswer,
@@ -61,18 +59,6 @@ const CUSTOMER_LEVEL_OPTIONS = [
   "V客户",
 ];
 const TYPE_OPTIONS = ["综合医院", "专科医院", "中医医院", "妇幼保健院"];
-
-function usesAssayDictionary(field: SurveyField): boolean {
-  if (field.optionsSource === "assay_projects") return true;
-  const t = field.target || "";
-  if (
-    t === "hospital.archive.mindrayProjects" ||
-    t === "hospital.archive.newProjects"
-  ) {
-    return true;
-  }
-  return field.key === "mindrayProjects" || field.key === "newProjects";
-}
 
 function isHospitalNameField(field: SurveyField): boolean {
   if (field.optionsSource === "hospitals") return true;
@@ -148,9 +134,6 @@ export default function SurveyTaskFillPage() {
   const router = useRouter();
   const [assignment, setAssignment] = useState<SurveyAssignment | null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [assayOptions, setAssayOptions] = useState<
-    { id: string; name: string; company?: string; ownership: string }[]
-  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -192,16 +175,6 @@ export default function SurveyTaskFillPage() {
           : undefined,
       );
 
-      const needAssay = (res.assignment.schema?.fields || []).some((f) =>
-        usesAssayDictionary(f),
-      );
-      if (needAssay) {
-        const assayRes = await listAssayProjectOptions();
-        if (assayRes.items?.length) setAssayOptions(assayRes.items);
-        else setAssayOptions([]);
-      } else {
-        setAssayOptions([]);
-      }
     }
     setLoading(false);
   }, [id]);
@@ -361,8 +334,7 @@ export default function SurveyTaskFillPage() {
         field.type === "multi_enum" ||
         field.type === "multi_select") &&
       Array.isArray(field.options) &&
-      field.options.length > 0 &&
-      !usesAssayDictionary(field)
+      field.options.length > 0
     ) {
       const selected = new Set(asStringArray(value));
       return (
@@ -395,19 +367,33 @@ export default function SurveyTaskFillPage() {
     }
 
     if (
-      field.type === "string_array" ||
       field.key === "mindrayProjects" ||
-      field.key === "newProjects"
+      field.key === "newProjects" ||
+      (field.target || "").includes("mindrayProjects") ||
+      (field.target || "").includes("newProjects")
     ) {
+      return (
+        <p className="text-sm text-muted-foreground">
+          旧版「开展项目」字段已停用，请使用模板中的「检测项目」块采集。
+        </p>
+      );
+    }
+
+    if (field.type === "string_array") {
       const arr = asStringArray(value);
       return (
-        <AssayMultiSelect
-          value={arr}
-          options={usesAssayDictionary(field) ? assayOptions : []}
-          onChange={onChange}
+        <Input
+          value={arr.join("、")}
           disabled={disabled}
-          placeholder="输入内容"
-          allowCustom
+          placeholder="多项用顿号分隔"
+          onChange={(e) =>
+            onChange(
+              e.target.value
+                .split(/[/、,，;；|]+/)
+                .map((s) => s.trim())
+                .filter(Boolean),
+            )
+          }
         />
       );
     }

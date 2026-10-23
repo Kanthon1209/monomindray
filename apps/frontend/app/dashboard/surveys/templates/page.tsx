@@ -73,19 +73,6 @@ import {
 /** 关联实体：必须映射可采集字段目录中的条目 */
 type MapEntity = "hospital" | "assay" | "eqa";
 
-const ASSAY_WRITE_OPTIONS = [
-  {
-    value: "mindrayProjects",
-    label: "迈瑞开展项目",
-    target: "hospital.archive.mindrayProjects",
-  },
-  {
-    value: "newProjects",
-    label: "主导新增项目",
-    target: "hospital.archive.newProjects",
-  },
-] as const;
-
 type FieldDraft = {
   key: string;
   label: string;
@@ -146,7 +133,7 @@ const DATE_ARCHIVE_KEYS = new Set(["installedAt", "enabledAt"]);
  */
 function resolveFieldTypeFromMapping(draft: FieldDraft): string {
   if (draft.type) return draft.type;
-  if (draft.mapEntity === "assay") return "string_array";
+  if (draft.mapEntity === "assay") return "assay_block";
   if (draft.mapEntity === "eqa") return "boolean";
   const attr = (draft.attribute || "").trim();
   if (attr.startsWith("hospital.attributes.customer_level") || attr.endsWith("customer_level")) {
@@ -173,10 +160,8 @@ function resolveOptionsSource(
   draft: FieldDraft,
 ): SurveyField["optionsSource"] | undefined {
   if (draft.optionsSource) return draft.optionsSource;
-  if (draft.mapEntity === "assay") return "assay_projects";
   const t = (draft.catalogTarget || draft.attribute || "").trim();
-  if (t === "hospital.name" || t.endsWith(".name") && t.includes("hospital")) return "hospitals";
-  if (t.includes("mindrayProjects") || t.includes("newProjects")) return "assay_projects";
+  if (t === "hospital.name" || (t.endsWith(".name") && t.includes("hospital"))) return "hospitals";
   return undefined;
 }
 
@@ -323,18 +308,16 @@ function draftFromField(field: SurveyField): FieldDraft {
     base.mapEntity = "eqa";
     return base;
   }
-  const assayOpt = ASSAY_WRITE_OPTIONS.find((o) => o.target === target);
   if (
-    field.optionsSource === "assay_projects" ||
-    assayOpt ||
-    target.includes("mindrayProjects") ||
-    target.includes("newProjects")
+    field.type === "assay_block" ||
+    target === "assay.block" ||
+    target.startsWith("assay.")
   ) {
     base.mapEntity = "assay";
-    base.attribute = assayOpt?.target || target || ASSAY_WRITE_OPTIONS[0].target;
+    base.attribute = target || "assay.block";
     base.catalogTarget = base.attribute;
-    base.type = "string_array";
-    base.optionsSource = "assay_projects";
+    base.type = "assay_block";
+    base.optionsSource = undefined;
     return base;
   }
   base.mapEntity = "hospital";
@@ -351,10 +334,7 @@ function resolveTarget(draft: FieldDraft): string | undefined {
   const catalog = (draft.catalogTarget || "").trim();
   if (catalog) return catalog;
   if (draft.mapEntity === "assay") {
-    const opt = ASSAY_WRITE_OPTIONS.find(
-      (o) => o.value === draft.attribute || o.target === draft.attribute,
-    );
-    return opt?.target || ASSAY_WRITE_OPTIONS[0].target;
+    return (draft.catalogTarget || draft.attribute || "assay.block").trim() || "assay.block";
   }
   const attr = (draft.attribute || "").trim();
   if (!attr) return undefined;
@@ -376,7 +356,7 @@ function applyCatalogField(
   const mapEntity: MapEntity =
     domain === "eqa"
       ? "eqa"
-      : domain === "assay" || field.optionsSource === "assay_projects"
+      : domain === "assay" || field.valueType === "assay_block"
         ? "assay"
         : "hospital";
   const next: FieldDraft = {
@@ -1242,19 +1222,19 @@ export default function SurveyTemplatesPage() {
                 onValueChange={(v) => {
                   const entity = v as MapEntity;
                   const first =
-                    (catalogByDomain[entity] || [])[0] ||
                     (entity === "assay"
-                      ? ({
-                          code: ASSAY_WRITE_OPTIONS[0].target,
-                          domain: "hospital",
-                          storageTarget: ASSAY_WRITE_OPTIONS[0].target,
-                          valueType: "string_array",
-                          label: ASSAY_WRITE_OPTIONS[0].label,
-                          section: "档案扩展",
+                      ? (catalogByDomain.assay || []).find((f) => f.valueType === "assay_block") ||
+                        ({
+                          code: "assay.block",
+                          domain: "assay",
+                          storageTarget: "assay.block",
+                          valueType: "assay_block",
+                          label: "检测项目开展",
+                          section: "检测项目",
                           enumValues: [],
-                          optionsSource: "assay_projects",
                         } as CollectableField)
-                      : catalogByDomain.hospital?.[0]);
+                      : (catalogByDomain[entity] || [])[0]) ||
+                    catalogByDomain.hospital?.[0];
                   setFieldDraft((d) =>
                     first
                       ? applyCatalogField(d, first, fieldMode)
@@ -1289,18 +1269,19 @@ export default function SurveyTemplatesPage() {
                 </SelectTrigger>
                 <SelectContent className="max-h-80">
                   {(fieldDraft.mapEntity === "assay"
-                    ? (catalogByDomain.hospital || []).filter(
-                        (f) =>
-                          f.optionsSource === "assay_projects" ||
-                          f.storageTarget.includes("mindrayProjects") ||
-                          f.storageTarget.includes("newProjects"),
+                    ? (catalogByDomain.assay || []).filter(
+                        (f) => f.valueType === "assay_block",
                       )
                     : (catalogByDomain[fieldDraft.mapEntity] || []).filter(
                         (f) =>
                           f.domain !== "eqa" &&
+                          f.domain !== "assay" &&
                           f.valueType !== "eqa_block" &&
                           f.valueType !== "assay_block" &&
-                          !f.storageTarget.startsWith("eqa."),
+                          !f.storageTarget.startsWith("eqa.") &&
+                          !f.storageTarget.startsWith("assay.") &&
+                          !f.storageTarget.includes("mindrayProjects") &&
+                          !f.storageTarget.includes("newProjects"),
                       )
                   ).map((f) => (
                     <SelectItem key={f.code} value={f.storageTarget}>

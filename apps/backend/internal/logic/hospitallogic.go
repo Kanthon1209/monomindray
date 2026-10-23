@@ -47,6 +47,7 @@ func (l *HospitalLogic) List(req *types.ListHospitalsRequest) (*types.ListHospit
 		out = append(out, toHospitalInfo(&items[i]))
 	}
 	out = l.attachAttributes(items, out)
+	out = l.attachAssayNames(items, out)
 	return &types.ListHospitalsResponse{Total: total, Items: out}, nil
 }
 
@@ -108,6 +109,7 @@ func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*ty
 		out = append(out, toHospitalInfo(&items[i]))
 	}
 	out = l.attachAttributes(items, out)
+	out = l.attachAssayNames(items, out)
 	return &types.ListHospitalsResponse{Total: total, Items: out}, nil
 }
 
@@ -145,6 +147,13 @@ func (l *HospitalLogic) Get(id int64) (*types.HospitalResponse, error) {
 	}
 	if metrics, err := l.svcCtx.MasterDataModel.ListMetrics(l.ctx, id, model.CurrentMetricYear()); err == nil {
 		info.Metrics = metrics
+	}
+	if names, err := l.svcCtx.MasterDataModel.ListAssayNamesByHospitalIDs(l.ctx, []int64{id}); err == nil {
+		if n := names[id]; n != nil {
+			info.AssayNames = n
+		} else {
+			info.AssayNames = []string{}
+		}
 	}
 	return &types.HospitalResponse{Hospital: info}, nil
 }
@@ -241,6 +250,27 @@ func (l *HospitalLogic) Delete(id int64) error {
 	return nil
 }
 
+
+
+func (l *HospitalLogic) attachAssayNames(items []model.Hospital, out []types.HospitalInfo) []types.HospitalInfo {
+	ids := make([]int64, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].Id)
+	}
+	namesByID, err := l.svcCtx.MasterDataModel.ListAssayNamesByHospitalIDs(l.ctx, ids)
+	if err != nil {
+		l.Errorf("list assay names batch: %v", err)
+		return out
+	}
+	for i := range out {
+		if names, ok := namesByID[out[i].Id]; ok {
+			out[i].AssayNames = names
+		} else {
+			out[i].AssayNames = []string{}
+		}
+	}
+	return out
+}
 
 func (l *HospitalLogic) attachAttributes(items []model.Hospital, out []types.HospitalInfo) []types.HospitalInfo {
 	ids := make([]int64, 0, len(items))

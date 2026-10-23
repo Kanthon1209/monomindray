@@ -709,20 +709,17 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		mergedArchive[k] = v
 	}
 
-	// Merge device-level mindray projects / analyzers into hospital archive.
+	// Merge device-level otherAnalyzers into hospital archive (assays go via assay_block only).
 	deviceRows := extractDeviceAnswers(answers["devices"])
-	allProjects := model.ToStringSlice(mergedArchive["mindrayProjects"])
 	otherAnalyzers := []string{}
 	if s := archiveString(mergedArchive, "otherAnalyzers"); s != "" {
 		otherAnalyzers = append(otherAnalyzers, s)
 	}
 	for _, drow := range deviceRows {
-		allProjects = append(allProjects, model.ToStringSlice(drow["mindrayProjects"])...)
 		if oa := anyToString(drow["otherAnalyzers"]); oa != "" {
 			otherAnalyzers = append(otherAnalyzers, oa)
 		}
 	}
-	mergedArchive["mindrayProjects"] = uniquePreserve(allProjects)
 	if len(otherAnalyzers) > 0 {
 		mergedArchive["otherAnalyzers"] = strings.Join(uniquePreserve(otherAnalyzers), "；")
 	}
@@ -731,6 +728,10 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 	delete(mergedArchive, "customer_level")
 	delete(mergedArchive, "usageLocation")
 	delete(mergedArchive, "usage_location")
+	// Retired flat project lists — hospital_assays is the source of truth.
+	delete(mergedArchive, "mindrayProjects")
+	delete(mergedArchive, "newProjects")
+	delete(mergedArchive, "missingProjects")
 
 	district := strings.TrimSpace(cols["district"])
 	address := strings.TrimSpace(cols["address"])
@@ -814,9 +815,7 @@ func (l *SurveyLogic) dualWriteMasterData(hospitalID int64, archive map[string]a
 	if err := md.UpsertMetrics(l.ctx, hospitalID, year, metrics); err != nil {
 		return err
 	}
-	if err := md.SyncAssaysFromArchive(l.ctx, hospitalID, archive); err != nil {
-		return err
-	}
+	// SyncAssaysFromArchive retired (hierarchical assay_block owns hospital_assays).
 	if s := archiveString(archive, "reagentSupplier"); s != "" {
 		if err := md.UpsertSupply(l.ctx, hospitalID, s, "reagent_vendor", "", "", ""); err != nil {
 			return err

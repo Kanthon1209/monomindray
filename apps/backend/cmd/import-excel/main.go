@@ -90,11 +90,17 @@ func main() {
 		set("qcLevels", "质控水平数")
 		set("qcCycle", "质控周期")
 		set("reagentSupplier", "试剂供应商")
+		// Excel free-text project lists → map to leaf codes in dualWriteImport (not archive).
 		if v := str(row["迈瑞开展项目"]); v != "" {
-			archive["mindrayProjects"] = v
+			archive["_importAssayNames"] = v
 		}
 		if v := str(row["主导新增项目"]); v != "" {
-			archive["newProjects"] = v
+			prev := str(archive["_importAssayNames"])
+			if prev != "" {
+				archive["_importAssayNames"] = prev + "、" + v
+			} else {
+				archive["_importAssayNames"] = v
+			}
 		}
 		set("unusedProjects", "未使用迈瑞项目及品牌及供应商")
 		set("missingProjects", "迈瑞没有项目名称及品牌")
@@ -157,8 +163,9 @@ func main() {
 		set("usageLocation", "使用位置")
 		set("equipment", "设备")
 		set("mindrayReagentCount", "迈瑞试剂项目数")
+		// Map Excel project names to hospital_assays leaf codes in dualWriteImport.
 		if v := str(row["迈瑞开展项目"]); v != "" {
-			archive["mindrayProjects"] = v
+			archive["_importAssayNames"] = v
 		}
 		set("mindraySampleVolume", "迈瑞标本量")
 		if v := str(row["竞品仪器项目分布"]); v != "" {
@@ -232,6 +239,11 @@ func stripMigratedArchiveKeys(archive map[string]any) {
 	delete(archive, "customer_level")
 	delete(archive, "usageLocation")
 	delete(archive, "usage_location")
+	// Flat project lists retired — hospital_assays is source of truth.
+	delete(archive, "mindrayProjects")
+	delete(archive, "newProjects")
+	delete(archive, "missingProjects")
+	delete(archive, "_importAssayNames")
 }
 
 func upsertHospital(ctx context.Context, hm model.HospitalModel, pool *pgxpool.Pool, name, province, city, level, typ string, archive map[string]any) (int64, error) {
@@ -294,20 +306,11 @@ func upsertHospital(ctx context.Context, hm model.HospitalModel, pool *pgxpool.P
 		merged[k] = v
 	}
 	for k, v := range archive {
-		// merge string arrays for mindrayProjects
-		if k == "mindrayProjects" {
+		if k == "_importAssayNames" {
+			// Accumulate import names for dualWrite; never persist in archive.
 			a := model.ToStringSlice(merged[k])
 			b := model.ToStringSlice(v)
-			seen := map[string]struct{}{}
-			out := make([]string, 0, len(a)+len(b))
-			for _, x := range append(a, b...) {
-				if _, ok := seen[x]; ok {
-					continue
-				}
-				seen[x] = struct{}{}
-				out = append(out, x)
-			}
-			merged[k] = out
+			merged[k] = append(a, b...)
 			continue
 		}
 		merged[k] = v
@@ -358,9 +361,21 @@ func dualWriteImport(ctx context.Context, pool *pgxpool.Pool, hospitalID int64, 
 	if err := md.UpsertMetrics(ctx, hospitalID, model.CurrentMetricYear(), mets); err != nil {
 		return err
 	}
-	if err := md.SyncAssaysFromArchive(ctx, hospitalID, archive); err != nil {
-		return err
+	// Excel columns "迈瑞开展项目" / "主导新增项目" are free text.
+	// Map exact leaf names → codes; unknown names skipped (no inventing flat rows).
+	importNames := model.ToStringSlice(archive["_importAssayNames"])
+	importNames = append(importNames, model.ToStringSlice(archive["mindrayProjects"])...)
+	importNames = append(importNames, model.ToStringSlice(archive["newProjects"])...)
+	if len(importNames) > 0 {
+		codes, err := md.ResolveAssayItemCodesByNames(ctx, importNames)
+		if err != nil {
+			return err
+		}
+		if err := md.ReplaceHospitalAssaysByCodes(ctx, hospitalID, codes, "own"); err != nil {
+			return err
+		}
 	}
+
 	if s := str(archive["reagentSupplier"]); s != "" {
 		_ = md.UpsertSupply(ctx, hospitalID, s, "reagent_vendor", "", "", "")
 	}

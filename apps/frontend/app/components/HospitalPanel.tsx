@@ -111,8 +111,12 @@ export function HospitalPanel({
     setDetailOpen(true);
   };
 
-  const cellValue = (h: Hospital, key: ArchiveFieldKey) => {
-    const raw = resolveArchiveField(h, key);
+  const cellValue = (h: Hospital, key: ArchiveFieldKey | "customerLevel" | "assays") => {
+    if (key === "assays") {
+      const names = h.assayNames || [];
+      return names.length ? names.join("、") : "—";
+    }
+    const raw = resolveArchiveField(h, key as ArchiveFieldKey);
     if (key === "matchingRate") return formatMatchingRate(raw);
     return displayValue(raw);
   };
@@ -193,7 +197,7 @@ export function HospitalPanel({
               const name = cellValue(hospital, "customerName");
               const level = cellValue(hospital, "customerLevel");
               const reagent = cellValue(hospital, "mindrayReagentCount");
-              const projects = cellValue(hospital, "mindrayProjects");
+              const projects = cellValue(hospital, "assays");
               const active = selectedId === hospital.id && detailOpen;
               return (
                 <li key={hospital.id}>
@@ -297,7 +301,7 @@ export function HospitalPanel({
                           className={cn(
                             "max-w-[160px] truncate px-3 py-3 text-sm",
                             key === "customerName" && "font-medium",
-                            key === "mindrayProjects" && "max-w-[220px]",
+                            key === "assays" && "max-w-[220px]",
                             (key === "mindrayReagentCount" ||
                               key === "matchingRate" ||
                               key === "mindraySampleVolume" ||

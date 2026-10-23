@@ -263,15 +263,50 @@ func (m *masterDataModel) GetAssayProjectByCode(ctx context.Context, code string
 	return &p, nil
 }
 
+
+func (m *masterDataModel) validateAssayTreeInput(ctx context.Context, in AssayProjectInput) (kind string, parent string, err error) {
+	kind = strings.TrimSpace(in.Kind)
+	if kind == "" {
+		kind = "item"
+	}
+	parent = strings.TrimSpace(in.ParentCode)
+	switch kind {
+	case "line":
+		if parent != "" {
+			return "", "", fmt.Errorf("line must not have a parent")
+		}
+	case "category", "item":
+		if parent == "" {
+			return "", "", fmt.Errorf("%s requires parentCode", kind)
+		}
+		p, e := m.GetAssayProjectByCode(ctx, parent)
+		if e != nil {
+			return "", "", e
+		}
+		if p == nil {
+			return "", "", fmt.Errorf("parent not found: %s", parent)
+		}
+		if kind == "category" && p.Kind != "line" {
+			return "", "", fmt.Errorf("category parent must be a line")
+		}
+		if kind == "item" && p.Kind != "category" {
+			return "", "", fmt.Errorf("item parent must be a category")
+		}
+	default:
+		return "", "", fmt.Errorf("invalid kind %q (want line|category|item)", kind)
+	}
+	return kind, parent, nil
+}
+
 func (m *masterDataModel) CreateAssayProject(ctx context.Context, in AssayProjectInput) (*AssayProject, error) {
 	name := strings.TrimSpace(in.Name)
 	code := strings.TrimSpace(in.Code)
 	if name == "" || code == "" {
 		return nil, fmt.Errorf("code and name required")
 	}
-	kind := strings.TrimSpace(in.Kind)
-	if kind == "" {
-		kind = "item"
+	kind, parent, err := m.validateAssayTreeInput(ctx, in)
+	if err != nil {
+		return nil, err
 	}
 	company := strings.TrimSpace(in.Company)
 	status := strings.TrimSpace(in.Status)
@@ -280,13 +315,12 @@ func (m *masterDataModel) CreateAssayProject(ctx context.Context, in AssayProjec
 	}
 	aliases := normalizeAliases(in.Aliases)
 	own := IsOwnCompany(company)
-	parent := strings.TrimSpace(in.ParentCode)
 	var parentAny any
 	if parent != "" {
 		parentAny = parent
 	}
 	var id int64
-	err := m.conn.QueryRow(ctx, `
+	err = m.conn.QueryRow(ctx, `
 		INSERT INTO assay_projects (code, name, parent_code, kind, sort_order, line_category, company, aliases, is_own_menu, status, updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
 		RETURNING id`,
@@ -304,9 +338,9 @@ func (m *masterDataModel) UpdateAssayProject(ctx context.Context, id int64, in A
 	if id <= 0 || name == "" || code == "" {
 		return nil, fmt.Errorf("invalid input")
 	}
-	kind := strings.TrimSpace(in.Kind)
-	if kind == "" {
-		kind = "item"
+	kind, parent, err := m.validateAssayTreeInput(ctx, in)
+	if err != nil {
+		return nil, err
 	}
 	company := strings.TrimSpace(in.Company)
 	status := strings.TrimSpace(in.Status)
@@ -315,7 +349,6 @@ func (m *masterDataModel) UpdateAssayProject(ctx context.Context, id int64, in A
 	}
 	aliases := normalizeAliases(in.Aliases)
 	own := IsOwnCompany(company)
-	parent := strings.TrimSpace(in.ParentCode)
 	var parentAny any
 	if parent != "" {
 		parentAny = parent
@@ -452,6 +485,71 @@ func (m *masterDataModel) ReplaceHospitalAssaysByCodes(ctx context.Context, hosp
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+
+// ListAssayNamesByHospitalIDs returns display names of leaf assays per hospital (own + any source).
+func (m *masterDataModel) ListAssayNamesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64][]string, error) {
+	out := map[int64][]string{}
+	if len(hospitalIDs) == 0 {
+		return out, nil
+	}
+	rows, err := m.conn.Query(ctx, `
+		SELECT ha.hospital_id, ap.name
+		FROM hospital_assays ha
+		JOIN assay_projects ap ON ap.id = ha.assay_project_id
+		WHERE ha.hospital_id = ANY($1) AND ap.kind = 'item' AND ap.status = 'active'
+		ORDER BY ha.hospital_id, ap.sort_order, ap.name`, hospitalIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := map[int64]map[string]struct{}{}
+	for rows.Next() {
+		var hid int64
+		var name string
+		if err := rows.Scan(&hid, &name); err != nil {
+			return nil, err
+		}
+		if seen[hid] == nil {
+			seen[hid] = map[string]struct{}{}
+		}
+		if _, ok := seen[hid][name]; ok {
+			continue
+		}
+		seen[hid][name] = struct{}{}
+		out[hid] = append(out[hid], name)
+	}
+	return out, rows.Err()
+}
+
+// ResolveAssayItemCodesByNames maps exact leaf names to codes; unknown names are skipped.
+func (m *masterDataModel) ResolveAssayItemCodesByNames(ctx context.Context, names []string) ([]string, error) {
+	codes := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		var code string
+		err := m.conn.QueryRow(ctx, `
+			SELECT code FROM assay_projects
+			WHERE kind = 'item' AND status = 'active' AND name = $1
+			ORDER BY id ASC LIMIT 1`, n).Scan(&code)
+		if err == pgx.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		codes = append(codes, code)
+	}
+	return codes, nil
 }
 
 func normalizeAliases(in []string) []string {

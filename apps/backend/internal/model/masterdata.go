@@ -22,6 +22,8 @@ type MasterDataModel interface {
 	SyncAssaysFromArchive(ctx context.Context, hospitalID int64, archive map[string]any) error
 	ReplaceHospitalAssaysByCodes(ctx context.Context, hospitalID int64, codes []string, source string) error
 	ListHospitalAssayCodes(ctx context.Context, hospitalID int64) ([]string, error)
+	ListAssayNamesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64][]string, error)
+	ResolveAssayItemCodesByNames(ctx context.Context, names []string) ([]string, error)
 	ListAssayTree(ctx context.Context) ([]AssayTreeNode, error)
 	GetAssayProjectByCode(ctx context.Context, code string) (*AssayProject, error)
 
@@ -200,47 +202,12 @@ func (m *masterDataModel) ReplaceOwnAssays(ctx context.Context, hospitalID int64
 	return nil
 }
 
+// SyncAssaysFromArchive is a no-op after hierarchical migration 020.
+// Hospital assays are owned exclusively by assay_block / ReplaceHospitalAssaysByCodes.
 func (m *masterDataModel) SyncAssaysFromArchive(ctx context.Context, hospitalID int64, archive map[string]any) error {
-	if hospitalID <= 0 || archive == nil {
-		return nil
-	}
-	// Hierarchical catalog: do not wipe offerings when archive has no legacy project lists
-	// (assay_block writeback owns hospital_assays for own items).
-	hasLegacy := len(ToStringSlice(archive["mindrayProjects"])) > 0 ||
-		len(ToStringSlice(archive["newProjects"])) > 0 ||
-		len(ToStringSlice(archive["missingProjects"])) > 0 ||
-		len(ToCompetitorList(archive["competitorProjectDistribution"])) > 0
-	if !hasLegacy {
-		return nil
-	}
-	_, err := m.conn.Exec(ctx, `DELETE FROM hospital_assays WHERE hospital_id=$1`, hospitalID)
-	if err != nil {
-		return err
-	}
-	for _, n := range ToStringSlice(archive["mindrayProjects"]) {
-		if err := m.UpsertAssayRow(ctx, hospitalID, n, "own", "", "", nil); err != nil {
-			return err
-		}
-	}
-	for _, n := range ToStringSlice(archive["newProjects"]) {
-		if err := m.UpsertAssayRow(ctx, hospitalID, n, "own", "", "", []string{"new"}); err != nil {
-			return err
-		}
-	}
-	for _, n := range ToStringSlice(archive["missingProjects"]) {
-		if err := m.UpsertAssayRow(ctx, hospitalID, n, "missing", "", "", nil); err != nil {
-			return err
-		}
-	}
-	for _, item := range ToCompetitorList(archive["competitorProjectDistribution"]) {
-		brand, _ := item["brand"].(string)
-		instrument, _ := item["instrument"].(string)
-		for _, n := range ToStringSlice(item["projects"]) {
-			if err := m.UpsertAssayRow(ctx, hospitalID, n, "competitor", brand, instrument, nil); err != nil {
-				return err
-			}
-		}
-	}
+	_ = ctx
+	_ = hospitalID
+	_ = archive
 	return nil
 }
 

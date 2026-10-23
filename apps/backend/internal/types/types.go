@@ -83,6 +83,7 @@ type (
 		Metrics      map[string]string `json:"metrics,omitempty"`
 		DeviceCount  int               `json:"deviceCount"`
 		DeviceModels []string          `json:"deviceModels"`
+		AssayNames   []string          `json:"assayNames,omitempty"`
 		CreatedAt    string            `json:"createdAt,omitempty"`
 	}
 	HospitalUpsertRequest struct {
@@ -452,6 +453,7 @@ type (
 	}
 	HospitalAssaysResponse struct {
 		Codes []string `json:"codes"`
+		Names []string `json:"names,omitempty"`
 	}
 	ReplaceHospitalAssaysRequest struct {
 		Codes  []string `json:"codes"`
