@@ -10,10 +10,12 @@ import {
   listAssayProjectOptions,
   saveSurveyDraft,
   submitSurveyAssignment,
+  type HospitalSearchOption,
   type SurveyAssignment,
   type SurveyField,
 } from "@/lib/business";
 import { AssayMultiSelect } from "@/components/assay-multi-select";
+import { HospitalNameTypeahead } from "@/components/hospital-name-typeahead";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +35,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const LEVEL_OPTIONS = ["三级甲等", "三级乙等", "二级甲等", "二级乙等", "一级"];
+const HOSPITAL_LEVEL_OPTIONS = [
+  "三级甲等",
+  "三级乙等",
+  "二级甲等",
+  "二级乙等",
+  "一级",
+];
+const CUSTOMER_LEVEL_OPTIONS = [
+  "战略客户",
+  "重点客户",
+  "普通客户",
+  "潜在客户",
+  "SVIP",
+  "VIP",
+  "非V客户",
+  "V客户",
+];
 const TYPE_OPTIONS = ["综合医院", "专科医院", "中医医院", "妇幼保健院"];
 
 function usesAssayDictionary(field: SurveyField): boolean {
@@ -46,6 +64,51 @@ function usesAssayDictionary(field: SurveyField): boolean {
     return true;
   }
   return field.key === "mindrayProjects" || field.key === "newProjects";
+}
+
+function isHospitalNameField(field: SurveyField): boolean {
+  if (field.optionsSource === "hospitals") return true;
+  const t = (field.target || "").trim();
+  if (t === "hospital.name" || t === "hospital.archive.customerName") return true;
+  const key = (field.key || "").toLowerCase();
+  if (key === "name" || key === "hospitalname" || key === "customername") return true;
+  const label = field.label || "";
+  return label.includes("客户名称") || label.includes("医院名称");
+}
+
+function customerLevelPresets(field: SurveyField): string[] | null {
+  if (Array.isArray(field.options) && field.options.length) return field.options;
+  const t = (field.target || "").trim();
+  const key = field.key || "";
+  const label = field.label || "";
+  if (
+    key === "customerLevel" ||
+    t.includes("customerLevel") ||
+    t.includes("customer.level") ||
+    label.includes("客户等级") ||
+    label.includes("客户级别")
+  ) {
+    return CUSTOMER_LEVEL_OPTIONS;
+  }
+  if (key === "level" || t === "hospital.level") {
+    // 模板里「客户等级」常误绑 hospital.level；按文案优先客户等级预设
+    if (label.includes("客户")) return CUSTOMER_LEVEL_OPTIONS;
+    return HOSPITAL_LEVEL_OPTIONS;
+  }
+  return null;
+}
+
+function isHospitalTypeField(field: SurveyField): boolean {
+  const t = (field.target || "").trim();
+  return field.key === "type" || t === "hospital.type" || (field.label || "").includes("医院类型");
+}
+
+function asStringArray(value: any): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  return String(value || "")
+    .split(/[/、,，;；|+]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function groupBySection(fields: SurveyField[]) {
@@ -81,6 +144,9 @@ export default function SurveyTaskFillPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [linkedHospitalId, setLinkedHospitalId] = useState<number | undefined>(
+    undefined,
+  );
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -101,6 +167,11 @@ export default function SurveyTaskFillPage() {
       );
       if (hasDevicesRepeat && !Array.isArray(next.devices)) next.devices = [];
       setAnswers(next);
+      setLinkedHospitalId(
+        res.assignment.hospitalId
+          ? Number(res.assignment.hospitalId)
+          : undefined,
+      );
 
       const needAssay = (res.assignment.schema?.fields || []).some((f) =>
         usesAssayDictionary(f),
@@ -183,9 +254,9 @@ export default function SurveyTaskFillPage() {
     setMessage(null);
     const res = await saveSurveyDraft(id, {
       answers,
-      hospitalId: assignment?.hospitalId
-        ? Number(assignment.hospitalId)
-        : undefined,
+      hospitalId:
+        linkedHospitalId ??
+        (assignment?.hospitalId ? Number(assignment.hospitalId) : undefined),
     });
     setSaving(false);
     if (res.error) setError(res.error);
@@ -201,9 +272,9 @@ export default function SurveyTaskFillPage() {
     setMessage(null);
     const res = await submitSurveyAssignment(id, {
       answers,
-      hospitalId: assignment?.hospitalId
-        ? Number(assignment.hospitalId)
-        : undefined,
+      hospitalId:
+        linkedHospitalId ??
+        (assignment?.hospitalId ? Number(assignment.hospitalId) : undefined),
     });
     setSaving(false);
     if (res.error) setError(res.error);
@@ -213,23 +284,103 @@ export default function SurveyTaskFillPage() {
     }
   };
 
+  const applyHospitalPick = (hospital: HospitalSearchOption) => {
+    setLinkedHospitalId(Number(hospital.id));
+    setAnswers((prev) => {
+      const next = { ...prev };
+      const fields = assignment?.schema?.fields || [];
+      const fillIfPresent = (keys: string[], value?: string) => {
+        if (!value) return;
+        for (const f of fields) {
+          if (f.type === "repeat") continue;
+          if (keys.includes(f.key) || keys.includes(f.target || "")) {
+            if (!next[f.key]) next[f.key] = value;
+          }
+        }
+      };
+      fillIfPresent(
+        ["province", "hospital.province"],
+        hospital.province,
+      );
+      fillIfPresent(["city", "hospital.city"], hospital.city);
+      fillIfPresent(
+        ["district", "hospital.district"],
+        hospital.district,
+      );
+      // 仅当表单里有医院等级（非客户等级文案）时回填 level
+      for (const f of fields) {
+        if (f.type === "repeat") continue;
+        if (
+          (f.key === "level" || f.target === "hospital.level") &&
+          !(f.label || "").includes("客户") &&
+          hospital.level &&
+          !next[f.key]
+        ) {
+          next[f.key] = hospital.level;
+        }
+        if (
+          (f.key === "type" || f.target === "hospital.type") &&
+          hospital.type &&
+          !next[f.key]
+        ) {
+          next[f.key] = hospital.type;
+        }
+      }
+      return next;
+    });
+  };
+
   const renderScalar = (
     field: SurveyField,
     value: any,
     onChange: (v: any) => void,
     disabled: boolean,
   ) => {
+    // 多选复选框：string_array / multi_enum + options
+    if (
+      (field.type === "string_array" ||
+        field.type === "multi_enum" ||
+        field.type === "multi_select") &&
+      Array.isArray(field.options) &&
+      field.options.length > 0 &&
+      !usesAssayDictionary(field)
+    ) {
+      const selected = new Set(asStringArray(value));
+      return (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {field.options.map((opt) => {
+            const checked = selected.has(opt);
+            return (
+              <label
+                key={opt}
+                className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  className="size-4 rounded border"
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    const next = new Set(selected);
+                    if (e.target.checked) next.add(opt);
+                    else next.delete(opt);
+                    onChange(Array.from(next));
+                  }}
+                />
+                <span>{opt}</span>
+              </label>
+            );
+          })}
+        </div>
+      );
+    }
+
     if (
       field.type === "string_array" ||
       field.key === "mindrayProjects" ||
       field.key === "newProjects"
     ) {
-      const arr = Array.isArray(value)
-        ? value.map(String).filter(Boolean)
-        : String(value || "")
-            .split(/[/、,，;；|+]+/)
-            .map((s) => s.trim())
-            .filter(Boolean);
+      const arr = asStringArray(value);
       return (
         <AssayMultiSelect
           value={arr}
@@ -281,11 +432,25 @@ export default function SurveyTaskFillPage() {
           type="number"
           value={value == null ? "" : String(value)}
           disabled={disabled}
-          onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
+          onChange={(e) =>
+            onChange(e.target.value === "" ? "" : Number(e.target.value))
+          }
         />
       );
     }
-    if (field.key === "level") {
+    if (isHospitalNameField(field)) {
+      return (
+        <HospitalNameTypeahead
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
+          placeholder="输入并选择医院"
+          onChange={onChange}
+          onSelectHospital={applyHospitalPick}
+        />
+      );
+    }
+    const levelPresets = customerLevelPresets(field);
+    if (levelPresets) {
       return (
         <Select
           value={String(value || "")}
@@ -296,7 +461,7 @@ export default function SurveyTaskFillPage() {
             <SelectValue placeholder="选择等级" />
           </SelectTrigger>
           <SelectContent>
-            {LEVEL_OPTIONS.map((o) => (
+            {levelPresets.map((o) => (
               <SelectItem key={o} value={o}>
                 {o}
               </SelectItem>
@@ -305,7 +470,7 @@ export default function SurveyTaskFillPage() {
         </Select>
       );
     }
-    if (field.key === "type") {
+    if (isHospitalTypeField(field)) {
       return (
         <Select
           value={String(value || "")}
@@ -388,34 +553,99 @@ export default function SurveyTaskFillPage() {
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {message ? <p className="text-sm text-green-700">{message}</p> : null}
 
-          {sections.map(([section, fields]) => (
-            <div key={section} className="space-y-4 rounded-lg border p-4 sm:p-5">
-              <h3 className="text-sm font-semibold">{section}</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                {fields.map((field) => (
-                  <div key={field.key} className="space-y-2">
-                    <Label>
-                      {field.label}
-                      {field.required ? (
-                        <span className="text-destructive"> *</span>
-                      ) : null}
-                      {lockedSet.has(field.key) ? (
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">
-                          （已锁定）
-                        </span>
-                      ) : null}
-                    </Label>
-                    {renderScalar(
-                      field,
-                      answers[field.key],
-                      (v) => setField(field.key, v),
-                      readOnly || lockedSet.has(field.key),
-                    )}
+          {sections.map(([section, fields]) => {
+            const mostlyBoolean =
+              fields.length > 0 &&
+              fields.filter((f) => f.type === "boolean").length >=
+                Math.ceil(fields.length * 0.6);
+            return (
+              <div key={section} className="space-y-4 rounded-lg border p-4 sm:p-5">
+                <h3 className="text-sm font-semibold">{section}</h3>
+                {mostlyBoolean ? (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {fields.map((field) => (
+                      <label
+                        key={field.key}
+                        className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm"
+                      >
+                        {field.type === "boolean" ? (
+                          <>
+                            <input
+                              type="checkbox"
+                              className="size-4 rounded border"
+                              checked={!!answers[field.key]}
+                              disabled={
+                                readOnly || lockedSet.has(field.key)
+                              }
+                              onChange={(e) =>
+                                setField(field.key, e.target.checked)
+                              }
+                            />
+                            <span>
+                              {field.label}
+                              {field.required ? (
+                                <span className="text-destructive"> *</span>
+                              ) : null}
+                            </span>
+                          </>
+                        ) : (
+                          <div className="w-full space-y-2">
+                            <Label>
+                              {field.label}
+                              {field.required ? (
+                                <span className="text-destructive"> *</span>
+                              ) : null}
+                            </Label>
+                            {renderScalar(
+                              field,
+                              answers[field.key],
+                              (v) => setField(field.key, v),
+                              readOnly || lockedSet.has(field.key),
+                            )}
+                          </div>
+                        )}
+                      </label>
+                    ))}
                   </div>
-                ))}
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {fields.map((field) => (
+                      <div
+                        key={field.key}
+                        className={
+                          (field.type === "string_array" ||
+                            field.type === "multi_enum" ||
+                            field.type === "multi_select") &&
+                          Array.isArray(field.options) &&
+                          field.options.length > 0
+                            ? "space-y-2 md:col-span-2"
+                            : "space-y-2"
+                        }
+                      >
+                        <Label>
+                          {field.label}
+                          {field.required ? (
+                            <span className="text-destructive"> *</span>
+                          ) : null}
+                          {lockedSet.has(field.key) ? (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                              （已锁定）
+                            </span>
+                          ) : null}
+                        </Label>
+                        {renderScalar(
+                          field,
+                          answers[field.key],
+                          (v) => setField(field.key, v),
+                          readOnly || lockedSet.has(field.key),
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {devicesField ? (
             <div className="space-y-4 rounded-lg border p-4 sm:p-5">

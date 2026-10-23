@@ -69,8 +69,8 @@ import {
   PageToolbar,
 } from "@/components/mobile-data-list";
 
-/** 关联实体：不映射 / 医院写回 / 检测项目字典（写回医院开展项目） */
-type MapEntity = "none" | "hospital" | "assay";
+/** 关联实体：必须映射医院写回或检测项目字典 */
+type MapEntity = "hospital" | "assay";
 
 const ASSAY_WRITE_OPTIONS = [
   {
@@ -107,8 +107,8 @@ const emptyFieldDraft = (section: string): FieldDraft => ({
   section,
   required: false,
   type: "text",
-  mapEntity: "none",
-  attribute: "",
+  mapEntity: "hospital",
+  attribute: "name",
   newArchiveKey: "",
   defaultValue: "",
   locked: false,
@@ -207,14 +207,15 @@ function draftFromField(field: SurveyField): FieldDraft {
   }
 
   if (!target) {
-    base.mapEntity = "none";
+    // 历史未映射字段：打开编辑时强制改为医院.name，保存前必须选好映射
+    base.mapEntity = "hospital";
+    base.attribute = "name";
     return base;
   }
   if (target.startsWith("hospital.archive.")) {
     const key = target.slice("hospital.archive.".length).trim();
     base.mapEntity = "hospital";
-    base.attribute = key ? `archive.${key}` : NEW_ARCHIVE_ATTR;
-    if (!key) base.newArchiveKey = "";
+    base.attribute = key ? `archive.${key}` : "name";
     return base;
   }
   if (target.startsWith("hospital.attributes.")) {
@@ -238,12 +239,12 @@ function draftFromField(field: SurveyField): FieldDraft {
     base.attribute = target.slice("hospital.".length);
     return base;
   }
-  base.mapEntity = "none";
+  base.mapEntity = "hospital";
+  base.attribute = "name";
   return base;
 }
 
 function resolveTarget(draft: FieldDraft): string | undefined {
-  if (draft.mapEntity === "none") return undefined;
   if (draft.mapEntity === "assay") {
     const opt = ASSAY_WRITE_OPTIONS.find((o) => o.value === draft.attribute);
     return opt?.target || ASSAY_WRITE_OPTIONS[0].target;
@@ -468,26 +469,21 @@ export default function SurveyTemplatesPage() {
       return;
     }
     const section = fieldDraft.section.trim() || "未分组";
-    const target = resolveTarget(fieldDraft);
-    if (fieldDraft.mapEntity === "hospital") {
-      if (!fieldDraft.attribute) {
-        setError("请选择实体属性");
-        return;
-      }
-      if (fieldDraft.attribute === NEW_ARCHIVE_ATTR) {
-        const archiveKey = fieldDraft.newArchiveKey.trim();
-        if (!archiveKey) {
-          setError("请填写新的档案字段名");
-          return;
-        }
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(archiveKey)) {
-          setError("档案字段名仅允许字母、数字、下划线，且不能以数字开头");
-          return;
-        }
-      }
+    if (fieldDraft.attribute === NEW_ARCHIVE_ATTR) {
+      setError("不允许新建系统外字段，请从已有数据库字段中选择");
+      return;
+    }
+    if (fieldDraft.mapEntity === "hospital" && !fieldDraft.attribute) {
+      setError("请选择要绑定的数据库字段");
+      return;
     }
     if (fieldDraft.mapEntity === "assay" && !fieldDraft.attribute) {
       setError("请选择写入的项目字段");
+      return;
+    }
+    const target = resolveTarget(fieldDraft);
+    if (!target) {
+      setError("每个采集字段必须绑定到系统已有的数据库字段");
       return;
     }
 
@@ -502,7 +498,7 @@ export default function SurveyTemplatesPage() {
       section,
       required: fieldDraft.required,
       type: fieldType,
-      ...(target ? { target } : {}),
+      target,
       ...(fieldDraft.mapEntity === "assay"
         ? { optionsSource: "assay_projects" as const }
         : {}),
@@ -1003,13 +999,15 @@ export default function SurveyTemplatesPage() {
                     <SelectItem value="text">文本</SelectItem>
                     <SelectItem value="number">数字</SelectItem>
                     <SelectItem value="date">日期</SelectItem>
-                    <SelectItem value="string_array">数组</SelectItem>
+                    <SelectItem value="boolean">是/否</SelectItem>
+                    <SelectItem value="enum">单选</SelectItem>
+                    <SelectItem value="string_array">多选数组</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-2">
-              <Label>关联数据</Label>
+              <Label>绑定数据库字段</Label>
               <Select
                 value={fieldDraft.mapEntity}
                 onValueChange={(v) =>
@@ -1020,22 +1018,19 @@ export default function SurveyTemplatesPage() {
                         ...d,
                         mapEntity: "assay",
                         type: "string_array",
-                        attribute: d.attribute === "newProjects" ? "newProjects" : "mindrayProjects",
+                        attribute:
+                          d.attribute === "newProjects"
+                            ? "newProjects"
+                            : "mindrayProjects",
                         newArchiveKey: "",
-                      };
-                    }
-                    if (entity === "hospital") {
-                      return {
-                        ...d,
-                        mapEntity: "hospital",
-                        attribute: d.attribute || "name",
-                        newArchiveKey: d.newArchiveKey,
                       };
                     }
                     return {
                       ...d,
-                      mapEntity: "none",
-                      attribute: "",
+                      mapEntity: "hospital",
+                      attribute: d.attribute && d.attribute !== NEW_ARCHIVE_ATTR
+                        ? d.attribute
+                        : "name",
                       newArchiveKey: "",
                     };
                   })
@@ -1045,11 +1040,13 @@ export default function SurveyTemplatesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">不映射</SelectItem>
-                  <SelectItem value="hospital">医院</SelectItem>
+                  <SelectItem value="hospital">医院（必选映射）</SelectItem>
                   <SelectItem value="assay">检测项目</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                模板字段必须绑定系统已有数据库字段，不允许不映射或新建系统外字段。
+              </p>
             </div>
             {fieldDraft.mapEntity === "assay" ? (
               <div className="space-y-2">
@@ -1144,9 +1141,6 @@ export default function SurveyTemplatesPage() {
                             {opt.value.replace(/^archive\./, "")}
                           </SelectItem>
                         ))}
-                      <SelectItem value={NEW_ARCHIVE_ATTR}>
-                        新建档案字段…
-                      </SelectItem>
                     </SelectGroup>
                     {fieldDraft.attribute &&
                     fieldDraft.attribute !== NEW_ARCHIVE_ATTR &&
@@ -1162,19 +1156,6 @@ export default function SurveyTemplatesPage() {
                     ) : null}
                   </SelectContent>
                 </Select>
-                {fieldDraft.attribute === NEW_ARCHIVE_ATTR ? (
-                  <Input
-                    className="font-mono"
-                    value={fieldDraft.newArchiveKey}
-                    onChange={(e) =>
-                      setFieldDraft((d) => ({
-                        ...d,
-                        newArchiveKey: e.target.value.trim(),
-                      }))
-                    }
-                    placeholder="字段名"
-                  />
-                ) : null}
                 {resolveTarget(fieldDraft) ? (
                   <p className="font-mono text-xs text-muted-foreground">
                     → {resolveTarget(fieldDraft)}

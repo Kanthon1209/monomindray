@@ -31,6 +31,9 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 			// Active assay dictionary for survey fill (collectors + admins)
 			{Method: http.MethodGet, Path: "/api/v1/assay-projects/options", Handler: ListAssayProjectOptionsHandler(svcCtx)},
 
+			// Hospital name typeahead for survey fill (collectors + admins)
+			{Method: http.MethodGet, Path: "/api/v1/hospitals/search", Handler: SearchHospitalsHandler(svcCtx)},
+
 			{Method: http.MethodGet, Path: "/api/v1/eqa/fields", Handler: ListEqaFieldsHandler(svcCtx)},
 			{Method: http.MethodGet, Path: "/api/v1/eqa/participations", Handler: ListEqaParticipationsHandler(svcCtx)},
 			{Method: http.MethodGet, Path: "/api/v1/eqa/participations/:id", Handler: GetEqaParticipationHandler(svcCtx)},

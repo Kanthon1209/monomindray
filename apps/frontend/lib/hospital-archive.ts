@@ -318,7 +318,8 @@ export function listHospitalAttributeOptions(
       target: `hospital.archive.${opt.key}`,
     }),
   );
-  return [...cols, ...attrs, ...mets, ...archives, { value: "__new_archive__" }];
+  // 仅返回系统已登记的字段；不允许在模板里随意新建未映射档案键
+  return [...cols, ...attrs, ...mets, ...archives];
 }
 
 export function splitProjectNames(raw: string): string[] {

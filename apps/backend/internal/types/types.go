@@ -120,6 +120,23 @@ type (
 		Total int64          `json:"total"`
 		Items []HospitalInfo `json:"items"`
 	}
+	// Lightweight hospital lookup for survey fill (collectors + admins).
+	SearchHospitalsRequest struct {
+		Keyword string `form:"keyword,optional"`
+		Limit   int    `form:"limit,optional"`
+	}
+	HospitalSearchOption struct {
+		Id       int64  `json:"id"`
+		Name     string `json:"name"`
+		Province string `json:"province,omitempty"`
+		City     string `json:"city,omitempty"`
+		District string `json:"district,omitempty"`
+		Level    string `json:"level,omitempty"`
+		Type     string `json:"type,omitempty"`
+	}
+	SearchHospitalsResponse struct {
+		Items []HospitalSearchOption `json:"items"`
+	}
 	HospitalResponse struct {
 		Hospital HospitalInfo `json:"hospital"`
 	}

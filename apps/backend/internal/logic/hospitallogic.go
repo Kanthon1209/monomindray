@@ -49,6 +49,35 @@ func (l *HospitalLogic) List(req *types.ListHospitalsRequest) (*types.ListHospit
 	return &types.ListHospitalsResponse{Total: total, Items: out}, nil
 }
 
+func (l *HospitalLogic) Search(req *types.SearchHospitalsRequest) (*types.SearchHospitalsResponse, error) {
+	// Any logged-in caller may search hospitals for survey fill typeahead.
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	items, _, err := l.svcCtx.HospitalModel.List(l.ctx, model.HospitalFilter{
+		Keyword: strings.TrimSpace(req.Keyword),
+		Limit:   limit,
+		Offset:  0,
+	})
+	if err != nil {
+		l.Errorf("search hospitals: %v", err)
+		return nil, ErrInternal
+	}
+	out := make([]types.HospitalSearchOption, 0, len(items))
+	for i := range items {
+		h := &items[i]
+		out = append(out, types.HospitalSearchOption{
+			Id: h.Id, Name: h.Name, Province: h.Province, City: h.City,
+			District: h.District, Level: h.Level, Type: h.Type,
+		})
+	}
+	return &types.SearchHospitalsResponse{Items: out}, nil
+}
+
 func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*types.ListHospitalsResponse, error) {
 	if err := requireAdminCtx(l.ctx); err != nil {
 		return nil, err

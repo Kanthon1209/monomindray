@@ -357,7 +357,7 @@ export interface SurveyField {
   type?: string;
   target?: string;
   /** 填写时下拉/联想数据源；未设置则纯手工录入 */
-  optionsSource?: "assay_projects";
+  optionsSource?: "assay_projects" | "hospitals";
   default?: string;
   locked?: boolean;
   options?: string[];
@@ -830,3 +830,33 @@ export async function listAssayProjectOptions() {
   };
 }
 
+export type HospitalSearchOption = {
+  id: string;
+  name: string;
+  province?: string;
+  city?: string;
+  district?: string;
+  level?: string;
+  type?: string;
+};
+
+/** Collector-safe hospital name typeahead (JWT shared route). */
+export async function searchHospitalsForSurvey(keyword: string, limit = 20) {
+  const { data, error } = await apiFetch<{ items: any[] }>(
+    `/hospitals/search${qs({ keyword: keyword.trim() || undefined, limit })}`,
+  );
+  if (error) {
+    return { error, items: [] as HospitalSearchOption[] };
+  }
+  return {
+    items: (data?.items || []).map((raw) => ({
+      id: String(raw.id),
+      name: String(raw.name || ""),
+      province: raw.province || undefined,
+      city: raw.city || undefined,
+      district: raw.district || undefined,
+      level: raw.level || undefined,
+      type: raw.type || undefined,
+    })),
+  };
+}

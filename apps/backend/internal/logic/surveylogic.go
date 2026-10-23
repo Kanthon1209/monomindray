@@ -95,6 +95,9 @@ func (l *SurveyLogic) CreateTemplate(req *types.CreateSurveyTemplateRequest) (*t
 	if len(schemaBytes) == 0 {
 		schemaBytes = []byte(`{"fields":[],"sections":["未分组"]}`)
 	}
+	if err := validateSurveySchemaFields(schemaBytes); err != nil {
+		return nil, err
+	}
 
 	status := strings.TrimSpace(req.Status)
 	if status == "" {
@@ -143,31 +146,8 @@ func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRe
 	if err != nil {
 		return nil, NewCodeError(400, "schema 不是合法 JSON")
 	}
-	var parsed struct {
-		Fields []struct {
-			Key   string `json:"key"`
-			Label string `json:"label"`
-			Type  string `json:"type"`
-		} `json:"fields"`
-	}
-	if err := json.Unmarshal(schemaBytes, &parsed); err != nil {
-		return nil, NewCodeError(400, "schema 解析失败")
-	}
-	seen := map[string]struct{}{}
-	for _, f := range parsed.Fields {
-		key := strings.TrimSpace(f.Key)
-		label := strings.TrimSpace(f.Label)
-		if key == "" || label == "" {
-			return nil, NewCodeError(400, "每个字段都需要 key 与 label")
-		}
-		if _, ok := seen[key]; ok {
-			return nil, NewCodeError(400, "字段 key 重复："+key)
-		}
-		seen[key] = struct{}{}
-		if key == "devices" && !strings.EqualFold(strings.TrimSpace(f.Type), "repeat") &&
-			!strings.EqualFold(strings.TrimSpace(f.Type), "string_array") {
-			return nil, NewCodeError(400, "字段 key「devices」仅可用于「可重复组(repeat)」或「多选数组(string_array)」")
-		}
+	if err := validateSurveySchemaFields(schemaBytes); err != nil {
+		return nil, err
 	}
 
 	status := strings.TrimSpace(req.Status)
@@ -1038,6 +1018,80 @@ func normalizeAnswers(in map[string]any) map[string]any {
 		}
 	}
 	return out
+}
+
+
+// validateSurveySchemaFields requires every collectable field to map to a known DB target
+// (hospital.* or eqa.*). Unmapped / free-form fields are rejected.
+func validateSurveySchemaFields(schemaBytes []byte) error {
+	if len(schemaBytes) == 0 {
+		return nil
+	}
+	var parsed struct {
+		Fields []struct {
+			Key    string `json:"key"`
+			Label  string `json:"label"`
+			Type   string `json:"type"`
+			Target string `json:"target"`
+			Fields []struct {
+				Key    string `json:"key"`
+				Label  string `json:"label"`
+				Type   string `json:"type"`
+				Target string `json:"target"`
+			} `json:"fields"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(schemaBytes, &parsed); err != nil {
+		return NewCodeError(400, "schema 解析失败")
+	}
+	seen := map[string]struct{}{}
+	check := func(key, label, typ, target string) error {
+		key = strings.TrimSpace(key)
+		label = strings.TrimSpace(label)
+		if key == "" || label == "" {
+			return NewCodeError(400, "每个字段都需要 key 与 label")
+		}
+		if _, ok := seen[key]; ok {
+			return NewCodeError(400, "字段 key 重复："+key)
+		}
+		seen[key] = struct{}{}
+		if key == "devices" && !strings.EqualFold(strings.TrimSpace(typ), "repeat") &&
+			!strings.EqualFold(strings.TrimSpace(typ), "string_array") {
+			return NewCodeError(400, "字段 key「devices」仅可用于「可重复组(repeat)」或「多选数组(string_array)」")
+		}
+		if strings.EqualFold(strings.TrimSpace(typ), "repeat") {
+			return nil
+		}
+		target = strings.TrimSpace(target)
+		if !isValidSurveyFieldTarget(target) {
+			return NewCodeError(400, "字段「"+label+"」必须绑定到系统已有的数据库字段（hospital.* 或 eqa.*）")
+		}
+		return nil
+	}
+	for _, f := range parsed.Fields {
+		if err := check(f.Key, f.Label, f.Type, f.Target); err != nil {
+			return err
+		}
+		if strings.EqualFold(strings.TrimSpace(f.Type), "repeat") {
+			if len(f.Fields) == 0 {
+				return NewCodeError(400, "可重复组「"+strings.TrimSpace(f.Label)+"」至少需要一个子字段")
+			}
+			for _, c := range f.Fields {
+				if err := check(c.Key, c.Label, c.Type, c.Target); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func isValidSurveyFieldTarget(target string) bool {
+	t := strings.TrimSpace(target)
+	if t == "" {
+		return false
+	}
+	return strings.HasPrefix(t, "hospital.") || strings.HasPrefix(t, "eqa.")
 }
 
 func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any) error {
