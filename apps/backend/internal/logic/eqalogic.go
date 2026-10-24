@@ -138,8 +138,18 @@ func (l *EqaLogic) Dashboard(req *types.EqaDashboardRequest) (*types.EqaDashboar
 	if resp.Year <= 0 {
 		resp.Year = int64(time.Now().Year())
 	}
-	for _, s := range stats.ByScope {
-		resp.ByScope = append(resp.ByScope, types.EqaScopeCount{Scope: s.Scope, Count: s.Count})
+	{
+		scopeCount := map[string]int64{"national": 0, "provincial": 0}
+		for _, s := range stats.ByScope {
+			scope := strings.TrimSpace(s.Scope)
+			if scope == "" {
+				continue
+			}
+			scopeCount[scope] = s.Count
+		}
+		for _, scope := range []string{"national", "provincial"} {
+			resp.ByScope = append(resp.ByScope, types.EqaScopeCount{Scope: scope, Count: scopeCount[scope]})
+		}
 	}
 	for _, s := range stats.TopItems {
 		resp.TopItems = append(resp.TopItems, types.EqaItemCount{FieldCode: s.FieldCode, FieldName: s.FieldName, Count: s.Count})

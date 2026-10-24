@@ -201,60 +201,46 @@ export default function EqaDashboardPage() {
             </CardTitle>
           </CardHeader>
         </Card>
-        {(dash?.byScope || []).map((s) => (
-          <Card key={s.scope}>
-            <CardHeader className="pb-2">
-              <CardDescription>{scopeLabel(s.scope)} 范围</CardDescription>
-              <CardTitle className="text-2xl">{s.count}</CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
+        {(["national", "provincial"] as const).map((scope) => {
+          const count =
+            dash?.byScope?.find((s) => s.scope === scope)?.count ?? 0;
+          return (
+            <Card key={scope}>
+              <CardHeader className="pb-2">
+                <CardDescription>
+                  {scope === "national" ? "国家级 EQA 参与客户" : "省级 EQA 参与客户"}
+                </CardDescription>
+                <CardTitle className="text-2xl">
+                  {loading ? "…" : count}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          );
+        })}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">热门参评项目</CardTitle>
-            <CardDescription>勾选次数 Top</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {(dash?.topItems || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">暂无数据</p>
-            ) : (
-              <ul className="space-y-2">
-                {dash!.topItems.map((it) => (
-                  <li key={it.fieldCode} className="flex justify-between text-sm">
-                    <span>{it.fieldName}</span>
-                    <Badge variant="secondary">{it.count}</Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">负责人进度</CardTitle>
-            <CardDescription>参评数 / 勾选项数</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {(dash?.ownerProgress || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">暂无数据</p>
-            ) : (
-              <ul className="space-y-2">
-                {dash!.ownerProgress.map((o, i) => (
-                  <li key={o.ownerUserId || i} className="flex justify-between text-sm">
-                    <span>{o.ownerName}</span>
-                    <span className="text-muted-foreground">
-                      {o.participation} 条 · {o.itemCount} 项
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">负责人进度</CardTitle>
+          <CardDescription>参评数 / 勾选项数</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {(dash?.ownerProgress || []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">暂无数据</p>
+          ) : (
+            <ul className="space-y-2">
+              {dash!.ownerProgress.map((o, i) => (
+                <li key={o.ownerUserId || i} className="flex justify-between text-sm">
+                  <span>{o.ownerName}</span>
+                  <span className="text-muted-foreground">
+                    {o.participation} 条 · {o.itemCount} 项
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

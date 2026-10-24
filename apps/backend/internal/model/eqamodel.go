@@ -314,7 +314,7 @@ func (m *eqaModel) Dashboard(ctx context.Context, year int) (*EqaDashboardStats,
 	if err := m.conn.QueryRow(ctx, `SELECT COUNT(DISTINCT hospital_id) FROM eqa_participation`+yearFilter, args...).Scan(&stats.CoverageHospitals); err != nil {
 		return nil, err
 	}
-	rows, err := m.conn.Query(ctx, `SELECT scope, COUNT(*) FROM eqa_participation`+yearFilter+` GROUP BY scope ORDER BY scope`, args...)
+	rows, err := m.conn.Query(ctx, `SELECT scope, COUNT(DISTINCT hospital_id) FROM eqa_participation`+yearFilter+` GROUP BY scope ORDER BY scope`, args...)
 	if err != nil {
 		return nil, err
 	}
