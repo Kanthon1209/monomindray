@@ -365,7 +365,10 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                       return (
                         <div key={cat.code} className="space-y-1.5">
                           <div className="flex min-h-7 items-center gap-2">
-                            <span className="text-xs font-medium leading-7 text-muted-foreground">
+                            <span
+                              className="inline-block w-28 shrink-0 truncate text-xs font-medium leading-7 text-muted-foreground"
+                              title={cat.name}
+                            >
                               {cat.name}
                             </span>
                             {!disabled ? (
