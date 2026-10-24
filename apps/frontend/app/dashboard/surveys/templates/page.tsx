@@ -27,6 +27,8 @@ import {
 } from "@/lib/business";
 import {
   ARCHIVE_FIELD_DEFS,
+  DEVICE_SERVICE_EVALUATION_OPTIONS,
+  DEVICE_USAGE_LOCATION_OPTIONS,
   HOSPITAL_COLUMNS,
 } from "@/lib/hospital-archive";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +76,7 @@ import {
 import { AssayTreeField } from "@/components/assay-tree-field";
 import { DeviceBlockField } from "@/components/device-block-field";
 import { EqaParticipationField } from "@/components/eqa-participation-field";
+import { fetchEqaFields, type EqaFieldNode } from "@/lib/eqa";
 
 /** 关联实体：必须映射可采集字段目录中的条目 */
 type MapEntity = "hospital" | "assay" | "eqa" | "device";
@@ -318,37 +321,57 @@ function specialBlockInfo(field: SurveyField): {
       collectFields: [
         {
           label: "所属公司",
-          key: "brand",
+          key: "devices[].brand",
           type: "text",
-          hint: "可联想或自定义（迈瑞 / 竞品）",
+          hint: "可联想或自定义（迈瑞 / 竞品）；每台设备一组",
         },
-        { label: "机型", key: "model", type: "text", hint: "必填" },
-        { label: "序列号", key: "serialNo", type: "text" },
-        { label: "安装日期", key: "installedAt", type: "date" },
-        { label: "启用日期", key: "enabledAt", type: "date" },
+        {
+          label: "机型",
+          key: "devices[].model",
+          type: "text",
+          hint: "必填，如 BS-2000M / CL-8000",
+        },
+        {
+          label: "序列号",
+          key: "devices[].serialNo",
+          type: "text",
+          hint: "设备序列号",
+        },
+        {
+          label: "安装日期",
+          key: "devices[].installedAt",
+          type: "date",
+          hint: "日历选择",
+        },
+        {
+          label: "启用日期",
+          key: "devices[].enabledAt",
+          type: "date",
+          hint: "日历选择",
+        },
         {
           label: "使用位置",
-          key: "usageLocation",
+          key: "devices[].usageLocation",
           type: "enum",
-          hint: "门急诊 / 住院部 / 体检中心 / 核医学科 / 其他（可自填）",
+          hint: `${DEVICE_USAGE_LOCATION_OPTIONS.join(" / ")}（选「其他」可自填）`,
         },
         {
           label: "所属检测线",
-          key: "assayLineCode",
+          key: "devices[].assayLineCode",
           type: "enum",
-          hint: "生化 / 免疫 / 凝血 / 血球等（字典）",
+          hint: "生化 / 免疫 / 凝血 / 血球等（assay_projects 字典）",
         },
         {
           label: "检测细项覆盖",
-          key: "itemCodes",
+          key: "devices[].itemCodes",
           type: "multi_select",
-          hint: "按检测线→类别展开叶子细项复选",
+          hint: "选检测线后按 类别→叶子细项 复选；推导客户检测覆盖与竞品",
         },
         {
           label: "客户服务评价",
-          key: "serviceEvaluation",
+          key: "devices[].serviceEvaluation",
           type: "enum",
-          hint: "系统预设四档评价",
+          hint: DEVICE_SERVICE_EVALUATION_OPTIONS.join("；"),
         },
       ],
     };
@@ -375,6 +398,49 @@ function specialBlockInfo(field: SurveyField): {
     };
   }
   return null;
+}
+
+
+function flattenEqaBooleanSubjects(
+  tree: EqaFieldNode[],
+  parentCode: string,
+): { code: string; name: string }[] {
+  const roots = tree || [];
+  const parent = roots.find((n) => n.code === parentCode);
+  const children =
+    parent?.children?.filter((c) => c.valueType === "boolean") ||
+    roots.filter(
+      (n) => n.parentCode === parentCode && n.valueType === "boolean",
+    );
+  if (children.length) {
+    return children
+      .slice()
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+      .map((c) => ({ code: c.code, name: c.name }));
+  }
+  const prefix =
+    parentCode === "scope.national"
+      ? "national."
+      : parentCode === "scope.provincial"
+        ? "provincial."
+        : "";
+  const flat: EqaFieldNode[] = [];
+  const walk = (nodes: EqaFieldNode[]) => {
+    for (const n of nodes) {
+      flat.push(n);
+      if (n.children?.length) walk(n.children);
+    }
+  };
+  walk(roots);
+  return flat
+    .filter(
+      (n) =>
+        n.valueType === "boolean" &&
+        (n.parentCode === parentCode ||
+          (prefix && n.code.startsWith(prefix))),
+    )
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    .map((n) => ({ code: n.code, name: n.name }));
 }
 
 function statusBadge(status: string) {
@@ -597,6 +663,12 @@ export default function SurveyTemplatesPage() {
   const [specialBlockOpen, setSpecialBlockOpen] = useState(false);
   const [specialBlockTemplateId, setSpecialBlockTemplateId] = useState<string | null>(null);
   const [specialBlockField, setSpecialBlockField] = useState<SurveyField | null>(null);
+  const [eqaSubjectCatalog, setEqaSubjectCatalog] = useState<{
+    national: { code: string; name: string }[];
+    provincial: { code: string; name: string }[];
+    loading: boolean;
+    error: string | null;
+  }>({ national: [], provincial: [], loading: false, error: null });
 
   /** 模板内字段拖拽排序 */
   const [dragFieldKey, setDragFieldKey] = useState<string | null>(null);
@@ -607,6 +679,39 @@ export default function SurveyTemplatesPage() {
       router.replace("/dashboard/surveys/tasks");
     }
   }, [user, router]);
+
+
+  useEffect(() => {
+    if (!specialBlockOpen || (specialBlockField?.type || "").toLowerCase() !== "eqa_block") {
+      return;
+    }
+    let cancelled = false;
+    setEqaSubjectCatalog((s) => ({ ...s, loading: true, error: null }));
+    (async () => {
+      const res = await fetchEqaFields();
+      if (cancelled) return;
+      if (res.error) {
+        setEqaSubjectCatalog({
+          national: [],
+          provincial: [],
+          loading: false,
+          error: res.error,
+        });
+        return;
+      }
+      const tree = res.data?.items || [];
+      setEqaSubjectCatalog({
+        national: flattenEqaBooleanSubjects(tree, "scope.national"),
+        provincial: flattenEqaBooleanSubjects(tree, "scope.provincial"),
+        loading: false,
+        error: null,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [specialBlockOpen, specialBlockField]);
+
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1779,7 +1884,7 @@ export default function SurveyTemplatesPage() {
           }
         }}
       >
-        <DialogContent className="flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent className="flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="shrink-0 border-b px-5 py-4">
             <DialogTitle>
               {specialBlockField
@@ -1795,11 +1900,11 @@ export default function SurveyTemplatesPage() {
                 : "查看采集字段明细"}
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4 text-sm">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-4 text-sm">
             {specialBlockField ? (
               <>
                 <div className="rounded-md border bg-muted/40 px-3 py-2">
-                  <div className="text-xs text-muted-foreground">字段名</div>
+                  <div className="text-xs text-muted-foreground">模板字段</div>
                   <div className="font-medium">
                     {specialBlockField.label || specialBlockField.key}
                   </div>
@@ -1817,50 +1922,158 @@ export default function SurveyTemplatesPage() {
                     此为历史「检测项目」块。新采集请用设备列表覆盖细项；可在此删除本块以免与设备信息冲突。
                   </p>
                 ) : null}
-                <div>
-                  <p className="mb-2 text-sm font-medium">采集字段明细</p>
-                  <p className="mb-2 text-xs text-muted-foreground">
-                    以下为采集员在填报端实际填写的每一个字段（模板预览，无答卷值）。
-                  </p>
-                  <div className="overflow-hidden rounded-md border">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-muted/50 text-xs text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2 font-medium">字段</th>
-                          <th className="px-3 py-2 font-medium">类型</th>
-                          <th className="px-3 py-2 font-medium">说明</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(specialBlockInfo(specialBlockField)?.collectFields || []).map(
-                          (cf) => (
-                            <tr key={cf.key} className="border-t">
-                              <td className="px-3 py-2">
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold">本块采集的全部字段</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      采集员在填报端会填写下列每一项（模板结构预览，无答卷值）。
+                    </p>
+                  </div>
+
+                  {(specialBlockField.type || "").toLowerCase() === "eqa_block" ? (
+                    <div className="space-y-4">
+                      <div className="rounded-md border p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-medium">参评年份</div>
+                            <div className="font-mono text-[11px] text-muted-foreground">
+                              year
+                            </div>
+                          </div>
+                          <Badge variant="outline">数字</Badge>
+                        </div>
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          默认当年，可改
+                        </p>
+                      </div>
+
+                      {specialBlockField.enableNational !== false ? (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium">国家级（国考）科目</p>
+                            <Badge variant="secondary">
+                              {eqaSubjectCatalog.loading
+                                ? "加载中…"
+                                : `${eqaSubjectCatalog.national.length} 项`}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              勾选任一科目即算参与国考
+                            </span>
+                          </div>
+                          {eqaSubjectCatalog.error ? (
+                            <p className="text-xs text-destructive">
+                              {eqaSubjectCatalog.error}
+                            </p>
+                          ) : null}
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {eqaSubjectCatalog.national.map((s) => (
+                              <div
+                                key={s.code}
+                                className="rounded-md border bg-background px-3 py-2"
+                              >
+                                <div className="font-medium">{s.name}</div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-[11px] text-muted-foreground">
+                                    {s.code}
+                                  </span>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    是/否
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                            {!eqaSubjectCatalog.loading &&
+                            !eqaSubjectCatalog.error &&
+                            eqaSubjectCatalog.national.length === 0 ? (
+                              <p className="text-xs text-muted-foreground sm:col-span-2">
+                                暂无国考科目字典
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {specialBlockField.enableProvincial !== false ? (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium">省级（省考）科目</p>
+                            <Badge variant="secondary">
+                              {eqaSubjectCatalog.loading
+                                ? "加载中…"
+                                : `${eqaSubjectCatalog.provincial.length} 项`}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              勾选任一科目即算参与省考
+                            </span>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {eqaSubjectCatalog.provincial.map((s) => (
+                              <div
+                                key={s.code}
+                                className="rounded-md border bg-background px-3 py-2"
+                              >
+                                <div className="font-medium">{s.name}</div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-[11px] text-muted-foreground">
+                                    {s.code}
+                                  </span>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    是/否
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                            {!eqaSubjectCatalog.loading &&
+                            !eqaSubjectCatalog.error &&
+                            eqaSubjectCatalog.provincial.length === 0 ? (
+                              <p className="text-xs text-muted-foreground sm:col-span-2">
+                                暂无省考科目字典
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {(specialBlockInfo(specialBlockField)?.collectFields || []).map(
+                        (cf) => (
+                          <div
+                            key={cf.key}
+                            className="rounded-md border bg-background px-3 py-2.5"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
                                 <div className="font-medium">{cf.label}</div>
                                 <div className="font-mono text-[11px] text-muted-foreground">
                                   {cf.key}
                                 </div>
-                              </td>
-                              <td className="px-3 py-2 text-muted-foreground">
+                              </div>
+                              <Badge variant="outline" className="shrink-0">
                                 {typeLabel(cf.type)}
-                              </td>
-                              <td className="px-3 py-2 text-muted-foreground">
-                                {cf.hint || "—"}
-                              </td>
-                            </tr>
-                          ),
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                              </Badge>
+                            </div>
+                            {cf.hint ? (
+                              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                                {cf.hint}
+                              </p>
+                            ) : null}
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  )}
                 </div>
-                <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+
+                <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
                   {(specialBlockInfo(specialBlockField)?.bullets || []).map((b) => (
                     <li key={b}>{b}</li>
                   ))}
                 </ul>
+
                 <div className="space-y-2">
-                  <p className="text-sm font-medium">采集表单预览</p>
+                  <p className="text-sm font-semibold">采集表单预览</p>
                   <p className="text-xs text-muted-foreground">
                     与填报端一致的只读预览（空值示意）。
                   </p>
