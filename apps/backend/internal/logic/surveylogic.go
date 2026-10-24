@@ -1017,6 +1017,12 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 				installedAt = &t
 			}
 		}
+		var enabledAt *time.Time
+		if raw := firstNonEmpty(anyToString(row["enabledAt"]), anyToString(row["enabled_at"])); raw != "" {
+			if t, err := parseFlexibleDate(raw); err == nil {
+				enabledAt = &t
+			}
+		}
 
 		existing, err := l.svcCtx.DeviceModel.FindByHospitalSerial(l.ctx, hospitalID, serial)
 		if err != nil {
@@ -1027,7 +1033,7 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 			_, err = l.svcCtx.DeviceModel.Insert(l.ctx, &model.Device{
 				HospitalId: hospitalID, Brand: brand, Category: cat, AssayLineCode: line,
 				Model: modelName, SerialNo: serial,
-				Status: "active", InstalledAt: installedAt, Remark: remark,
+				Status: "active", InstalledAt: installedAt, EnabledAt: enabledAt, Remark: remark,
 				ServiceEvaluation: serviceEval, ItemCodes: itemCodes,
 				CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
 			})
@@ -1049,6 +1055,9 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 		}
 		if installedAt != nil {
 			existing.InstalledAt = installedAt
+		}
+		if enabledAt != nil {
+			existing.EnabledAt = enabledAt
 		}
 		if remark != "" {
 			existing.Remark = remark

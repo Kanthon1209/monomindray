@@ -87,6 +87,7 @@ export default function DevicesPage() {
     serialNo: "",
     status: "active",
     installedAt: "",
+    enabledAt: "",
     remark: "",
   });
 
@@ -119,7 +120,7 @@ export default function DevicesPage() {
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.hospitalId || !form.model.trim()) {
-      setError("请选择医院并填写型号");
+      setError("请选择医院并填写机型");
       return;
     }
     setSaving(true);
@@ -132,6 +133,7 @@ export default function DevicesPage() {
       serialNo: form.serialNo.trim() || undefined,
       status: form.status,
       installedAt: form.installedAt || undefined,
+      enabledAt: form.enabledAt || undefined,
       remark: form.remark.trim() || undefined,
     });
     setSaving(false);
@@ -148,6 +150,7 @@ export default function DevicesPage() {
       serialNo: "",
       status: "active",
       installedAt: "",
+      enabledAt: "",
       remark: "",
     });
     await load();
@@ -202,7 +205,7 @@ export default function DevicesPage() {
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             <Input
               className="w-full sm:max-w-xs"
-              placeholder="搜索医院/型号/序列号/品牌"
+              placeholder="搜索医院/机型/序列号/品牌"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
             />
@@ -279,7 +282,7 @@ export default function DevicesPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>型号</Label>
+                  <Label>机型</Label>
                   <Input
                     value={form.model}
                     onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
@@ -300,6 +303,16 @@ export default function DevicesPage() {
                     value={form.installedAt}
                     onChange={(e) =>
                       setForm((f) => ({ ...f, installedAt: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>启用日期</Label>
+                  <Input
+                    type="date"
+                    value={form.enabledAt}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, enabledAt: e.target.value }))
                     }
                   />
                 </div>
@@ -325,23 +338,24 @@ export default function DevicesPage() {
                   <TableHead>医院</TableHead>
                   <TableHead>品牌</TableHead>
                   <TableHead>产线</TableHead>
-                  <TableHead>型号</TableHead>
+                  <TableHead>机型</TableHead>
                   <TableHead>序列号</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>安装日期</TableHead>
+                  <TableHead>启用日期</TableHead>
                   <TableHead className="w-[80px]">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
                       <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
                       暂无设备
                     </TableCell>
                   </TableRow>
@@ -365,6 +379,7 @@ export default function DevicesPage() {
                       <TableCell>{d.serialNo || "—"}</TableCell>
                       <TableCell>{statusBadge(d.status)}</TableCell>
                       <TableCell>{d.installedAt || "—"}</TableCell>
+                      <TableCell>{d.enabledAt || "—"}</TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"

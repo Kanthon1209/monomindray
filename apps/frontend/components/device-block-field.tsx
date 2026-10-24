@@ -21,6 +21,7 @@ export type DeviceBlockRow = {
   model: string;
   serialNo?: string;
   installedAt?: string;
+  enabledAt?: string;
   assayLineCode: string;
   itemCodes: string[];
   serviceEvaluation?: string;
@@ -57,8 +58,9 @@ function normalizeRow(raw: any): DeviceBlockRow | null {
   return {
     brand: String(raw.brand || raw.company || "迈瑞").trim() || "迈瑞",
     model: String(raw.model || "").trim(),
-    serialNo: String(raw.serialNo || "").trim() || undefined,
+    serialNo: String(raw.serialNo || raw.serial_no || "").trim() || undefined,
     installedAt: String(raw.installedAt || raw.installed_at || "").trim() || undefined,
+    enabledAt: String(raw.enabledAt || raw.enabled_at || "").trim() || undefined,
     assayLineCode: String(raw.assayLineCode || raw.lineCode || "").trim(),
     itemCodes,
     serviceEvaluation:
@@ -74,6 +76,7 @@ function emptyRow(): DeviceBlockRow {
     model: "",
     serialNo: "",
     installedAt: "",
+    enabledAt: "",
     assayLineCode: "",
     itemCodes: [],
     serviceEvaluation: "",
@@ -171,7 +174,7 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          添加设备 → 选择所属检测线 → 勾选该检测线下细项；所属公司区分迈瑞 / 竞品。
+          每台设备需填写机型 / 序列号 / 安装与启用日期，再选检测线并勾选细项覆盖；所属公司区分迈瑞 / 竞品。
         </p>
         {!disabled ? (
           <Button
@@ -278,16 +281,16 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>型号</Label>
+                <Label>机型</Label>
                 <Input
                   value={row.model}
                   disabled={disabled}
-                  placeholder="如 BS-2000M / CL-8000"
+                  placeholder="如 BS-2000M / CL-8000（必填）"
                   onChange={(e) => updateRow(index, { model: e.target.value })}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>序列号（可选）</Label>
+                <Label>序列号</Label>
                 <Input
                   value={row.serialNo || ""}
                   disabled={disabled}
@@ -297,13 +300,24 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>安装日期（可选）</Label>
+                <Label>安装日期</Label>
                 <Input
                   type="date"
                   value={row.installedAt || ""}
                   disabled={disabled}
                   onChange={(e) =>
                     updateRow(index, { installedAt: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>启用日期</Label>
+                <Input
+                  type="date"
+                  value={row.enabledAt || ""}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    updateRow(index, { enabledAt: e.target.value })
                   }
                 />
               </div>

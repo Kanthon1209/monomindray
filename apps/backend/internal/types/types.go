@@ -176,6 +176,7 @@ type (
 		SerialNo           string   `json:"serialNo,omitempty"`
 		Status             string   `json:"status"`
 		InstalledAt        string   `json:"installedAt,omitempty"`
+		EnabledAt          string   `json:"enabledAt,omitempty"`
 		Remark             string   `json:"remark,omitempty"`
 		ServiceEvaluation  string   `json:"serviceEvaluation,omitempty"`
 		ItemCodes          []string `json:"itemCodes,omitempty"`
@@ -189,6 +190,7 @@ type (
 		SerialNo           string   `json:"serialNo,optional"`
 		Status             string   `json:"status,optional"`
 		InstalledAt        string   `json:"installedAt,optional"`
+		EnabledAt          string   `json:"enabledAt,optional"`
 		Remark             string   `json:"remark,optional"`
 		ServiceEvaluation  string   `json:"serviceEvaluation,optional"`
 		ItemCodes          []string `json:"itemCodes,optional"`
