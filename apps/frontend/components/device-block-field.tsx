@@ -366,16 +366,29 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                         <div key={cat.code} className="space-y-1.5">
                           <div className="flex min-h-7 items-center gap-2">
                             <span
-                              className="inline-block w-28 shrink-0 truncate text-xs font-medium leading-7 text-muted-foreground"
+                              className="text-xs font-medium leading-7 text-muted-foreground"
                               title={cat.name}
                             >
                               {cat.name}
                             </span>
-                            {!disabled ? (
-                              <button
-                                type="button"
-                                className="inline-flex h-7 shrink-0 items-center text-xs leading-7 text-primary"
-                                onClick={() => {
+                            <span className="text-xs leading-7 text-muted-foreground">
+                              {catSelected}/{catCodes.length}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                            <label className="inline-flex items-center gap-1.5 text-sm font-medium">
+                              <input
+                                type="checkbox"
+                                className="h-3.5 w-3.5"
+                                disabled={disabled}
+                                checked={catAllOn}
+                                ref={(el) => {
+                                  if (el) {
+                                    el.indeterminate =
+                                      catSelected > 0 && !catAllOn;
+                                  }
+                                }}
+                                onChange={() => {
                                   const set = new Set(row.itemCodes);
                                   if (catAllOn) {
                                     catCodes.forEach((c) => set.delete(c));
@@ -386,15 +399,9 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                                     itemCodes: Array.from(set),
                                   });
                                 }}
-                              >
-                                {catAllOn ? "取消全选" : "全选"}
-                              </button>
-                            ) : null}
-                            <span className="text-xs leading-7 text-muted-foreground">
-                              {catSelected}/{catCodes.length}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                              />
+                              全选
+                            </label>
                             {items.map((it) => (
                               <label
                                 key={it.code}
