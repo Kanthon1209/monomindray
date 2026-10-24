@@ -74,6 +74,24 @@ func UpdateSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+
+func DeleteSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := parsePathID(r)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		force := r.URL.Query().Get("force") == "1" || r.URL.Query().Get("force") == "true"
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).ArchiveTemplate(id, force)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
 func CreateSurveyCampaignHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req types.CreateSurveyCampaignRequest
