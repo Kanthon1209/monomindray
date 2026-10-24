@@ -88,7 +88,7 @@ func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*ty
 		Province: province,
 		Level: resolveLevel(req.Level), Type: resolveType(req.Type),
 		Status: req.Status, DeviceCategory: req.DeviceCategory, DeviceModel: resolveModel(req.DeviceModel),
-		Keyword: req.Keyword, Limit: 500, Offset: 0,
+		Keyword: req.Keyword, Sort: "updated", Limit: 5000, Offset: 0,
 	}
 	if city := strings.TrimSpace(req.City); city != "" {
 		f.Cities = cityVariants(city)

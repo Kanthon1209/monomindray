@@ -138,8 +138,11 @@ func (m *hospitalModel) Search(ctx context.Context, keyword string, limit int) (
 
 func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital, int64, error) {
 	limit := f.Limit
-	if limit <= 0 || limit > 500 {
+	if limit <= 0 {
 		limit = 100
+	}
+	if limit > 5000 {
+		limit = 5000
 	}
 	offset := f.Offset
 	if offset < 0 {
