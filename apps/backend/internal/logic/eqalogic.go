@@ -500,19 +500,23 @@ func (l *EqaLogic) UpsertHospitalEQA(actorID, hospitalID int64, payload EqaHospi
 		if err != nil {
 			return err
 		}
-		if !part.Participating {
-			if existing != nil {
-				hid, pid := hospitalID, existing.Id
-				if err := l.svcCtx.EqaModel.DeleteParticipation(l.ctx, existing.Id); err != nil {
-					return err
-				}
-				_ = l.svcCtx.EqaModel.AddChangeLog(l.ctx, &pid, &hid, actorID, "survey_approve_clear", map[string]any{
-					"year": year, "scope": scope,
-				})
+		clear := func() error {
+			if existing == nil {
+				return nil
 			}
+			hid, pid := hospitalID, existing.Id
+			if err := l.svcCtx.EqaModel.DeleteParticipation(l.ctx, existing.Id); err != nil {
+				return err
+			}
+			_ = l.svcCtx.EqaModel.AddChangeLog(l.ctx, &pid, &hid, actorID, "survey_approve_clear", map[string]any{
+				"year": year, "scope": scope,
+			})
 			return nil
 		}
-		// validate codes
+		if !part.Participating {
+			return clear()
+		}
+		// validate codes; empty after filter ⇒ not participating
 		codes := make([]string, 0, len(part.Codes))
 		seen := map[string]struct{}{}
 		allow := allowed[scope]
@@ -529,6 +533,9 @@ func (l *EqaLogic) UpsertHospitalEQA(actorID, hospitalID int64, payload EqaHospi
 			}
 			seen[c] = struct{}{}
 			codes = append(codes, c)
+		}
+		if len(codes) == 0 {
+			return clear()
 		}
 		p := existing
 		if p == nil {
@@ -626,15 +633,10 @@ func parseScopeUpsert(v any) *EqaScopeUpsert {
 	}
 	switch t := v.(type) {
 	case bool:
-		return &EqaScopeUpsert{Participating: t}
+		// Legacy bool-only scope: no subjects → treat as not participating when false;
+		// true without codes is invalid under subject-derived rules → not participating.
+		return &EqaScopeUpsert{Participating: false}
 	case map[string]any:
-		part := truthy(t["participating"])
-		if _, ok := t["participating"]; !ok {
-			// codes present implies participating
-			if codes, _ := t["codes"].([]any); len(codes) > 0 {
-				part = true
-			}
-		}
 		codes := make([]string, 0)
 		switch c := t["codes"].(type) {
 		case []any:
@@ -645,12 +647,18 @@ func parseScopeUpsert(v any) *EqaScopeUpsert {
 				}
 			}
 		case []string:
-			codes = append(codes, c...)
+			for _, x := range c {
+				s := strings.TrimSpace(x)
+				if s != "" {
+					codes = append(codes, s)
+				}
+			}
 		}
-		if !part {
-			codes = nil
+		// Participation is implied solely by selected subjects (no empty parent checkbox).
+		if len(codes) == 0 {
+			return &EqaScopeUpsert{Participating: false}
 		}
-		return &EqaScopeUpsert{Participating: part, Codes: codes}
+		return &EqaScopeUpsert{Participating: true, Codes: codes}
 	default:
 		return &EqaScopeUpsert{Participating: false}
 	}

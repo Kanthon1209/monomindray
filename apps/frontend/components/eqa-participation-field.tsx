@@ -24,6 +24,7 @@ export type EqaBlockFieldConfig = {
 
 const emptyScope = (): EqaScopeAnswer => ({ participating: false, codes: [] });
 
+/** 参评由已选科目推导：无科目 = 未参与，避免「勾了级但无细项」的脏状态。 */
 export function normalizeEqaBlockAnswer(
   value: any,
   defaultYear?: number,
@@ -39,13 +40,9 @@ export function normalizeEqaBlockAnswer(
     const codes = Array.isArray(raw.codes)
       ? raw.codes.map(String).filter(Boolean)
       : [];
-    const participating =
-      typeof raw.participating === "boolean"
-        ? raw.participating
-        : codes.length > 0;
     return {
-      participating,
-      codes: participating ? codes : [],
+      participating: codes.length > 0,
+      codes,
     };
   };
   return {
@@ -164,9 +161,15 @@ export function EqaParticipationField({
 
   const patchScope = (
     scope: "national" | "provincial",
-    next: EqaScopeAnswer,
+    codes: string[],
   ) => {
-    patch({ [scope]: next });
+    const unique = Array.from(new Set(codes.filter(Boolean)));
+    patch({
+      [scope]: {
+        participating: unique.length > 0,
+        codes: unique,
+      },
+    });
   };
 
   const renderScope = (
@@ -175,60 +178,69 @@ export function EqaParticipationField({
     subjects: { code: string; name: string }[],
   ) => {
     const current = answer[scope];
+    const allCodes = subjects.map((s) => s.code);
+    const selectedCount = allCodes.filter((c) =>
+      current.codes.includes(c),
+    ).length;
+    const allOn = selectedCount === allCodes.length && allCodes.length > 0;
+    const partial = selectedCount > 0 && !allOn;
+
     return (
       <div className="space-y-3 rounded-md border p-3">
-        <label className="flex min-h-9 cursor-pointer items-center gap-2 text-sm font-medium">
-          <input
-            type="checkbox"
-            className="size-4 rounded border"
-            checked={!!current.participating}
-            disabled={disabled}
-            onChange={(e) => {
-              const participating = e.target.checked;
-              patchScope(scope, {
-                participating,
-                codes: participating ? current.codes : [],
-              });
-            }}
-          />
-          <span>{label}</span>
-        </label>
-        {current.participating ? (
-          loading ? (
-            <p className="text-xs text-muted-foreground">加载科目…</p>
-          ) : subjects.length === 0 ? (
-            <p className="text-xs text-muted-foreground">暂无科目数据</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {subjects.map((s) => {
-                const checked = current.codes.includes(s.code);
-                return (
-                  <label
-                    key={s.code}
-                    className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      className="size-4 rounded border"
-                      checked={checked}
-                      disabled={disabled}
-                      onChange={(e) => {
-                        const set = new Set(current.codes);
-                        if (e.target.checked) set.add(s.code);
-                        else set.delete(s.code);
-                        patchScope(scope, {
-                          participating: true,
-                          codes: Array.from(set),
-                        });
-                      }}
-                    />
-                    <span>{s.name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          )
-        ) : null}
+        <div className="flex min-h-9 items-center justify-between gap-2">
+          <span className="text-sm font-medium">{label}</span>
+          <span className="text-xs text-muted-foreground">
+            {current.participating
+              ? `已选 ${selectedCount} 项`
+              : "未参与（勾选科目即算参与）"}
+          </span>
+        </div>
+        {loading ? (
+          <p className="text-xs text-muted-foreground">加载科目…</p>
+        ) : subjects.length === 0 ? (
+          <p className="text-xs text-muted-foreground">暂无科目数据</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm font-medium">
+              <input
+                type="checkbox"
+                className="size-4 rounded border"
+                checked={allOn}
+                disabled={disabled}
+                ref={(el) => {
+                  if (el) el.indeterminate = partial;
+                }}
+                onChange={() => {
+                  patchScope(scope, allOn ? [] : allCodes);
+                }}
+              />
+              <span>全选</span>
+            </label>
+            {subjects.map((s) => {
+              const checked = current.codes.includes(s.code);
+              return (
+                <label
+                  key={s.code}
+                  className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={(e) => {
+                      const set = new Set(current.codes);
+                      if (e.target.checked) set.add(s.code);
+                      else set.delete(s.code);
+                      patchScope(scope, Array.from(set));
+                    }}
+                  />
+                  <span>{s.name}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -255,7 +267,7 @@ export function EqaParticipationField({
         ? renderScope("provincial", "省级（省考）", provincialSubjects)
         : null}
       <p className="text-xs text-muted-foreground">
-        可都选、只选其一、或都不选。勾选后展开对应科目复选。
+        勾选任一科目即算参与该级 EQA；可先点「全选」再取消未参加的细项。国考、省考可都选、只选其一或都不选。
       </p>
     </div>
   );
