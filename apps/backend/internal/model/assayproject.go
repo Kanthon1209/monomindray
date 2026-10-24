@@ -58,6 +58,22 @@ type AssayTreeNode struct {
 	Children  []AssayTreeNode `json:"children,omitempty"`
 }
 
+// HospitalAssayCategoryGroup is derived: hospital "has" a category if any leaf under it is selected.
+type HospitalAssayCategoryGroup struct {
+	Code      string
+	Name      string
+	LineCode  string
+	LineName  string
+	SortOrder int
+	Items     []HospitalAssayLeaf
+}
+
+type HospitalAssayLeaf struct {
+	Code      string
+	Name      string
+	SortOrder int
+}
+
 type AssayProjectFilter struct {
 	Keyword string
 	Company string
@@ -262,7 +278,6 @@ func (m *masterDataModel) GetAssayProjectByCode(ctx context.Context, code string
 	}
 	return &p, nil
 }
-
 
 func (m *masterDataModel) validateAssayTreeInput(ctx context.Context, in AssayProjectInput) (kind string, parent string, err error) {
 	kind = strings.TrimSpace(in.Kind)
@@ -484,7 +499,8 @@ func (m *masterDataModel) ReplaceHospitalAssaysByCodes(ctx context.Context, hosp
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `DELETE FROM hospital_assays WHERE hospital_id=$1 AND source=$2`, hospitalID, source); err != nil {
+	// Only replace non-device rows so device_block sync (device_id set) is preserved.
+	if _, err := tx.Exec(ctx, `DELETE FROM hospital_assays WHERE hospital_id=$1 AND source=$2 AND device_id IS NULL`, hospitalID, source); err != nil {
 		return err
 	}
 	for _, code := range clean {
@@ -512,19 +528,22 @@ func (m *masterDataModel) ReplaceHospitalAssaysByCodes(ctx context.Context, hosp
 	return tx.Commit(ctx)
 }
 
-
-// ListAssayNamesByHospitalIDs returns display names of leaf assays per hospital (own + any source).
+// ListAssayNamesByHospitalIDs returns distinct category names per hospital.
+// A hospital "has" a category when any leaf (kind=item) under that category is stored in hospital_assays.
+// Category presence is derived (not stored as its own row).
 func (m *masterDataModel) ListAssayNamesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64][]string, error) {
 	out := map[int64][]string{}
 	if len(hospitalIDs) == 0 {
 		return out, nil
 	}
 	rows, err := m.conn.Query(ctx, `
-		SELECT ha.hospital_id, ap.name
+		SELECT ha.hospital_id, COALESCE(cat.name, item.name) AS category_name,
+		       COALESCE(cat.sort_order, item.sort_order) AS sort_order
 		FROM hospital_assays ha
-		JOIN assay_projects ap ON ap.id = ha.assay_project_id
-		WHERE ha.hospital_id = ANY($1) AND ap.kind = 'item' AND ap.status = 'active'
-		ORDER BY ha.hospital_id, ap.sort_order, ap.name`, hospitalIDs)
+		JOIN assay_projects item ON item.id = ha.assay_project_id
+		LEFT JOIN assay_projects cat ON cat.code = item.parent_code AND cat.kind = 'category' AND cat.status = 'active'
+		WHERE ha.hospital_id = ANY($1) AND item.kind = 'item' AND item.status = 'active'
+		ORDER BY ha.hospital_id, sort_order, category_name`, hospitalIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -533,8 +552,13 @@ func (m *masterDataModel) ListAssayNamesByHospitalIDs(ctx context.Context, hospi
 	for rows.Next() {
 		var hid int64
 		var name string
-		if err := rows.Scan(&hid, &name); err != nil {
+		var sortOrder int
+		if err := rows.Scan(&hid, &name, &sortOrder); err != nil {
 			return nil, err
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
 		}
 		if seen[hid] == nil {
 			seen[hid] = map[string]struct{}{}
@@ -546,6 +570,74 @@ func (m *masterDataModel) ListAssayNamesByHospitalIDs(ctx context.Context, hospi
 		out[hid] = append(out[hid], name)
 	}
 	return out, rows.Err()
+}
+
+// ListHospitalAssayGroups returns selected leaves grouped under their parent categories (derived).
+func (m *masterDataModel) ListHospitalAssayGroups(ctx context.Context, hospitalID int64) ([]HospitalAssayCategoryGroup, error) {
+	if hospitalID <= 0 {
+		return []HospitalAssayCategoryGroup{}, nil
+	}
+	rows, err := m.conn.Query(ctx, `
+		SELECT COALESCE(cat.code, ''), COALESCE(cat.name, ''), COALESCE(cat.sort_order, 0),
+		       COALESCE(line.code, ''), COALESCE(line.name, ''),
+		       item.code, item.name, COALESCE(item.sort_order, 0)
+		FROM hospital_assays ha
+		JOIN assay_projects item ON item.id = ha.assay_project_id
+		LEFT JOIN assay_projects cat ON cat.code = item.parent_code AND cat.kind = 'category'
+		LEFT JOIN assay_projects line ON line.code = cat.parent_code AND line.kind = 'line'
+		WHERE ha.hospital_id = $1 AND item.kind = 'item' AND item.status = 'active'
+		  AND TRIM(COALESCE(item.code, '')) <> ''
+		ORDER BY COALESCE(line.sort_order, 0), COALESCE(cat.sort_order, 0), COALESCE(cat.name, ''),
+		         COALESCE(item.sort_order, 0), item.name`, hospitalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	order := []string{}
+	byKey := map[string]*HospitalAssayCategoryGroup{}
+	itemSeen := map[string]map[string]struct{}{}
+
+	for rows.Next() {
+		var catCode, catName, lineCode, lineName, itemCode, itemName string
+		var catSort, itemSort int
+		if err := rows.Scan(&catCode, &catName, &catSort, &lineCode, &lineName, &itemCode, &itemName, &itemSort); err != nil {
+			return nil, err
+		}
+		key := catCode
+		if key == "" {
+			key = "_item:" + itemCode
+			if catName == "" {
+				catName = "未分类"
+			}
+		}
+		g, ok := byKey[key]
+		if !ok {
+			g = &HospitalAssayCategoryGroup{
+				Code: key, Name: catName, LineCode: lineCode, LineName: lineName, SortOrder: catSort,
+				Items: []HospitalAssayLeaf{},
+			}
+			if strings.HasPrefix(key, "_item:") {
+				g.Code = ""
+			}
+			byKey[key] = g
+			order = append(order, key)
+			itemSeen[key] = map[string]struct{}{}
+		}
+		if _, dup := itemSeen[key][itemCode]; dup {
+			continue
+		}
+		itemSeen[key][itemCode] = struct{}{}
+		g.Items = append(g.Items, HospitalAssayLeaf{Code: itemCode, Name: itemName, SortOrder: itemSort})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]HospitalAssayCategoryGroup, 0, len(order))
+	for _, k := range order {
+		out = append(out, *byKey[k])
+	}
+	return out, nil
 }
 
 // ResolveAssayItemCodesByNames maps exact leaf names to codes; unknown names are skipped.

@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 
 	"mindray/internal/model"
@@ -231,7 +232,160 @@ func (l *AssayProjectLogic) ListHospitalAssays(hospitalID int64) (*types.Hospita
 			names = append(names, code)
 		}
 	}
-	return &types.HospitalAssaysResponse{Codes: codes, Names: names}, nil
+	groups, err := l.svcCtx.MasterDataModel.ListHospitalAssayGroups(l.ctx, hospitalID)
+	if err != nil {
+		l.Errorf("list hospital assay groups: %v", err)
+		return nil, ErrInternal
+	}
+	categories := make([]types.HospitalAssayCategory, 0, len(groups))
+	for _, g := range groups {
+		items := make([]types.HospitalAssayItem, 0, len(g.Items))
+		for _, it := range g.Items {
+			items = append(items, types.HospitalAssayItem{Code: it.Code, Name: it.Name})
+		}
+		categories = append(categories, types.HospitalAssayCategory{
+			Code: g.Code, Name: g.Name, LineCode: g.LineCode, LineName: g.LineName,
+			ItemCount: len(items), Items: items,
+		})
+	}
+	competitors, mindrayLines, err := l.buildDeviceCoverageExtras(hospitalID)
+	if err != nil {
+		l.Errorf("device coverage extras: %v", err)
+		// non-fatal
+		competitors, mindrayLines = nil, nil
+	}
+	return &types.HospitalAssaysResponse{
+		Codes: codes, Names: names, Categories: categories,
+		Competitors: competitors, MindrayLines: mindrayLines,
+	}, nil
+}
+
+// buildDeviceCoverageExtras derives Mindray line coverage and competitor products from devices.
+func (l *AssayProjectLogic) buildDeviceCoverageExtras(hospitalID int64) ([]types.HospitalAssayCompetitorCategory, []string, error) {
+	devices, err := l.svcCtx.DeviceModel.ListByHospital(l.ctx, hospitalID)
+	if err != nil {
+		return nil, nil, err
+	}
+	tree, err := l.svcCtx.MasterDataModel.ListAssayTree(l.ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	// code -> {name, parent, kind, lineCode, lineName, catCode, catName}
+	type meta struct {
+		name, kind, lineCode, lineName, catCode, catName string
+	}
+	byCode := map[string]meta{}
+	var walk func(nodes []model.AssayTreeNode, lineCode, lineName, catCode, catName string)
+	walk = func(nodes []model.AssayTreeNode, lineCode, lineName, catCode, catName string) {
+		for _, n := range nodes {
+			lc, ln, cc, cn := lineCode, lineName, catCode, catName
+			switch n.Kind {
+			case "line":
+				lc, ln = n.Code, n.Name
+			case "category":
+				cc, cn = n.Code, n.Name
+			}
+			byCode[n.Code] = meta{name: n.Name, kind: n.Kind, lineCode: lc, lineName: ln, catCode: cc, catName: cn}
+			if len(n.Children) > 0 {
+				walk(n.Children, lc, ln, cc, cn)
+			}
+		}
+	}
+	walk(tree, "", "", "", "")
+
+	mindrayLineSet := map[string]string{} // code -> name
+	type catKey struct{ code, name, lineCode, lineName string }
+	compByCat := map[catKey][]types.HospitalAssayCompetitorDevice{}
+	catOrder := []catKey{}
+
+	for _, d := range devices {
+		if d.Status != "" && d.Status != "active" {
+			continue
+		}
+		brand := strings.TrimSpace(d.Brand)
+		if brand == "" {
+			brand = "迈瑞"
+		}
+		itemNames := make([]string, 0, len(d.ItemCodes))
+		for _, c := range d.ItemCodes {
+			if m, ok := byCode[c]; ok {
+				itemNames = append(itemNames, m.name)
+			} else {
+				itemNames = append(itemNames, c)
+			}
+		}
+		isMindray := brand == "迈瑞"
+		if isMindray {
+			if d.AssayLineCode != "" {
+				if m, ok := byCode[d.AssayLineCode]; ok {
+					mindrayLineSet[d.AssayLineCode] = m.name
+				} else {
+					mindrayLineSet[d.AssayLineCode] = d.AssayLineCode
+				}
+			}
+			for _, c := range d.ItemCodes {
+				if m, ok := byCode[c]; ok && m.lineCode != "" {
+					mindrayLineSet[m.lineCode] = m.lineName
+				}
+			}
+			continue
+		}
+		// Competitor: group under categories touched by selected items (or line if no items)
+		catKeys := []catKey{}
+		seenCat := map[string]struct{}{}
+		for _, c := range d.ItemCodes {
+			m := byCode[c]
+			ck := catKey{code: m.catCode, name: m.catName, lineCode: m.lineCode, lineName: m.lineName}
+			if ck.code == "" {
+				ck.code = "_line:" + (d.AssayLineCode)
+				ck.name = "未分类"
+				if lm, ok := byCode[d.AssayLineCode]; ok {
+					ck.lineCode, ck.lineName = lm.lineCode, lm.lineName
+					if ck.lineCode == "" {
+						ck.lineCode, ck.lineName = d.AssayLineCode, lm.name
+					}
+				}
+			}
+			if _, ok := seenCat[ck.code]; ok {
+				continue
+			}
+			seenCat[ck.code] = struct{}{}
+			catKeys = append(catKeys, ck)
+		}
+		if len(catKeys) == 0 {
+			ck := catKey{code: "_line:" + d.AssayLineCode, name: "未分类", lineCode: d.AssayLineCode}
+			if lm, ok := byCode[d.AssayLineCode]; ok {
+				ck.lineName = lm.name
+				ck.lineCode = d.AssayLineCode
+			}
+			catKeys = append(catKeys, ck)
+		}
+		devInfo := types.HospitalAssayCompetitorDevice{
+			DeviceId: d.Id, Brand: brand, Model: d.Model,
+			ItemCodes: append([]string{}, d.ItemCodes...), ItemNames: itemNames,
+		}
+		for _, ck := range catKeys {
+			if _, ok := compByCat[ck]; !ok {
+				catOrder = append(catOrder, ck)
+			}
+			compByCat[ck] = append(compByCat[ck], devInfo)
+		}
+	}
+
+	competitors := make([]types.HospitalAssayCompetitorCategory, 0, len(catOrder))
+	for _, ck := range catOrder {
+		competitors = append(competitors, types.HospitalAssayCompetitorCategory{
+			Code: ck.code, Name: ck.name, LineCode: ck.lineCode, LineName: ck.lineName,
+			Devices: compByCat[ck],
+		})
+	}
+	mindrayLines := make([]string, 0, len(mindrayLineSet))
+	for code, name := range mindrayLineSet {
+		_ = code
+		mindrayLines = append(mindrayLines, name)
+	}
+	sort.Strings(mindrayLines)
+	return competitors, mindrayLines, nil
 }
 
 func (l *AssayProjectLogic) ReplaceHospitalAssays(hospitalID int64, req *types.ReplaceHospitalAssaysRequest) (*types.HospitalAssaysResponse, error) {

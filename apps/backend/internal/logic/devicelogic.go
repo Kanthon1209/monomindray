@@ -94,16 +94,27 @@ func (l *DeviceLogic) Create(hospitalID int64, req *types.DeviceUpsertRequest) (
 	if brand == "" {
 		brand = "迈瑞"
 	}
+	line := strings.TrimSpace(req.AssayLineCode)
+	cat := strings.TrimSpace(req.Category)
+	if cat == "" {
+		cat = model.CategoryFromAssayLine(line)
+	}
+	if cat == "" {
+		cat = "immuno"
+	}
 	d := &model.Device{
-		HospitalId: hospitalID, Brand: brand, Category: req.Category, Model: strings.TrimSpace(req.Model),
+		HospitalId: hospitalID, Brand: brand, Category: cat, AssayLineCode: line,
+		Model: strings.TrimSpace(req.Model),
 		SerialNo: strings.TrimSpace(req.SerialNo), Status: normalizeStatus(req.Status, "active"),
-		Remark: strings.TrimSpace(req.Remark), CreatedBy: ptrInt64(uid), UpdatedBy: ptrInt64(uid),
-		InstalledAt: parseDate(req.InstalledAt),
+		Remark: strings.TrimSpace(req.Remark), ServiceEvaluation: strings.TrimSpace(req.ServiceEvaluation),
+		CreatedBy: ptrInt64(uid), UpdatedBy: ptrInt64(uid),
+		InstalledAt: parseDate(req.InstalledAt), ItemCodes: req.ItemCodes,
 	}
 	id, err := l.svcCtx.DeviceModel.Insert(l.ctx, d)
 	if err != nil {
 		return nil, ErrInternal
 	}
+	_ = l.svcCtx.DeviceModel.SyncHospitalAssaysFromDevices(l.ctx, hospitalID)
 	got, _ := l.svcCtx.DeviceModel.FindById(l.ctx, id)
 	if got != nil {
 		return &types.DeviceResponse{Device: toDeviceInfo(got)}, nil
@@ -150,16 +161,31 @@ func (l *DeviceLogic) Update(id int64, req *types.DeviceUpsertRequest) (*types.D
 		brand = "迈瑞"
 	}
 	existing.Brand = brand
-	existing.Category = req.Category
+	line := strings.TrimSpace(req.AssayLineCode)
+	if line != "" {
+		existing.AssayLineCode = line
+	}
+	cat := strings.TrimSpace(req.Category)
+	if cat == "" {
+		cat = model.CategoryFromAssayLine(existing.AssayLineCode)
+	}
+	if cat != "" {
+		existing.Category = cat
+	}
 	existing.Model = strings.TrimSpace(req.Model)
 	existing.SerialNo = strings.TrimSpace(req.SerialNo)
 	existing.Status = normalizeStatus(req.Status, existing.Status)
 	existing.Remark = strings.TrimSpace(req.Remark)
+	existing.ServiceEvaluation = strings.TrimSpace(req.ServiceEvaluation)
 	existing.InstalledAt = parseDate(req.InstalledAt)
 	existing.UpdatedBy = ptrInt64(uid)
+	if req.ItemCodes != nil {
+		existing.ItemCodes = req.ItemCodes
+	}
 	if err := l.svcCtx.DeviceModel.Update(l.ctx, existing); err != nil {
 		return nil, ErrInternal
 	}
+	_ = l.svcCtx.DeviceModel.SyncHospitalAssaysFromDevices(l.ctx, existing.HospitalId)
 	got, _ := l.svcCtx.DeviceModel.FindById(l.ctx, existing.Id)
 	if got != nil {
 		return &types.DeviceResponse{Device: toDeviceInfo(got)}, nil
@@ -178,12 +204,23 @@ func (l *DeviceLogic) Delete(id int64) error {
 	if existing == nil {
 		return NewCodeError(404, "设备不存在")
 	}
-	return l.svcCtx.DeviceModel.Delete(l.ctx, id)
+	hid := existing.HospitalId
+	if err := l.svcCtx.DeviceModel.Delete(l.ctx, id); err != nil {
+		return err
+	}
+	_ = l.svcCtx.DeviceModel.SyncHospitalAssaysFromDevices(l.ctx, hid)
+	return nil
 }
 
 func validateDevice(req *types.DeviceUpsertRequest) error {
-	if strings.TrimSpace(req.Category) == "" || strings.TrimSpace(req.Model) == "" {
-		return NewCodeError(400, "设备类别和型号不能为空")
+	if strings.TrimSpace(req.Model) == "" {
+		return NewCodeError(400, "设备型号不能为空")
+	}
+	if strings.TrimSpace(req.Category) == "" && strings.TrimSpace(req.AssayLineCode) == "" {
+		return NewCodeError(400, "请选择所属检测线或设备类别")
+	}
+	if !model.IsAllowedEnum(req.ServiceEvaluation, model.DeviceServiceEvaluationEnum) {
+		return NewCodeError(400, "客户服务评价不在可选范围内")
 	}
 	return nil
 }

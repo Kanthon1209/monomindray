@@ -7,6 +7,7 @@ import {
   AssayTreeField,
   normalizeAssayBlockAnswer,
 } from "@/components/assay-tree-field";
+import { DeviceBlockField } from "@/components/device-block-field";
 import {
   EqaParticipationField,
   normalizeEqaBlockAnswer,
@@ -85,6 +86,11 @@ export function formatSurveyAnswerText(value: unknown): string {
   return String(value);
 }
 
+function looksLikeDeviceAnswer(v: any): boolean {
+  if (!v || typeof v !== "object") return false;
+  return Array.isArray((v as any).devices);
+}
+
 function fieldMeta(
   key: string,
   fields?: SurveyField[],
@@ -93,6 +99,8 @@ function fieldMeta(
   if (f) return { label: f.label || key, type: f.type, field: f };
   if (key === "assays" || key.startsWith("assay"))
     return { label: "检测项目", type: "assay_block" };
+  if (key === "devices" || key.startsWith("device"))
+    return { label: "设备列表", type: "device_block" };
   if (key.startsWith("eqa")) return { label: "EQA", type: "eqa_block" };
   return { label: key };
 }
@@ -119,6 +127,8 @@ export function SurveyAnswersView({ answers, fields, className }: Props) {
           meta.type === "eqa_block" || looksLikeEqaAnswer(v);
         const isAssay =
           meta.type === "assay_block" || looksLikeAssayAnswer(v);
+        const isDevice =
+          meta.type === "device_block" || looksLikeDeviceAnswer(v);
 
         if (isEqa) {
           return (
@@ -146,6 +156,21 @@ export function SurveyAnswersView({ answers, fields, className }: Props) {
                 {meta.label}
               </div>
               <AssayTreeField
+                value={v}
+                onChange={() => {}}
+                disabled
+              />
+            </div>
+          );
+        }
+
+        if (isDevice) {
+          return (
+            <div key={k} className="min-w-0 space-y-2 md:col-span-2">
+              <div className="text-sm font-medium text-muted-foreground">
+                {meta.label}
+              </div>
+              <DeviceBlockField
                 value={v}
                 onChange={() => {}}
                 disabled
