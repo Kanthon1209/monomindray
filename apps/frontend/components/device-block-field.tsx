@@ -356,10 +356,40 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                         (c) => c.kind === "item",
                       );
                       if (items.length === 0) return null;
+                      const catCodes = items.map((i) => i.code);
+                      const catSelected = catCodes.filter((c) =>
+                        selected.has(c),
+                      ).length;
+                      const catAllOn =
+                        catSelected === catCodes.length && catCodes.length > 0;
                       return (
                         <div key={cat.code} className="space-y-1.5">
-                          <div className="text-xs font-medium text-muted-foreground">
-                            {cat.name}
+                          <div className="flex min-h-7 items-center gap-2">
+                            <span className="text-xs font-medium leading-7 text-muted-foreground">
+                              {cat.name}
+                            </span>
+                            {!disabled ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-7 shrink-0 items-center text-xs leading-7 text-primary"
+                                onClick={() => {
+                                  const set = new Set(row.itemCodes);
+                                  if (catAllOn) {
+                                    catCodes.forEach((c) => set.delete(c));
+                                  } else {
+                                    catCodes.forEach((c) => set.add(c));
+                                  }
+                                  updateRow(index, {
+                                    itemCodes: Array.from(set),
+                                  });
+                                }}
+                              >
+                                {catAllOn ? "取消全选" : "全选"}
+                              </button>
+                            ) : null}
+                            <span className="text-xs leading-7 text-muted-foreground">
+                              {catSelected}/{catCodes.length}
+                            </span>
                           </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-1.5">
                             {items.map((it) => (
