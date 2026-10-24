@@ -8,7 +8,6 @@ import {
   getHospital,
   listDevices,
   type Device,
-  type HospitalAssayCategory,
   type HospitalAssayCompetitorCategory,
 } from "@/lib/business";
 import {
@@ -42,6 +41,97 @@ interface HospitalDetailSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
+function deviceLineLabel(d: Device): string {
+  return d.assayLineCode || d.category || "";
+}
+
+function DeviceCard({ device }: { device: Device }) {
+  const line = deviceLineLabel(device);
+  const itemCount = device.itemCodes?.length || 0;
+  return (
+    <li className="rounded-lg border bg-background p-3 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-medium leading-snug">
+            {device.brand || "迈瑞"} {device.model}
+          </div>
+          {device.serialNo ? (
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              SN {device.serialNo}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {line ? (
+            <Badge variant="outline" className="font-normal">
+              {line}
+            </Badge>
+          ) : null}
+          {itemCount > 0 ? (
+            <Badge variant="secondary" className="font-normal">
+              {itemCount} 细项
+            </Badge>
+          ) : null}
+        </div>
+      </div>
+      <dl className="mt-3 grid gap-1.5 text-xs sm:grid-cols-2">
+        {device.usageLocation ? (
+          <div>
+            <dt className="text-muted-foreground">使用位置</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.usageLocation}</dd>
+          </div>
+        ) : null}
+        {device.installedAt ? (
+          <div>
+            <dt className="text-muted-foreground">安装日期</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.installedAt}</dd>
+          </div>
+        ) : null}
+        {device.enabledAt ? (
+          <div>
+            <dt className="text-muted-foreground">启用日期</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.enabledAt}</dd>
+          </div>
+        ) : null}
+        {device.serviceEvaluation ? (
+          <div>
+            <dt className="text-muted-foreground">客户服务评价</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.serviceEvaluation}</dd>
+          </div>
+        ) : null}
+        {device.status ? (
+          <div>
+            <dt className="text-muted-foreground">状态</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.status}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {itemCount > 0 ? (
+        <div className="mt-2 border-t pt-2 text-xs text-muted-foreground">
+          细项覆盖：已勾选 {itemCount} 项
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+type FlatCompetitor = {
+  key: string;
+  brand: string;
+  model: string;
+  serialNo: string;
+  usageLocation: string;
+  installedAt: string;
+  enabledAt: string;
+  serviceEvaluation: string;
+  status: string;
+  assayLine: string;
+  lineName: string;
+  categoryName: string;
+  itemNames: string[];
+  itemCount: number;
+};
+
 export function HospitalDetailSheet({
   hospitalId,
   open,
@@ -49,10 +139,8 @@ export function HospitalDetailSheet({
 }: HospitalDetailSheetProps) {
   const [hospital, setHospital] = useState<Hospital | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [assayCategories, setAssayCategories] = useState<HospitalAssayCategory[]>([]);
   const [competitors, setCompetitors] = useState<HospitalAssayCompetitorCategory[]>([]);
   const [mindrayLines, setMindrayLines] = useState<string[]>([]);
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>({});
   const [eqaRows, setEqaRows] = useState<EqaParticipation[]>([]);
   const [eqaFields, setEqaFields] = useState<EqaFieldNode[]>([]);
   const [openEqa, setOpenEqa] = useState<Record<number, boolean>>({});
@@ -80,10 +168,8 @@ export function HospitalDetailSheet({
         setError(hRes.error);
         setHospital(null);
         setDevices([]);
-        setAssayCategories([]);
         setCompetitors([]);
         setMindrayLines([]);
-        setOpenCats({});
         setEqaRows([]);
         setEqaFields([]);
         setOpenEqa({});
@@ -92,26 +178,8 @@ export function HospitalDetailSheet({
       } else {
         setHospital(hRes.hospital || null);
         setDevices(dRes.items);
-        const cats = aRes.categories || [];
-        setAssayCategories(cats);
         setCompetitors(aRes.competitors || []);
         setMindrayLines(aRes.mindrayLines || []);
-        // Default: expand all 检测线; expand categories when few
-        const nextOpen: Record<string, boolean> = {};
-        const lineKeys = new Set<string>();
-        for (const cat of cats) {
-          const lk = cat.lineCode || cat.lineName || "_noline";
-          lineKeys.add(lk);
-        }
-        for (const lk of lineKeys) {
-          nextOpen[`line:${lk}`] = true;
-        }
-        if (cats.length <= 3) {
-          for (const cat of cats) {
-            nextOpen[cat.code || cat.name] = true;
-          }
-        }
-        setOpenCats(nextOpen);
         const rows = eRes.data?.items || [];
         setEqaRows(rows);
         setEqaFields(fRes.data?.items || []);
@@ -128,31 +196,56 @@ export function HospitalDetailSheet({
     };
   }, [open, hospitalId]);
 
-  /** Group selected leaves as 检测线 → 类别 → 细项 for the card. */
-  const assayLines = useMemo(() => {
-    type LineGroup = {
-      code: string;
-      name: string;
-      categories: HospitalAssayCategory[];
-    };
-    const order: string[] = [];
-    const map = new Map<string, LineGroup>();
-    for (const cat of assayCategories) {
-      const key = cat.lineCode || cat.lineName || "_noline";
-      let line = map.get(key);
-      if (!line) {
-        line = {
-          code: cat.lineCode || "",
-          name: cat.lineName || "未分检测线",
-          categories: [],
-        };
-        map.set(key, line);
-        order.push(key);
-      }
-      line.categories.push(cat);
+  /** Split hospital devices: 迈瑞 = 自有, others = 竞品. Enrich 竞品 with assay item names. */
+  const { ownDevices, competitorDevices } = useMemo(() => {
+    const own: Device[] = [];
+    const comps: Device[] = [];
+    for (const d of devices) {
+      const brand = (d.brand || "迈瑞").trim();
+      if (brand === "迈瑞") own.push(d);
+      else comps.push(d);
     }
-    return order.map((k) => map.get(k)!);
-  }, [assayCategories]);
+    // Map deviceId -> item names / line-category labels from assays competitors payload
+    const metaById = new Map<
+      string,
+      { itemNames: string[]; lineName: string; categoryName: string }
+    >();
+    for (const cat of competitors) {
+      for (const dev of cat.devices || []) {
+        const id = String(dev.deviceId);
+        const prev = metaById.get(id);
+        const names = [...(prev?.itemNames || [])];
+        for (const n of dev.itemNames || []) {
+          if (!names.includes(n)) names.push(n);
+        }
+        metaById.set(id, {
+          itemNames: names,
+          lineName: prev?.lineName || cat.lineName || "",
+          categoryName: prev?.categoryName || cat.name || "",
+        });
+      }
+    }
+    const competitorCards: FlatCompetitor[] = comps.map((d) => {
+      const meta = metaById.get(String(d.id));
+      return {
+        key: d.id,
+        brand: d.brand || "",
+        model: d.model || "",
+        serialNo: d.serialNo || "",
+        usageLocation: d.usageLocation || "",
+        installedAt: d.installedAt || "",
+        enabledAt: d.enabledAt || "",
+        serviceEvaluation: d.serviceEvaluation || "",
+        status: d.status || "",
+        assayLine: d.assayLineCode || d.category || "",
+        lineName: meta?.lineName || "",
+        categoryName: meta?.categoryName || "",
+        itemNames: meta?.itemNames || [],
+        itemCount: d.itemCodes?.length || 0,
+      };
+    });
+    return { ownDevices: own, competitorDevices: competitorCards };
+  }, [devices, competitors]);
 
   /** Group participation rows by year (desc); derive per-year EQA label from scopes. */
   const eqaYears = useMemo(() => {
@@ -275,224 +368,153 @@ export function HospitalDetailSheet({
                 ))}
               </div>
             </section>
-            <section className="space-y-2">
-              <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
-                检测项目开展
-              </h3>
-              <div className="rounded-lg border bg-background text-sm">
-                {assayLines.length === 0 ? (
-                  <div className="px-3 py-3 text-muted-foreground md:px-4">
-                    暂无开展项目（问卷「设备列表」或「检测项目」块审核通过后写入；设备勾选细项即表示开展）
+
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
+                  设备与竞品
+                </h3>
+                {mindrayLines.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-muted-foreground">迈瑞覆盖检测线</span>
+                    {mindrayLines.map((n) => (
+                      <Badge key={n} variant="secondary" className="font-normal">
+                        {n}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-medium">自有设备</h4>
+                  <Badge variant="outline" className="font-normal">
+                    {ownDevices.length}
+                  </Badge>
+                </div>
+                {ownDevices.length === 0 ? (
+                  <div className="rounded-lg border border-dashed bg-muted/10 px-3 py-4 text-sm text-muted-foreground">
+                    暂无自有设备记录
                   </div>
                 ) : (
-                  <ul className="divide-y">
-                    {assayLines.map((line) => {
-                      const lineKey = line.code || line.name;
-                      const lineOpen = openCats[`line:${lineKey}`] !== false;
-                      const catCount = line.categories.length;
-                      const itemTotal = line.categories.reduce(
-                        (n, c) => n + (c.itemCount || c.items?.length || 0),
-                        0,
-                      );
-                      return (
-                        <li key={lineKey}>
-                          <button
-                            type="button"
-                            className="flex w-full items-center justify-between gap-2 bg-muted/30 px-3 py-2.5 text-left hover:bg-muted/50 md:px-4"
-                            onClick={() =>
-                              setOpenCats((s) => ({
-                                ...s,
-                                [`line:${lineKey}`]: !lineOpen,
-                              }))
-                            }
-                          >
-                            <span className="min-w-0">
-                              <span className="mr-1.5 text-muted-foreground">
-                                {lineOpen ? "▾" : "▸"}
-                              </span>
-                              <span className="font-semibold">{line.name}</span>
-                              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                                检测线
-                              </span>
-                            </span>
-                            <span className="flex shrink-0 items-center gap-1.5">
-                              <Badge variant="outline" className="font-normal">
-                                {catCount} 类
-                              </Badge>
-                              <Badge variant="secondary" className="font-normal">
-                                {itemTotal} 项
-                              </Badge>
-                            </span>
-                          </button>
-                          {lineOpen ? (
-                            <ul className="divide-y border-t">
-                              {line.categories.map((cat) => {
-                                const key = cat.code || cat.name;
-                                const open = !!openCats[key];
-                                return (
-                                  <li key={key}>
-                                    <button
-                                      type="button"
-                                      className="flex w-full items-center justify-between gap-2 px-3 py-2 pl-7 text-left hover:bg-muted/40 md:px-4 md:pl-10"
-                                      onClick={() =>
-                                        setOpenCats((s) => ({
-                                          ...s,
-                                          [key]: !s[key],
-                                        }))
-                                      }
-                                    >
-                                      <span className="min-w-0">
-                                        <span className="mr-1.5 text-muted-foreground">
-                                          {open ? "▾" : "▸"}
-                                        </span>
-                                        <span className="font-medium">{cat.name}</span>
-                                        <span className="ml-2 text-xs font-normal text-muted-foreground">
-                                          类别
-                                        </span>
-                                      </span>
-                                      <Badge
-                                        variant="secondary"
-                                        className="shrink-0 font-normal"
-                                      >
-                                        {cat.itemCount || cat.items?.length || 0}{" "}
-                                        细项
-                                      </Badge>
-                                    </button>
-                                    {open ? (
-                                      <div className="flex flex-wrap gap-1.5 border-t bg-muted/20 px-3 py-2.5 pl-7 md:px-4 md:pl-10">
-                                        {(cat.items || []).length === 0 ? (
-                                          <span className="text-xs text-muted-foreground">
-                                            无细项
-                                          </span>
-                                        ) : (
-                                          (cat.items || []).map((it) => (
-                                            <Badge
-                                              key={it.code || it.name}
-                                              variant="outline"
-                                              className="font-normal"
-                                            >
-                                              {it.name}
-                                            </Badge>
-                                          ))
-                                        )}
-                                      </div>
-                                    ) : null}
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          ) : null}
-                        </li>
-                      );
-                    })}
+                  <ul className="grid gap-3 sm:grid-cols-2">
+                    {ownDevices.map((d) => (
+                      <DeviceCard key={d.id} device={d} />
+                    ))}
                   </ul>
                 )}
               </div>
-            </section>
-            <section className="space-y-2">
-              <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
-                设备与竞品
-              </h3>
-              <div className="rounded-lg border bg-background text-sm">
-                {mindrayLines.length > 0 ? (
-                  <div className="border-b px-3 py-2.5 md:px-4">
-                    <div className="mb-1 text-xs text-muted-foreground">迈瑞覆盖检测线</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {mindrayLines.map((n) => (
-                        <Badge key={n} variant="secondary" className="font-normal">
-                          {n}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {devices.length === 0 ? (
-                  <div className="px-3 py-3 text-muted-foreground md:px-4">
-                    暂无设备记录
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-medium">竞品设备</h4>
+                  <Badge variant="outline" className="font-normal">
+                    {competitorDevices.length}
+                  </Badge>
+                </div>
+                {competitorDevices.length === 0 ? (
+                  <div className="rounded-lg border border-dashed bg-muted/10 px-3 py-4 text-sm text-muted-foreground">
+                    暂无同检测线竞品设备
                   </div>
                 ) : (
-                  <ul className="divide-y">
-                    {devices.map((d) => (
-                      <li key={d.id} className="px-3 py-2.5 md:px-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium">
-                            {d.brand || "迈瑞"} {d.model}
-                          </span>
-                          {d.assayLineCode ? (
-                            <Badge variant="outline" className="font-normal">
-                              {d.assayLineCode}
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="font-normal">
-                              {d.category}
-                            </Badge>
-                          )}
-                          {(d.itemCodes?.length || 0) > 0 ? (
-                            <Badge variant="secondary" className="font-normal">
-                              {d.itemCodes!.length} 细项
-                            </Badge>
-                          ) : null}
-                          {d.serviceEvaluation ? (
-                            <Badge variant="outline" className="font-normal">
-                              {d.serviceEvaluation}
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <div className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
-                          {d.serialNo ? <div>SN {d.serialNo}</div> : null}
-                          {d.usageLocation ? (
-                            <div>使用位置：{d.usageLocation}</div>
-                          ) : null}
-                          {d.installedAt || d.enabledAt ? (
-                            <div>
-                              {[
-                                d.installedAt ? `安装 ${d.installedAt}` : "",
-                                d.enabledAt ? `启用 ${d.enabledAt}` : "",
-                              ]
+                  <ul className="grid gap-3 sm:grid-cols-2">
+                    {competitorDevices.map((dev) => (
+                      <li
+                        key={dev.key}
+                        className="rounded-lg border border-amber-200/60 bg-amber-50/40 p-3 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-medium leading-snug">
+                              {dev.brand} {dev.model}
+                            </div>
+                            {dev.serialNo ? (
+                              <div className="mt-0.5 text-xs text-muted-foreground">
+                                SN {dev.serialNo}
+                              </div>
+                            ) : null}
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {[dev.lineName || dev.assayLine, dev.categoryName]
                                 .filter(Boolean)
-                                .join(" · ")}
+                                .join(" · ") || "竞品"}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <Badge variant="outline" className="font-normal">
+                              竞品
+                            </Badge>
+                            {dev.itemCount > 0 ? (
+                              <Badge variant="secondary" className="font-normal">
+                                {dev.itemCount} 细项
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </div>
+                        <dl className="mt-3 grid gap-1.5 text-xs sm:grid-cols-2">
+                          {dev.usageLocation ? (
+                            <div>
+                              <dt className="text-muted-foreground">使用位置</dt>
+                              <dd className="mt-0.5 text-sm text-foreground">
+                                {dev.usageLocation}
+                              </dd>
                             </div>
                           ) : null}
-                        </div>
+                          {dev.installedAt ? (
+                            <div>
+                              <dt className="text-muted-foreground">安装日期</dt>
+                              <dd className="mt-0.5 text-sm text-foreground">
+                                {dev.installedAt}
+                              </dd>
+                            </div>
+                          ) : null}
+                          {dev.enabledAt ? (
+                            <div>
+                              <dt className="text-muted-foreground">启用日期</dt>
+                              <dd className="mt-0.5 text-sm text-foreground">
+                                {dev.enabledAt}
+                              </dd>
+                            </div>
+                          ) : null}
+                          {dev.serviceEvaluation ? (
+                            <div>
+                              <dt className="text-muted-foreground">客户服务评价</dt>
+                              <dd className="mt-0.5 text-sm text-foreground">
+                                {dev.serviceEvaluation}
+                              </dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                        {dev.itemNames.length > 0 ? (
+                          <div className="mt-3 border-t border-amber-200/50 pt-2 dark:border-amber-900/30">
+                            <div className="mb-1.5 text-xs text-muted-foreground">
+                              细项覆盖（{dev.itemNames.length}）
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {dev.itemNames.slice(0, 12).map((name) => (
+                                <Badge
+                                  key={name}
+                                  variant="outline"
+                                  className="font-normal"
+                                >
+                                  {name}
+                                </Badge>
+                              ))}
+                              {dev.itemNames.length > 12 ? (
+                                <span className="text-xs text-muted-foreground">
+                                  +{dev.itemNames.length - 12}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
                 )}
-                {competitors.length > 0 ? (
-                  <div className="border-t px-3 py-2.5 md:px-4">
-                    <div className="mb-2 text-xs font-medium text-muted-foreground">
-                      同检测线 / 类别下的竞品设备
-                    </div>
-                    <ul className="space-y-2">
-                      {competitors.map((c) => (
-                        <li key={c.code || c.name} className="rounded-md border bg-muted/20 p-2">
-                          <div className="mb-1 text-xs">
-                            <span className="font-medium">{c.lineName || "检测线"}</span>
-                            <span className="text-muted-foreground"> · </span>
-                            <span>{c.name}</span>
-                          </div>
-                          <div className="space-y-1">
-                            {c.devices.map((dev) => (
-                              <div key={dev.deviceId} className="text-sm">
-                                <span className="font-medium">
-                                  {dev.brand} {dev.model}
-                                </span>
-                                {(dev.itemNames?.length || 0) > 0 ? (
-                                  <span className="ml-2 text-xs text-muted-foreground">
-                                    {dev.itemNames!.slice(0, 8).join("、")}
-                                    {dev.itemNames!.length > 8 ? "…" : ""}
-                                  </span>
-                                ) : null}
-                              </div>
-                            ))}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
               </div>
             </section>
+
             <section className="space-y-2">
               <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
                 室间质评
