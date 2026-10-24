@@ -12,6 +12,7 @@ import {
 import {
   createDeviceGlobal,
   deleteDevice,
+  fetchDeviceBrandSuggestions,
   listAllDevices,
   listHospitals,
   type Device,
@@ -26,6 +27,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ComboboxInput } from "@/components/ui/combobox-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -71,6 +73,7 @@ export default function DevicesPage() {
   const [total, setTotal] = useState(0);
   const [keyword, setKeyword] = useState("");
   const [brandFilter, setBrandFilter] = useState("all");
+  const [brandOptions, setBrandOptions] = useState<string[]>(["迈瑞", "罗氏", "雅培", "西门子", "贝克曼", "Ortho", "希森美康", "积水"]);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +109,19 @@ export default function DevicesPage() {
     setTotal(res.total);
     setLoading(false);
   }, [keyword, brandFilter, categoryFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await fetchDeviceBrandSuggestions("", 80);
+      if (cancelled || res.error) return;
+      if (res.items.length) setBrandOptions(res.items);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
 
   useEffect(() => {
     load();
@@ -256,11 +272,12 @@ export default function DevicesPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>品牌</Label>
-                  <Input
+                  <Label>所属公司</Label>
+                  <ComboboxInput
                     value={form.brand}
-                    onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))}
-                    placeholder="迈瑞 / 罗氏 / 雅培…"
+                    options={brandOptions}
+                    placeholder="输入或选择公司（可自定义）"
+                    onChange={(v) => setForm((f) => ({ ...f, brand: v }))}
                   />
                 </div>
                 <div className="space-y-2">

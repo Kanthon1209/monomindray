@@ -34,6 +34,7 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 
 			// Hospital name typeahead for survey fill (collectors + admins)
 			{Method: http.MethodGet, Path: "/api/v1/hospitals/search", Handler: SearchHospitalsHandler(svcCtx)},
+			{Method: http.MethodGet, Path: "/api/v1/devices/brands/suggestions", Handler: SuggestDeviceBrandsHandler(svcCtx)},
 
 			{Method: http.MethodGet, Path: "/api/v1/collectable-fields", Handler: ListCollectableFieldsHandler(svcCtx)},
 			{Method: http.MethodGet, Path: "/api/v1/eqa/fields", Handler: ListEqaFieldsHandler(svcCtx)},

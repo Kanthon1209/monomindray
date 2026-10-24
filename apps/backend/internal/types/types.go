@@ -211,6 +211,13 @@ type (
 	DeviceResponse struct {
 		Device DeviceInfo `json:"device"`
 	}
+	SuggestDeviceBrandsRequest struct {
+		Q     string `form:"q,optional"`
+		Limit int    `form:"limit,optional"`
+	}
+	SuggestDeviceBrandsResponse struct {
+		Items []string `json:"items"`
+	}
 
 	CustomerInfo struct {
 		Id           int64  `json:"id"`

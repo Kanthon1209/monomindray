@@ -1060,6 +1060,20 @@ export async function searchHospitalsForSurvey(keyword: string, limit = 40) {
   };
 }
 
+
+/** Device brand typeahead: DISTINCT devices.brand + seed commons (JWT shared). */
+export async function fetchDeviceBrandSuggestions(q = "", limit = 40) {
+  const { data, error } = await apiFetch<{ items: string[] }>(
+    `/devices/brands/suggestions${qs({ q: q.trim() || undefined, limit })}`,
+  );
+  if (error) {
+    return { error, items: [] as string[] };
+  }
+  return {
+    items: (data?.items || []).map((s) => String(s || "").trim()).filter(Boolean),
+  };
+}
+
 // ---- collectable fields catalog ----
 
 export type CollectableField = {

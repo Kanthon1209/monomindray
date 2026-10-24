@@ -53,6 +53,7 @@ type DeviceModel interface {
 	ListDeviceAssayCodes(ctx context.Context, deviceID int64) ([]string, error)
 	ListDeviceAssayCodesByHospital(ctx context.Context, hospitalID int64) (map[int64][]string, error)
 	SyncHospitalAssaysFromDevices(ctx context.Context, hospitalID int64) error
+	SuggestBrands(ctx context.Context, q string, limit int) ([]string, error)
 }
 
 type deviceModel struct{ conn *pgxpool.Pool }
@@ -507,4 +508,55 @@ func (m *deviceModel) SyncHospitalAssaysFromDevices(ctx context.Context, hospita
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// SuggestBrands returns distinct device brand names matching q (ILIKE), newest usage first.
+// Empty q returns all distinct brands (capped by limit).
+func (m *deviceModel) SuggestBrands(ctx context.Context, q string, limit int) ([]string, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 40
+	}
+	q = strings.TrimSpace(q)
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if q == "" {
+		rows, err = m.conn.Query(ctx, `
+			SELECT brand FROM (
+				SELECT TRIM(brand) AS brand, MAX(updated_at) AS last_seen
+				FROM devices
+				WHERE TRIM(COALESCE(brand, '')) <> ''
+				GROUP BY TRIM(brand)
+			) t
+			ORDER BY last_seen DESC, brand
+			LIMIT $1`, limit)
+	} else {
+		rows, err = m.conn.Query(ctx, `
+			SELECT brand FROM (
+				SELECT TRIM(brand) AS brand, MAX(updated_at) AS last_seen
+				FROM devices
+				WHERE TRIM(COALESCE(brand, '')) <> ''
+				  AND brand ILIKE '%' || $1 || '%'
+				GROUP BY TRIM(brand)
+			) t
+			ORDER BY last_seen DESC, brand
+			LIMIT $2`, q, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("suggest brands: %w", err)
+	}
+	defer rows.Close()
+	out := make([]string, 0, limit)
+	for rows.Next() {
+		var b string
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		b = strings.TrimSpace(b)
+		if b != "" {
+			out = append(out, b)
+		}
+	}
+	return out, rows.Err()
 }

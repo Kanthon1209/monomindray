@@ -3,8 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
-import { fetchAssayTree, type AssayTreeNode } from "@/lib/business";
+import {
+  fetchAssayTree,
+  fetchDeviceBrandSuggestions,
+  type AssayTreeNode,
+} from "@/lib/business";
 import { Button } from "@/components/ui/button";
+import { ComboboxInput } from "@/components/ui/combobox-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -32,7 +37,7 @@ export type DeviceBlockAnswer = {
   devices: DeviceBlockRow[];
 };
 
-const COMMON_BRANDS = ["迈瑞", "罗氏", "雅培", "西门子", "贝克曼", "Ortho", "其它"];
+const SEED_BRANDS = ["迈瑞", "罗氏", "雅培", "西门子", "贝克曼", "Ortho", "希森美康", "积水"];
 
 export function normalizeDeviceBlockAnswer(value: any): DeviceBlockAnswer {
   if (value && typeof value === "object" && Array.isArray(value.devices)) {
@@ -110,6 +115,7 @@ type Props = {
 
 export function DeviceBlockField({ value, onChange, disabled }: Props) {
   const [tree, setTree] = useState<AssayTreeNode[]>([]);
+  const [brandOptions, setBrandOptions] = useState<string[]>(SEED_BRANDS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const answer = useMemo(() => normalizeDeviceBlockAnswer(value), [value]);
@@ -119,13 +125,21 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
     (async () => {
       setLoading(true);
       setError(null);
-      const res = await fetchAssayTree();
+      const [res, brands] = await Promise.all([
+        fetchAssayTree(),
+        fetchDeviceBrandSuggestions("", 80),
+      ]);
       if (cancelled) return;
       if (res.error) {
         setError(res.error);
         setTree([]);
       } else {
         setTree(res.items || []);
+      }
+      if (!brands.error && brands.items.length) {
+        setBrandOptions(brands.items);
+      } else {
+        setBrandOptions(SEED_BRANDS);
       }
       setLoading(false);
     })();
@@ -174,7 +188,7 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          每台设备需填写机型 / 序列号 / 安装与启用日期，再选检测线并勾选细项覆盖；所属公司区分迈瑞 / 竞品。
+          每台设备需填写机型 / 序列号 / 安装与启用日期，再选检测线并勾选细项覆盖；所属公司可联想或自定义（迈瑞 / 竞品）。
         </p>
         {!disabled ? (
           <Button
@@ -219,45 +233,16 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>所属公司</Label>
-                <Select
-                  value={
-                    COMMON_BRANDS.includes(row.brand) ? row.brand : "其它"
-                  }
+                <ComboboxInput
+                  value={row.brand}
                   disabled={disabled}
-                  onValueChange={(v) => {
-                    if (v === "其它") {
-                      updateRow(index, {
-                        brand: row.brand === "迈瑞" || COMMON_BRANDS.includes(row.brand)
-                          ? ""
-                          : row.brand,
-                      });
-                    } else {
-                      updateRow(index, { brand: v });
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择公司" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COMMON_BRANDS.map((b) => (
-                      <SelectItem key={b} value={b}>
-                        {b}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!COMMON_BRANDS.includes(row.brand) || row.brand === "" ? (
-                  <Input
-                    className="mt-1"
-                    placeholder="输入公司名称"
-                    value={row.brand}
-                    disabled={disabled}
-                    onChange={(e) =>
-                      updateRow(index, { brand: e.target.value })
-                    }
-                  />
-                ) : null}
+                  placeholder="输入或选择公司（可自定义）"
+                  options={brandOptions}
+                  onChange={(v) => updateRow(index, { brand: v })}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  可自由输入；审核写入后下次联想会带出自定义公司名
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>所属检测线</Label>

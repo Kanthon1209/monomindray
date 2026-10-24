@@ -213,6 +213,55 @@ func (l *DeviceLogic) Delete(id int64) error {
 	return nil
 }
 
+
+// SuggestBrands is available to any logged-in user (survey fill + admin).
+// Merges seed commons with DISTINCT devices.brand; DB hits first, then missing seeds.
+func (l *DeviceLogic) SuggestBrands(req *types.SuggestDeviceBrandsRequest) (*types.SuggestDeviceBrandsResponse, error) {
+	if _, err := authx.UserIDFromCtx(l.ctx); err != nil {
+		return nil, ErrUnauthorized
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 40
+	}
+	dbItems, err := l.svcCtx.DeviceModel.SuggestBrands(l.ctx, req.Q, limit)
+	if err != nil {
+		l.Errorf("suggest brands: %v", err)
+		return nil, ErrInternal
+	}
+	seeds := []string{"迈瑞", "罗氏", "雅培", "西门子", "贝克曼", "Ortho", "希森美康", "积水"}
+	q := strings.TrimSpace(strings.ToLower(req.Q))
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(dbItems)+len(seeds))
+	for _, b := range dbItems {
+		b = strings.TrimSpace(b)
+		if b == "" {
+			continue
+		}
+		key := strings.ToLower(b)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, b)
+	}
+	for _, s := range seeds {
+		key := strings.ToLower(s)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		if q != "" && !strings.Contains(strings.ToLower(s), q) {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return &types.SuggestDeviceBrandsResponse{Items: out}, nil
+}
+
 func validateDevice(req *types.DeviceUpsertRequest) error {
 	if strings.TrimSpace(req.Model) == "" {
 		return NewCodeError(400, "设备型号不能为空")

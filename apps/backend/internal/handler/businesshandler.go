@@ -174,6 +174,23 @@ func ListAllDevicesHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+
+func SuggestDeviceBrandsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.SuggestDeviceBrandsRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewDeviceLogic(r.Context(), svcCtx).SuggestBrands(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
 func CreateDeviceGlobalHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req types.DeviceUpsertRequest
