@@ -94,7 +94,7 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "branchOffice", label: "分公司", section: "客户基础" },
   { key: "customerName", label: "客户名称", section: "客户基础" },
   { key: "customerCode", label: "客户编码", section: "客户基础" },
-  { key: "dualMajorCustomer", label: "26年是否双大", section: "客户基础" },
+  { key: "dualMajorCustomer", label: "双大客户", section: "客户基础" },
 ];
 
 /** 看板默认列（关键指标，适配窄侧栏） */
@@ -222,7 +222,7 @@ export const HOSPITAL_ATTRIBUTE_LABELS: Record<string, string> = {
   pending_issues: "客户端待解决问题及需求",
   // deprecated / soft-archived from catalog — keep label for legacy attribute rows
   svip_level: "SVIP级别（已停用）",
-  dual_major: "26年是否双大",
+  dual_major: "双大客户",
   sales_group: "分组",
   volume_direction: "上量方向",
   dual_major_type: "双大类型",

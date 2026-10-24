@@ -257,7 +257,7 @@ export function HospitalDetailSheet({
                     value: hospital?.attributes?.customer_level || "",
                   },
                   {
-                    label: "26年是否双大",
+                    label: HOSPITAL_ATTRIBUTE_LABELS.dual_major || "双大客户",
                     value: hospital?.attributes?.dual_major || "",
                   },
                 ].map((row) => (
