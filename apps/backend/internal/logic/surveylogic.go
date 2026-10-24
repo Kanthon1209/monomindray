@@ -692,7 +692,7 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		}
 		target = strings.TrimSpace(target)
 		setArchive := func(k string, v string) {
-			// customer_level / usage_location live only in hospital_attributes
+			// customer_level → hospital_attributes; usage_location → devices only
 			switch k {
 			case "customerLevel", "customer_level", "usageLocation", "usage_location":
 				return
@@ -707,7 +707,12 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 			// Assay block written by AssayProjectLogic.WritebackFromSurveyAnswers only.
 			return
 		case strings.HasPrefix(target, "hospital.attributes."):
-			attributes[strings.TrimPrefix(target, "hospital.attributes.")] = value
+			attrKey := strings.TrimPrefix(target, "hospital.attributes.")
+			if attrKey == "usage_location" || attrKey == "usageLocation" {
+				// device instance attr — collected via device_block
+				return
+			}
+			attributes[attrKey] = value
 		case strings.HasPrefix(target, "hospital.metrics."):
 			metrics[strings.TrimPrefix(target, "hospital.metrics.")] = value
 		case strings.HasPrefix(target, "hospital.archive."):
@@ -996,10 +1001,11 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 			return NewCodeError(400, "设备「客户服务评价」不在可选范围内："+serviceEval)
 		}
 
+		usageLoc := firstNonEmpty(
+			anyToString(row["usageLocation"]),
+			anyToString(row["usage_location"]),
+		)
 		remarkParts := []string{}
-		if loc := anyToString(row["usageLocation"]); loc != "" {
-			remarkParts = append(remarkParts, "位置:"+loc)
-		}
 		if vol := anyToString(row["mindraySampleVolume"]); vol != "" {
 			remarkParts = append(remarkParts, "迈瑞标本量:"+vol)
 		}
@@ -1033,7 +1039,8 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 			_, err = l.svcCtx.DeviceModel.Insert(l.ctx, &model.Device{
 				HospitalId: hospitalID, Brand: brand, Category: cat, AssayLineCode: line,
 				Model: modelName, SerialNo: serial,
-				Status: "active", InstalledAt: installedAt, EnabledAt: enabledAt, Remark: remark,
+				Status: "active", InstalledAt: installedAt, EnabledAt: enabledAt,
+				UsageLocation: usageLoc, Remark: remark,
 				ServiceEvaluation: serviceEval, ItemCodes: itemCodes,
 				CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
 			})
@@ -1058,6 +1065,9 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 		}
 		if enabledAt != nil {
 			existing.EnabledAt = enabledAt
+		}
+		if usageLoc != "" {
+			existing.UsageLocation = usageLoc
 		}
 		if remark != "" {
 			existing.Remark = remark

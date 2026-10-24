@@ -253,7 +253,7 @@ export const HOSPITAL_COLUMN_TARGETS = HOSPITAL_COLUMNS.map((c) => ({
 /** 可扩展标签（hospital_attributes） */
 export const HOSPITAL_ATTRIBUTE_KEYS = [
   "customer_level",
-  "usage_location",
+  // usage_location → devices.usage_location (device instance)
   "customer_stage",
   "pending_issues",
   // svip_level soft-archived: redundant with customer_level + hospital.level
@@ -281,9 +281,19 @@ export const DEVICE_SERVICE_EVALUATION_OPTIONS = [
   "客户关系良好, 口碑优于竞品",
 ] as const;
 
+/** 设备使用位置枚举（devices.usage_location；「其他」可自填） */
+export const DEVICE_USAGE_LOCATION_OPTIONS = [
+  "门急诊",
+  "住院部",
+  "体检中心",
+  "核医学科",
+  "其他",
+] as const;
+
 export const HOSPITAL_ATTRIBUTE_LABELS: Record<string, string> = {
   customer_level: "客户等级",
-  usage_location: "使用位置",
+  // legacy hospital_attributes rows may still exist; label kept for read-only
+  usage_location: "使用位置（已迁至设备）",
   customer_stage: "客户所在阶段",
   pending_issues: "客户端待解决问题及需求",
   // deprecated / soft-archived from catalog — keep label for legacy attribute rows

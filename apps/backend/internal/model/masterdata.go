@@ -357,8 +357,7 @@ func nullIfZero(id int64) *int64 {
 var KnownAttributeKeys = map[string]string{
 	"customerLevel":     "customer_level",
 	"customer_level":    "customer_level",
-	"usageLocation":     "usage_location",
-	"usage_location":    "usage_location",
+	// usage_location moved to devices.usage_location (device instance attr)
 	"customerStage":     "customer_stage",
 	"customer_stage":    "customer_stage",
 	"pendingIssues":     "pending_issues",

@@ -145,9 +145,7 @@ function resolveFieldTypeFromMapping(draft: FieldDraft): string {
   if (attr.startsWith("hospital.attributes.customer_stage") || attr.endsWith("customer_stage")) {
     return "enum";
   }
-  if (attr.startsWith("hospital.attributes.usage_location") || attr.endsWith("usage_location")) {
-    return "enum";
-  }
+  // usage_location is a device attr (device_block), not hospital.attributes
   if (attr.startsWith("archive.")) {
     const key = attr.slice("archive.".length).trim();
     if (DATE_ARCHIVE_KEYS.has(key)) return "date";

@@ -22,6 +22,7 @@ type Device struct {
 	Status             string
 	InstalledAt        *time.Time
 	EnabledAt          *time.Time
+	UsageLocation      string
 	Remark             string
 	ServiceEvaluation  string
 	ItemCodes          []string
@@ -81,7 +82,7 @@ func CategoryFromAssayLine(line string) string {
 func deviceSelectCols() string {
 	return `d.id, d.hospital_id, COALESCE(h.name,''), COALESCE(d.brand,'迈瑞'), d.category,
 		COALESCE(d.assay_line_code,''), d.model, d.serial_no,
-		d.status, d.installed_at, d.enabled_at, d.remark, COALESCE(d.service_evaluation,''),
+		d.status, d.installed_at, d.enabled_at, COALESCE(d.usage_location,''), d.remark, COALESCE(d.service_evaluation,''),
 		d.created_by, d.updated_by, d.created_at, d.updated_at`
 }
 
@@ -92,7 +93,7 @@ func scanDevice(row interface {
 	err := row.Scan(
 		&d.Id, &d.HospitalId, &d.HospitalName, &d.Brand, &d.Category,
 		&d.AssayLineCode, &d.Model, &d.SerialNo,
-		&d.Status, &d.InstalledAt, &d.EnabledAt, &d.Remark, &d.ServiceEvaluation,
+		&d.Status, &d.InstalledAt, &d.EnabledAt, &d.UsageLocation, &d.Remark, &d.ServiceEvaluation,
 		&d.CreatedBy, &d.UpdatedBy, &d.CreatedAt, &d.UpdatedAt,
 	)
 	if d.ItemCodes == nil {
@@ -286,9 +287,9 @@ func (m *deviceModel) Insert(ctx context.Context, d *Device) (int64, error) {
 	}
 	var id int64
 	err := m.conn.QueryRow(ctx, `
-		INSERT INTO devices (hospital_id, brand, category, assay_line_code, model, serial_no, status, installed_at, enabled_at, remark, service_evaluation, created_by, updated_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-		d.HospitalId, brand, cat, line, d.Model, d.SerialNo, d.Status, d.InstalledAt, d.EnabledAt, d.Remark, strings.TrimSpace(d.ServiceEvaluation), d.CreatedBy, d.UpdatedBy,
+		INSERT INTO devices (hospital_id, brand, category, assay_line_code, model, serial_no, status, installed_at, enabled_at, usage_location, remark, service_evaluation, created_by, updated_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+		d.HospitalId, brand, cat, line, d.Model, d.SerialNo, d.Status, d.InstalledAt, d.EnabledAt, strings.TrimSpace(d.UsageLocation), d.Remark, strings.TrimSpace(d.ServiceEvaluation), d.CreatedBy, d.UpdatedBy,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert device: %w", err)
@@ -316,9 +317,9 @@ func (m *deviceModel) Update(ctx context.Context, d *Device) error {
 	}
 	_, err := m.conn.Exec(ctx, `
 		UPDATE devices SET hospital_id=$1, brand=$2, category=$3, assay_line_code=$4, model=$5, serial_no=$6,
-		       status=$7, installed_at=$8, enabled_at=$9, remark=$10, service_evaluation=$11, updated_by=$12
-		WHERE id=$13`,
-		d.HospitalId, brand, cat, line, d.Model, d.SerialNo, d.Status, d.InstalledAt, d.EnabledAt, d.Remark, strings.TrimSpace(d.ServiceEvaluation), d.UpdatedBy, d.Id,
+		       status=$7, installed_at=$8, enabled_at=$9, usage_location=$10, remark=$11, service_evaluation=$12, updated_by=$13
+		WHERE id=$14`,
+		d.HospitalId, brand, cat, line, d.Model, d.SerialNo, d.Status, d.InstalledAt, d.EnabledAt, strings.TrimSpace(d.UsageLocation), d.Remark, strings.TrimSpace(d.ServiceEvaluation), d.UpdatedBy, d.Id,
 	)
 	if err != nil {
 		return fmt.Errorf("update device: %w", err)

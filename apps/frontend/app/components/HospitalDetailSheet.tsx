@@ -273,10 +273,6 @@ export function HospitalDetailSheet({
                     value: hospital?.attributes?.customer_stage || "",
                   },
                   {
-                    label: HOSPITAL_ATTRIBUTE_LABELS.usage_location || "使用位置",
-                    value: hospital?.attributes?.usage_location || "",
-                  },
-                  {
                     label: HOSPITAL_ATTRIBUTE_LABELS.pending_issues || "客户端待解决问题及需求",
                     value: hospital?.attributes?.pending_issues || "",
                   },
@@ -458,11 +454,22 @@ export function HospitalDetailSheet({
                             </Badge>
                           ) : null}
                         </div>
-                        {d.serialNo ? (
-                          <div className="mt-0.5 text-xs text-muted-foreground">
-                            SN {d.serialNo}
-                          </div>
-                        ) : null}
+                        <div className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                          {d.serialNo ? <div>SN {d.serialNo}</div> : null}
+                          {d.usageLocation ? (
+                            <div>使用位置：{d.usageLocation}</div>
+                          ) : null}
+                          {d.installedAt || d.enabledAt ? (
+                            <div>
+                              {[
+                                d.installedAt ? `安装 ${d.installedAt}` : "",
+                                d.enabledAt ? `启用 ${d.enabledAt}` : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
+                          ) : null}
+                        </div>
                       </li>
                     ))}
                   </ul>

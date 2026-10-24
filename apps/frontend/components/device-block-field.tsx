@@ -19,7 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DEVICE_SERVICE_EVALUATION_OPTIONS } from "@/lib/hospital-archive";
+import {
+  DEVICE_SERVICE_EVALUATION_OPTIONS,
+  DEVICE_USAGE_LOCATION_OPTIONS,
+} from "@/lib/hospital-archive";
 
 export type DeviceBlockRow = {
   brand: string;
@@ -27,6 +30,7 @@ export type DeviceBlockRow = {
   serialNo?: string;
   installedAt?: string;
   enabledAt?: string;
+  usageLocation?: string;
   assayLineCode: string;
   itemCodes: string[];
   serviceEvaluation?: string;
@@ -72,6 +76,8 @@ function normalizeRow(raw: any): DeviceBlockRow | null {
     serialNo: String(raw.serialNo || raw.serial_no || "").trim() || undefined,
     installedAt: String(raw.installedAt || raw.installed_at || "").trim() || undefined,
     enabledAt: String(raw.enabledAt || raw.enabled_at || "").trim() || undefined,
+    usageLocation:
+      String(raw.usageLocation || raw.usage_location || "").trim() || undefined,
     assayLineCode: String(raw.assayLineCode || raw.lineCode || "").trim(),
     itemCodes,
     serviceEvaluation:
@@ -88,6 +94,7 @@ function emptyRow(): DeviceBlockRow {
     serialNo: "",
     installedAt: "",
     enabledAt: "",
+    usageLocation: "",
     assayLineCode: "",
     itemCodes: [],
     serviceEvaluation: "",
@@ -311,6 +318,75 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                     updateRow(index, { enabledAt: e.target.value })
                   }
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label>使用位置</Label>
+                <Select
+                  value={
+                    (() => {
+                      const v = (row.usageLocation || "").trim();
+                      if (!v) return undefined;
+                      if (
+                        (DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]).includes(
+                          v,
+                        )
+                      )
+                        return v;
+                      return "其他";
+                    })()
+                  }
+                  disabled={disabled}
+                  onValueChange={(v) => {
+                    if (v === "其他") {
+                      const cur = (row.usageLocation || "").trim();
+                      const isPreset = (
+                        DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]
+                      ).includes(cur);
+                      updateRow(index, {
+                        usageLocation:
+                          !cur || isPreset ? "其他" : cur,
+                      });
+                    } else {
+                      updateRow(index, { usageLocation: v });
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择使用位置" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEVICE_USAGE_LOCATION_OPTIONS.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {(() => {
+                  const v = (row.usageLocation || "").trim();
+                  const isOther =
+                    v === "其他" ||
+                    (v !== "" &&
+                      !(DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]).includes(
+                        v,
+                      ));
+                  if (!isOther) return null;
+                  return (
+                    <Input
+                      className="mt-1.5"
+                      value={v === "其他" ? "" : v}
+                      disabled={disabled}
+                      placeholder="请填写具体位置"
+                      onChange={(e) =>
+                        updateRow(index, {
+                          usageLocation: e.target.value.trim()
+                            ? e.target.value
+                            : "其他",
+                        })
+                      }
+                    />
+                  );
+                })()}
               </div>
               <div className="space-y-1.5 md:col-span-2">
                 <Label>客户服务评价</Label>

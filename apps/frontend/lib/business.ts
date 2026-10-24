@@ -25,6 +25,7 @@ export interface Device {
   status: string;
   installedAt?: string;
   enabledAt?: string;
+  usageLocation?: string;
   remark?: string;
   serviceEvaluation?: string;
   itemCodes?: string[];
@@ -107,6 +108,7 @@ function mapDevice(raw: any): Device {
     status: raw.status,
     installedAt: raw.installedAt || undefined,
     enabledAt: raw.enabledAt || undefined,
+    usageLocation: raw.usageLocation || undefined,
     remark: raw.remark || undefined,
     serviceEvaluation: raw.serviceEvaluation || undefined,
     itemCodes: Array.isArray(raw.itemCodes) ? raw.itemCodes.map(String) : [],
@@ -284,6 +286,7 @@ export async function createDeviceGlobal(payload: {
   status?: string;
   installedAt?: string;
   enabledAt?: string;
+  usageLocation?: string;
   remark?: string;
   serviceEvaluation?: string;
   itemCodes?: string[];
@@ -308,6 +311,7 @@ export async function updateDevice(
     status?: string;
     installedAt?: string;
     enabledAt?: string;
+    usageLocation?: string;
     remark?: string;
     serviceEvaluation?: string;
     itemCodes?: string[];

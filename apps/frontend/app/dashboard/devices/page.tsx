@@ -17,6 +17,7 @@ import {
   listHospitals,
   type Device,
 } from "@/lib/business";
+import { DEVICE_USAGE_LOCATION_OPTIONS } from "@/lib/hospital-archive";
 import { filterOptions } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ export default function DevicesPage() {
     status: "active",
     installedAt: "",
     enabledAt: "",
+    usageLocation: "",
     remark: "",
   });
 
@@ -150,6 +152,7 @@ export default function DevicesPage() {
       status: form.status,
       installedAt: form.installedAt || undefined,
       enabledAt: form.enabledAt || undefined,
+      usageLocation: form.usageLocation.trim() || undefined,
       remark: form.remark.trim() || undefined,
     });
     setSaving(false);
@@ -167,6 +170,7 @@ export default function DevicesPage() {
       status: "active",
       installedAt: "",
       enabledAt: "",
+      usageLocation: "",
       remark: "",
     });
     await load();
@@ -333,6 +337,26 @@ export default function DevicesPage() {
                     }
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>使用位置</Label>
+                  <Select
+                    value={form.usageLocation || undefined}
+                    onValueChange={(v) =>
+                      setForm((f) => ({ ...f, usageLocation: v }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择使用位置" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DEVICE_USAGE_LOCATION_OPTIONS.map((opt) => (
+                        <SelectItem key={opt} value={opt}>
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>备注</Label>
@@ -360,6 +384,7 @@ export default function DevicesPage() {
                   <TableHead>状态</TableHead>
                   <TableHead>安装日期</TableHead>
                   <TableHead>启用日期</TableHead>
+                  <TableHead>使用位置</TableHead>
                   <TableHead className="w-[80px]">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -397,6 +422,7 @@ export default function DevicesPage() {
                       <TableCell>{statusBadge(d.status)}</TableCell>
                       <TableCell>{d.installedAt || "—"}</TableCell>
                       <TableCell>{d.enabledAt || "—"}</TableCell>
+                      <TableCell>{d.usageLocation || "—"}</TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"

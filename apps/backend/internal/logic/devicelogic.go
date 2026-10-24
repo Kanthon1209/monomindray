@@ -108,7 +108,8 @@ func (l *DeviceLogic) Create(hospitalID int64, req *types.DeviceUpsertRequest) (
 		SerialNo: strings.TrimSpace(req.SerialNo), Status: normalizeStatus(req.Status, "active"),
 		Remark: strings.TrimSpace(req.Remark), ServiceEvaluation: strings.TrimSpace(req.ServiceEvaluation),
 		CreatedBy: ptrInt64(uid), UpdatedBy: ptrInt64(uid),
-		InstalledAt: parseDate(req.InstalledAt), EnabledAt: parseDate(req.EnabledAt), ItemCodes: req.ItemCodes,
+		InstalledAt: parseDate(req.InstalledAt), EnabledAt: parseDate(req.EnabledAt),
+		UsageLocation: strings.TrimSpace(req.UsageLocation), ItemCodes: req.ItemCodes,
 	}
 	id, err := l.svcCtx.DeviceModel.Insert(l.ctx, d)
 	if err != nil {
@@ -179,6 +180,7 @@ func (l *DeviceLogic) Update(id int64, req *types.DeviceUpsertRequest) (*types.D
 	existing.ServiceEvaluation = strings.TrimSpace(req.ServiceEvaluation)
 	existing.InstalledAt = parseDate(req.InstalledAt)
 	existing.EnabledAt = parseDate(req.EnabledAt)
+	existing.UsageLocation = strings.TrimSpace(req.UsageLocation)
 	existing.UpdatedBy = ptrInt64(uid)
 	if req.ItemCodes != nil {
 		existing.ItemCodes = req.ItemCodes
