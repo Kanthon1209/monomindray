@@ -55,11 +55,7 @@ import {
 function reviewProgressLabel(c: SurveyCampaign) {
   const approved = c.approvedCount ?? 0;
   const pending = c.pendingReviewCount ?? 0;
-  const reviewedTotal = approved + pending;
-  if (reviewedTotal === 0) {
-    return `已审 0 · 待审 0`;
-  }
-  return `已审 ${approved}/${reviewedTotal} · 待审 ${pending}`;
+  return `待审核 ${pending} · 已审核 ${approved}`;
 }
 
 function campaignStatusBadge(status: string) {
@@ -283,7 +279,7 @@ export default function SurveyCampaignsPage() {
     const pending = c.pendingReviewCount ?? 0;
     const tip =
       `确定删除发放「${c.title}」？\n` +
-      `将同时删除其全部任务与答卷（任务 ${c.assignmentCount} · 已审 ${approved} · 待审 ${pending}）。\n` +
+      `将同时删除其全部任务与答卷（任务 ${c.assignmentCount} · 待审核 ${pending} · 已审核 ${approved}）。\n` +
       `注意：已审核并写入客户/设备的数据不会回滚。`;
     if (!window.confirm(tip)) return;
     setSaving(true);
@@ -545,8 +541,8 @@ export default function SurveyCampaignsPage() {
                   <TableHead>标题</TableHead>
                   <TableHead>模板</TableHead>
                   <TableHead>任务数</TableHead>
-                  <TableHead>审核进度</TableHead>
                   <TableHead>状态</TableHead>
+                  <TableHead>审核</TableHead>
                   <TableHead>创建时间</TableHead>
                   <TableHead className="w-[160px]">操作</TableHead>
                 </TableRow>
@@ -579,15 +575,10 @@ export default function SurveyCampaignsPage() {
                         {templateLabel(c.templateId, c.templateTitle)}
                       </TableCell>
                       <TableCell>{c.assignmentCount}</TableCell>
-                      <TableCell>
-                        <span className="text-sm">{reviewProgressLabel(c)}</span>
-                        {(c.pendingReviewCount ?? 0) > 0 ? (
-                          <Badge variant="secondary" className="ml-2">
-                            待审 {c.pendingReviewCount}
-                          </Badge>
-                        ) : null}
-                      </TableCell>
                       <TableCell>{campaignStatusBadge(c.status)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {reviewProgressLabel(c)}
+                      </TableCell>
                       <TableCell>{formatTime(c.createdAt)}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
@@ -649,11 +640,6 @@ export default function SurveyCampaignsPage() {
                   </div>
                   <div className="text-sm text-muted-foreground">
                     {reviewProgressLabel(c)}
-                    {(c.pendingReviewCount ?? 0) > 0 ? (
-                      <Badge variant="secondary" className="ml-2">
-                        待审 {c.pendingReviewCount}
-                      </Badge>
-                    ) : null}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {formatTime(c.createdAt)}
