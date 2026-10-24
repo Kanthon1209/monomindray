@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
+import { useCallback, useEffect, useMemo, useState, Fragment, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   ChevronRight,
+  GripVertical,
   LayoutTemplate,
   Loader2,
   Plus,
@@ -17,6 +18,7 @@ import {
   listSurveyTemplates,
   createSurveyTemplate,
   updateSurveyTemplate,
+  deleteSurveyTemplate,
   listCollectableFields,
   type CollectableField,
   type SurveyField,
@@ -71,7 +73,7 @@ import {
 } from "@/components/mobile-data-list";
 
 /** 关联实体：必须映射可采集字段目录中的条目 */
-type MapEntity = "hospital" | "assay" | "eqa";
+type MapEntity = "hospital" | "assay" | "eqa" | "device";
 
 type FieldDraft = {
   key: string;
@@ -134,9 +136,16 @@ const DATE_ARCHIVE_KEYS = new Set(["installedAt", "enabledAt"]);
 function resolveFieldTypeFromMapping(draft: FieldDraft): string {
   if (draft.type) return draft.type;
   if (draft.mapEntity === "assay") return "assay_block";
+  if (draft.mapEntity === "device") return "device_block";
   if (draft.mapEntity === "eqa") return "boolean";
   const attr = (draft.attribute || "").trim();
   if (attr.startsWith("hospital.attributes.customer_level") || attr.endsWith("customer_level")) {
+    return "enum";
+  }
+  if (attr.startsWith("hospital.attributes.customer_stage") || attr.endsWith("customer_stage")) {
+    return "enum";
+  }
+  if (attr.startsWith("hospital.attributes.usage_location") || attr.endsWith("usage_location")) {
     return "enum";
   }
   if (attr.startsWith("archive.")) {
@@ -205,9 +214,99 @@ function typeLabel(type: string): string {
       return "EQA 复合块";
     case "assay_block":
       return "检测项目树";
+    case "device_block":
+      return "设备列表块";
     default:
       return type || "文本";
   }
+}
+
+/** 客户（医院）身份字段：设备/检测项目/EQA 写回都依赖 hospital 实体 */
+function isHospitalIdentityField(field: {
+  key?: string;
+  label?: string;
+  type?: string;
+  target?: string;
+  optionsSource?: SurveyField["optionsSource"];
+}): boolean {
+  const typ = (field.type || "").toLowerCase();
+  if (
+    typ === "eqa_block" ||
+    typ === "assay_block" ||
+    typ === "device_block" ||
+    typ === "repeat"
+  ) {
+    return false;
+  }
+  if (field.optionsSource === "hospitals") return true;
+  const t = (field.target || "").trim();
+  if (t === "hospital.name" || t === "hospital.archive.customerName") return true;
+  const key = (field.key || "").toLowerCase();
+  if (key === "name" || key === "hospitalname" || key === "customername") return true;
+  const label = field.label || "";
+  return label.includes("客户名称") || label.includes("医院名称");
+}
+
+function schemaHasHospitalIdentity(fields: SurveyField[] | undefined): boolean {
+  return (fields || []).some(isHospitalIdentityField);
+}
+
+function schemaHasCustomerDependentBlocks(
+  fields: SurveyField[] | undefined,
+): boolean {
+  return (fields || []).some((f) => {
+    const t = (f.type || "").toLowerCase();
+    return t === "eqa_block" || t === "assay_block" || t === "device_block";
+  });
+}
+
+const CUSTOMER_BLOCK_PREREQ_MSG =
+  "设备列表 / 室间质评都属于客户（医院）属性。请先添加「医院名称」字段（绑定 hospital.name）标识客户，再插入这些特殊块。检测覆盖由设备列表推导，勿再单独插入检测项目块。";
+
+
+function specialBlockInfo(field: SurveyField): {
+  title: string;
+  summary: string;
+  bullets: string[];
+  legacy?: boolean;
+} | null {
+  const typ = (field.type || "").toLowerCase();
+  if (typ === "eqa_block") {
+    return {
+      title: "室间质评（EQA）复合块",
+      summary: "采集该客户年度国考/省考参评科目，科目来自系统字典。",
+      bullets: [
+        "可勾选是否参与国考、省考",
+        "展开后按字典勾选具体科目",
+        "写回 eqa_participation / eqa_participation_items",
+      ],
+    };
+  }
+  if (typ === "device_block") {
+    return {
+      title: "设备列表块",
+      summary: "采集客户设备；每台设备归属检测线并勾选覆盖细项，从而推导客户检测覆盖与竞品。",
+      bullets: [
+        "可添加多台设备（品牌/型号/序列号等）",
+        "选择所属检测线后，勾选该线下细项",
+        "可选「客户服务评价」",
+        "写回客户设备及 device→assay 覆盖；看板覆盖与竞品由此推导",
+      ],
+    };
+  }
+  if (typ === "assay_block") {
+    return {
+      title: "检测项目树（旧块，只读保留）",
+      summary: "历史模板中的独立检测项目采集。新模板请改用设备列表覆盖细项，避免与设备信息冲突。",
+      bullets: [
+        "检测线 → 类别 → 叶子项目复选（字典树）",
+        "写回 hospital_assays（与设备覆盖可能重复）",
+        "建议删除本块，改由「设备列表」采集覆盖",
+      ],
+      legacy: true,
+    };
+  }
+  return null;
 }
 
 function statusBadge(status: string) {
@@ -320,6 +419,18 @@ function draftFromField(field: SurveyField): FieldDraft {
     base.optionsSource = undefined;
     return base;
   }
+  if (
+    field.type === "device_block" ||
+    target === "device.block" ||
+    target.startsWith("device.")
+  ) {
+    base.mapEntity = "device";
+    base.attribute = target || "device.block";
+    base.catalogTarget = base.attribute;
+    base.type = "device_block";
+    base.optionsSource = undefined;
+    return base;
+  }
   base.mapEntity = "hospital";
   if (!target) {
     base.attribute = "hospital.name";
@@ -335,6 +446,9 @@ function resolveTarget(draft: FieldDraft): string | undefined {
   if (catalog) return catalog;
   if (draft.mapEntity === "assay") {
     return (draft.catalogTarget || draft.attribute || "assay.block").trim() || "assay.block";
+  }
+  if (draft.mapEntity === "device") {
+    return (draft.catalogTarget || draft.attribute || "device.block").trim() || "device.block";
   }
   const attr = (draft.attribute || "").trim();
   if (!attr) return undefined;
@@ -358,7 +472,9 @@ function applyCatalogField(
       ? "eqa"
       : domain === "assay" || field.valueType === "assay_block"
         ? "assay"
-        : "hospital";
+        : domain === "device" || field.valueType === "device_block"
+          ? "device"
+          : "hospital";
   const next: FieldDraft = {
     ...draft,
     mapEntity,
@@ -408,6 +524,15 @@ export default function SurveyTemplatesPage() {
     description: "",
   });
   const [creating, setCreating] = useState(false);
+
+  /** 特殊块只读说明弹层（替代 window.confirm 删除） */
+  const [specialBlockOpen, setSpecialBlockOpen] = useState(false);
+  const [specialBlockTemplateId, setSpecialBlockTemplateId] = useState<string | null>(null);
+  const [specialBlockField, setSpecialBlockField] = useState<SurveyField | null>(null);
+
+  /** 模板内字段拖拽排序 */
+  const [dragFieldKey, setDragFieldKey] = useState<string | null>(null);
+  const [dragOverFieldKey, setDragOverFieldKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -494,6 +619,40 @@ export default function SurveyTemplatesPage() {
     return true;
   };
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const onDeleteTemplate = async (item: SurveyTemplate, e?: MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    if (
+      !window.confirm(
+        `确定删除模板「${item.title}」？\n（软删除：从列表隐藏，已有发放任务不受影响）`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(item.id);
+    setError(null);
+    let res = await deleteSurveyTemplate(item.id, false);
+    if (res.needsForce) {
+      const ok = window.confirm(
+        `${res.error || "仍有发放引用此模板。"}\n\n仍要强制归档？`,
+      );
+      if (!ok) {
+        setDeletingId(null);
+        return;
+      }
+      res = await deleteSurveyTemplate(item.id, true);
+    }
+    setDeletingId(null);
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+    setItems((prev) => prev.filter((t) => t.id !== item.id));
+    setExpanded((prev) => (prev === item.id ? null : prev));
+  };
+
   const openCreateTemplate = () => {
     setCreateDraft({ title: "", code: "", description: "" });
     setCreateOpen(true);
@@ -533,16 +692,10 @@ export default function SurveyTemplatesPage() {
   };
 
   const openEditField = (template: SurveyTemplate, field: SurveyField) => {
-    if (field.type === "eqa_block") {
-      if (
-        window.confirm(
-          `「${field.label || "室间质评"}」是 EQA 复合块（科目来自系统字典）。\n确定删除该块？`,
-        )
-      ) {
-        const schema = normalizeSchema(template.schema);
-        const fields = (schema.fields || []).filter((f) => f.key !== field.key);
-        void persistSchema(template, { fields, sections: schema.sections });
-      }
+    if (specialBlockInfo(field)) {
+      setSpecialBlockTemplateId(template.id);
+      setSpecialBlockField(field);
+      setSpecialBlockOpen(true);
       return;
     }
     setEditingTemplateId(template.id);
@@ -550,6 +703,57 @@ export default function SurveyTemplatesPage() {
     setEditingOriginalKey(field.key);
     setFieldDraft(draftFromField(field));
     setFieldDialogOpen(true);
+  };
+
+  const onDeleteSpecialBlock = async () => {
+    if (!specialBlockTemplateId || !specialBlockField) return;
+    const template = items.find((t) => t.id === specialBlockTemplateId);
+    if (!template) return;
+    const schema = normalizeSchema(template.schema);
+    const fields = (schema.fields || []).filter((f) => f.key !== specialBlockField.key);
+    if (
+      schemaHasCustomerDependentBlocks(fields) &&
+      !schemaHasHospitalIdentity(fields)
+    ) {
+      setError(
+        "无法删除：模板仍含设备/EQA，必须保留「医院名称」等客户身份字段。",
+      );
+      return;
+    }
+    setError(null);
+    const ok = await persistSchema(template, { fields, sections: schema.sections });
+    if (ok) {
+      setSpecialBlockOpen(false);
+      setSpecialBlockField(null);
+      setSpecialBlockTemplateId(null);
+    }
+  };
+
+  const reorderFields = async (
+    template: SurveyTemplate,
+    fromKey: string,
+    toKey: string,
+  ) => {
+    if (!fromKey || !toKey || fromKey === toKey) return;
+    const schema = normalizeSchema(template.schema);
+    const fields = [...(schema.fields || [])];
+    const fromIdx = fields.findIndex((f) => f.key === fromKey);
+    const toIdx = fields.findIndex((f) => f.key === toKey);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = fields.splice(fromIdx, 1);
+    const target = fields.find((f) => f.key === toKey);
+    if (target?.section) {
+      moved.section = target.section;
+    }
+    const insertAt = fields.findIndex((f) => f.key === toKey);
+    // Dragging downward: place after target; upward: place before target
+    if (fromIdx < toIdx) {
+      fields.splice(insertAt + 1, 0, moved);
+    } else {
+      fields.splice(insertAt, 0, moved);
+    }
+    setError(null);
+    await persistSchema(template, { fields, sections: schema.sections });
   };
 
   const openCreateSection = (template: SurveyTemplate) => {
@@ -644,6 +848,14 @@ export default function SurveyTemplatesPage() {
       fields.push(nextField);
     }
 
+    if (
+      schemaHasCustomerDependentBlocks(fields) &&
+      !schemaHasHospitalIdentity(fields)
+    ) {
+      setError(CUSTOMER_BLOCK_PREREQ_MSG);
+      return;
+    }
+
     const sections = schema.sections || [];
     if (!sections.includes(section)) sections.push(section);
 
@@ -660,6 +872,15 @@ export default function SurveyTemplatesPage() {
     }
     const schema = normalizeSchema(template.schema);
     const fields = (schema.fields || []).filter((f) => f.key !== editingOriginalKey);
+    if (
+      schemaHasCustomerDependentBlocks(fields) &&
+      !schemaHasHospitalIdentity(fields)
+    ) {
+      setError(
+        "无法删除：模板仍含设备/EQA（或旧检测项目块），必须保留「医院名称」等客户身份字段。",
+      );
+      return;
+    }
     const ok = await persistSchema(template, { fields, sections: schema.sections });
     if (ok) setFieldDialogOpen(false);
   };
@@ -700,6 +921,10 @@ export default function SurveyTemplatesPage() {
 
   const onInsertEqaBlock = async (template: SurveyTemplate, section?: string) => {
     const schema = normalizeSchema(template.schema);
+    if (!schemaHasHospitalIdentity(schema.fields)) {
+      setError(CUSTOMER_BLOCK_PREREQ_MSG);
+      return;
+    }
     if ((schema.fields || []).some((f) => f.type === "eqa_block")) {
       setError("该模板已有 EQA 块，每个模板只需一个");
       return;
@@ -722,20 +947,24 @@ export default function SurveyTemplatesPage() {
     await persistSchema(template, { fields, sections });
   };
 
-  const onInsertAssayBlock = async (template: SurveyTemplate, section?: string) => {
+  const onInsertDeviceBlock = async (template: SurveyTemplate, section?: string) => {
     const schema = normalizeSchema(template.schema);
-    if ((schema.fields || []).some((f) => f.type === "assay_block")) {
-      setError("该模板已有检测项目块，每个模板只需一个");
+    if (!schemaHasHospitalIdentity(schema.fields)) {
+      setError(CUSTOMER_BLOCK_PREREQ_MSG);
       return;
     }
-    const sec = (section || "检测项目").trim() || "检测项目";
-    const key = ensureUniqueFieldKey("assays", (schema.fields || []).map((f) => f.key));
+    if ((schema.fields || []).some((f) => f.type === "device_block")) {
+      setError("该模板已有设备列表块，每个模板只需一个");
+      return;
+    }
+    const sec = (section || "设备").trim() || "设备";
+    const key = ensureUniqueFieldKey("devices", (schema.fields || []).map((f) => f.key));
     const nextField: SurveyField = {
       key,
-      label: "检测项目开展",
+      label: "设备列表",
       section: sec,
-      type: "assay_block",
-      target: "assay.block",
+      type: "device_block",
+      target: "device.block",
     };
     const fields = [...(schema.fields || []), nextField];
     const sections = [...(schema.sections || [])];
@@ -745,7 +974,6 @@ export default function SurveyTemplatesPage() {
   };
 
   const onDeleteSection = async (template: SurveyTemplate, section: string) => {
-
     const schema = normalizeSchema(template.schema);
     const count = (schema.fields || []).filter(
       (f) => (f.section || "未分组") === section,
@@ -758,6 +986,15 @@ export default function SurveyTemplatesPage() {
     const fields = (schema.fields || []).filter(
       (f) => (f.section || "未分组") !== section,
     );
+    if (
+      schemaHasCustomerDependentBlocks(fields) &&
+      !schemaHasHospitalIdentity(fields)
+    ) {
+      setError(
+        "无法删除该分组：删除后将失去客户身份字段，但模板仍含设备/EQA（或旧检测项目块）。",
+      );
+      return;
+    }
     const sections = (schema.sections || []).filter((s) => s !== section);
     await persistSchema(template, { fields, sections });
   };
@@ -803,18 +1040,63 @@ export default function SurveyTemplatesPage() {
               </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {fields.map((f) => (
-                  <button
+                  <div
                     key={f.key}
-                    type="button"
-                    className="rounded-md border bg-background px-3 py-2 text-left text-sm transition hover:border-primary/40 hover:bg-accent/40"
-                    onClick={(e) => {
+                    draggable
+                    onDragStart={(e) => {
                       e.stopPropagation();
-                      openEditField(item, f);
+                      setDragFieldKey(f.key);
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", f.key);
                     }}
+                    onDragEnd={() => {
+                      setDragFieldKey(null);
+                      setDragOverFieldKey(null);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = "move";
+                      if (dragOverFieldKey !== f.key) setDragOverFieldKey(f.key);
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverFieldKey === f.key) setDragOverFieldKey(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const from =
+                        e.dataTransfer.getData("text/plain") || dragFieldKey;
+                      setDragOverFieldKey(null);
+                      setDragFieldKey(null);
+                      if (from) void reorderFields(item, from, f.key);
+                    }}
+                    className={`rounded-md border bg-background text-left text-sm transition hover:border-primary/40 hover:bg-accent/40 ${
+                      dragOverFieldKey === f.key && dragFieldKey !== f.key
+                        ? "border-primary ring-1 ring-primary/40"
+                        : ""
+                    } ${dragFieldKey === f.key ? "opacity-60" : ""}`}
                   >
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditField(item, f);
+                      }}
+                    >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{f.label}</span>
+                      <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                        <GripVertical
+                          className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground"
+                          aria-hidden
+                        />
+                        <span className="truncate">{f.label}</span>
+                      </span>
                       <div className="flex items-center gap-1">
+                        {f.type === "assay_block" ? (
+                          <Badge variant="outline">旧</Badge>
+                        ) : null}
                         {f.locked ? <Badge variant="secondary">锁定</Badge> : null}
                         {f.required ? <Badge variant="outline">必填</Badge> : null}
                       </div>
@@ -825,7 +1107,11 @@ export default function SurveyTemplatesPage() {
                       </p>
                     ) : f.type === "assay_block" ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        检测线 → 类别 → 叶子项目复选（字典树）
+                        旧块 · 建议改用设备列表覆盖；点击查看说明
+                      </p>
+                    ) : f.type === "device_block" ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        设备列表 → 所属检测线 + 细项（写回客户设备）
                       </p>
                     ) : f.target ? (
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">
@@ -853,7 +1139,8 @@ export default function SurveyTemplatesPage() {
                         默认：{f.default}
                       </p>
                     ) : null}
-                  </button>
+                    </button>
+                  </div>
                 ))}
                 <button
                   type="button"
@@ -887,58 +1174,76 @@ export default function SurveyTemplatesPage() {
               </button>
             </div>
             <div>
-              <p className="mb-2 text-sm font-medium text-muted-foreground">特殊块</p>
+              <p className="mb-2 text-sm font-medium text-muted-foreground">
+                客户属性 · 特殊块
+              </p>
+              <p className="mb-2 max-w-xl text-xs text-muted-foreground">
+                设备列表、室间质评挂在客户（医院）实体上。请先添加「医院名称」等身份字段再插入。检测覆盖由设备细项推导，不再提供「插入检测项目」。
+              </p>
               {error ? (
                 <p className="mb-2 text-sm text-destructive">{error}</p>
               ) : null}
               <div className="flex flex-wrap gap-2">
                 {(() => {
                   const fields = normalizeSchema(item.schema).fields || [];
+                  const hasIdentity = schemaHasHospitalIdentity(fields);
                   const hasEqa = fields.some((f) => f.type === "eqa_block");
                   const hasAssay = fields.some((f) => f.type === "assay_block");
+                  const hasDevice = fields.some((f) => f.type === "device_block");
+                  const blockBtnClass = (already: boolean) =>
+                    `flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm transition sm:min-w-[140px] ${
+                      already || !hasIdentity
+                        ? "cursor-not-allowed text-muted-foreground/70 opacity-70"
+                        : "text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                    }`;
+                  const prereqTitle = !hasIdentity
+                    ? "请先添加「医院名称」字段（绑定 hospital.name）"
+                    : undefined;
                   return (
                     <>
                       <button
                         type="button"
-                        className={`flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm transition sm:min-w-[140px] ${
-                          hasEqa
-                            ? "cursor-not-allowed text-muted-foreground/70 opacity-70"
-                            : "text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                        }`}
-                        disabled={saving}
+                        className={blockBtnClass(hasEqa)}
+                        disabled={saving || !hasIdentity || hasEqa}
                         onClick={(e) => {
                           e.stopPropagation();
                           void onInsertEqaBlock(item);
                         }}
                         title={
-                          hasEqa
+                          prereqTitle ||
+                          (hasEqa
                             ? "该模板已有 EQA 块，每个模板只需一个"
-                            : "插入 EQA 复合块"
+                            : "插入 EQA 复合块")
                         }
                       >
                         <Plus className="h-5 w-5" />
                         <span>{hasEqa ? "已有 EQA" : "插入 EQA"}</span>
                       </button>
+                      {hasAssay ? (
+                        <div className="flex min-h-[72px] max-w-xs flex-col justify-center rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground sm:min-w-[180px]">
+                          <span className="font-medium text-foreground">旧模板含「检测项目」块</span>
+                          <span className="mt-1">
+                            检测覆盖请改由设备列表采集；点击该块可查看说明并删除，避免与设备信息冲突。
+                          </span>
+                        </div>
+                      ) : null}
                       <button
                         type="button"
-                        className={`flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm transition sm:min-w-[140px] ${
-                          hasAssay
-                            ? "cursor-not-allowed text-muted-foreground/70 opacity-70"
-                            : "text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                        }`}
-                        disabled={saving}
+                        className={blockBtnClass(hasDevice)}
+                        disabled={saving || !hasIdentity || hasDevice}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void onInsertAssayBlock(item);
+                          void onInsertDeviceBlock(item);
                         }}
                         title={
-                          hasAssay
-                            ? "该模板已有检测项目块，每个模板只需一个"
-                            : "插入检测项目树"
+                          prereqTitle ||
+                          (hasDevice
+                            ? "该模板已有设备列表块，每个模板只需一个"
+                            : "插入设备列表（检测线+细项）")
                         }
                       >
                         <Plus className="h-5 w-5" />
-                        <span>{hasAssay ? "已有检测项目" : "插入检测项目"}</span>
+                        <span>{hasDevice ? "已有设备列表" : "插入设备列表"}</span>
                       </button>
                     </>
                   );
@@ -1001,18 +1306,19 @@ export default function SurveyTemplatesPage() {
                   <TableHead>版本</TableHead>
                   <TableHead>字段数</TableHead>
                   <TableHead>状态</TableHead>
+                  <TableHead className="w-20 text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       暂无模板
                     </TableCell>
                   </TableRow>
@@ -1040,10 +1346,27 @@ export default function SurveyTemplatesPage() {
                           <TableCell>v{item.version}</TableCell>
                           <TableCell>{schema.fields.length}</TableCell>
                           <TableCell>{statusBadge(item.status)}</TableCell>
+                          <TableCell className="text-right" onClick={(ev) => ev.stopPropagation()}>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-destructive hover:text-destructive"
+                              disabled={deletingId === item.id || saving}
+                              onClick={(ev) => onDeleteTemplate(item, ev)}
+                            >
+                              {deletingId === item.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                              <span className="ml-1">删除</span>
+                            </Button>
+                          </TableCell>
                         </TableRow>
                         {open ? (
                           <TableRow>
-                            <TableCell colSpan={6} className="bg-muted/30 p-4">
+                            <TableCell colSpan={7} className="bg-muted/30 p-4">
                               {renderTemplateEditor(item)}
                             </TableCell>
                           </TableRow>
@@ -1071,28 +1394,44 @@ export default function SurveyTemplatesPage() {
                 const schema = normalizeSchema(item.schema);
                 return (
                   <MobileCardItem key={item.id}>
-                    <button
-                      type="button"
-                      className="flex w-full min-h-10 flex-col gap-2 text-left"
-                      onClick={() =>
-                        setExpanded((prev) => (prev === item.id ? null : item.id))
-                      }
-                    >
-                      <div className="flex items-start gap-2">
-                        {open ? (
-                          <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium">{item.title}</div>
-                          <div className="font-mono text-xs text-muted-foreground">
-                            {item.code} · v{item.version} · {schema.fields.length} 字段
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        className="flex min-h-10 min-w-0 flex-1 flex-col gap-2 text-left"
+                        onClick={() =>
+                          setExpanded((prev) => (prev === item.id ? null : item.id))
+                        }
+                      >
+                        <div className="flex items-start gap-2">
+                          {open ? (
+                            <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium">{item.title}</div>
+                            <div className="font-mono text-xs text-muted-foreground">
+                              {item.code} · v{item.version} · {schema.fields.length} 字段
+                            </div>
                           </div>
+                          {statusBadge(item.status)}
                         </div>
-                        {statusBadge(item.status)}
-                      </div>
-                    </button>
+                      </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 shrink-0 text-destructive hover:text-destructive"
+                        disabled={deletingId === item.id || saving}
+                        onClick={(ev) => onDeleteTemplate(item, ev)}
+                      >
+                        {deletingId === item.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                     {open ? (
                       <div className="rounded-md bg-muted/30 p-3">
                         {renderTemplateEditor(item)}
@@ -1234,42 +1573,12 @@ export default function SurveyTemplatesPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>绑定可采集字段（目录）</Label>
-              <Select
-                value={fieldDraft.mapEntity}
-                onValueChange={(v) => {
-                  const entity = v as MapEntity;
-                  const first =
-                    (entity === "assay"
-                      ? (catalogByDomain.assay || []).find((f) => f.valueType === "assay_block") ||
-                        ({
-                          code: "assay.block",
-                          domain: "assay",
-                          storageTarget: "assay.block",
-                          valueType: "assay_block",
-                          label: "检测项目开展",
-                          section: "检测项目",
-                          enumValues: [],
-                        } as CollectableField)
-                      : (catalogByDomain[entity] || [])[0]) ||
-                    catalogByDomain.hospital?.[0];
-                  setFieldDraft((d) =>
-                    first
-                      ? applyCatalogField(d, first, fieldMode)
-                      : { ...d, mapEntity: entity },
-                  );
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hospital">医院</SelectItem>
-                  <SelectItem value="assay">检测项目</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>采集目标</Label>
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                客户（医院）实体属性
+              </div>
               <p className="text-xs text-muted-foreground">
-                只能从系统字段目录勾选；类型与映射只读。没有的字段请先在目录/主数据中登记。
+                普通字段从客户属性目录勾选。设备列表 / 室间质评请用模板下方「客户属性 · 特殊块」插入（需先有医院名称）。检测覆盖由设备列表推导。
               </p>
             </div>
             <div className="space-y-2">
@@ -1286,21 +1595,19 @@ export default function SurveyTemplatesPage() {
                   <SelectValue placeholder="选择目录字段" />
                 </SelectTrigger>
                 <SelectContent className="max-h-80">
-                  {(fieldDraft.mapEntity === "assay"
-                    ? (catalogByDomain.assay || []).filter(
-                        (f) => f.valueType === "assay_block",
-                      )
-                    : (catalogByDomain[fieldDraft.mapEntity] || []).filter(
-                        (f) =>
-                          f.domain !== "eqa" &&
-                          f.domain !== "assay" &&
-                          f.valueType !== "eqa_block" &&
-                          f.valueType !== "assay_block" &&
-                          !f.storageTarget.startsWith("eqa.") &&
-                          !f.storageTarget.startsWith("assay.") &&
-                          !f.storageTarget.includes("mindrayProjects") &&
-                          !f.storageTarget.includes("newProjects"),
-                      )
+                  {(catalogByDomain.hospital || []).filter(
+                    (f) =>
+                      f.domain !== "eqa" &&
+                      f.domain !== "assay" &&
+                      f.domain !== "device" &&
+                      f.valueType !== "eqa_block" &&
+                      f.valueType !== "assay_block" &&
+                      f.valueType !== "device_block" &&
+                      !f.storageTarget.startsWith("eqa.") &&
+                      !f.storageTarget.startsWith("assay.") &&
+                      !f.storageTarget.startsWith("device.") &&
+                      !f.storageTarget.includes("mindrayProjects") &&
+                      !f.storageTarget.includes("newProjects"),
                   ).map((f) => (
                     <SelectItem key={f.code} value={f.storageTarget}>
                       {f.section ? `${f.section} / ` : ""}
@@ -1388,6 +1695,83 @@ export default function SurveyTemplatesPage() {
               <Button type="button" disabled={saving} onClick={onSaveField}>
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 保存
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={specialBlockOpen}
+        onOpenChange={(open) => {
+          setSpecialBlockOpen(open);
+          if (!open) {
+            setSpecialBlockField(null);
+            setSpecialBlockTemplateId(null);
+          }
+        }}
+      >
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <DialogHeader className="border-b px-5 py-4">
+            <DialogTitle>
+              {specialBlockField
+                ? specialBlockInfo(specialBlockField)?.title ||
+                  specialBlockField.label ||
+                  specialBlockField.key
+                : "特殊块"}
+            </DialogTitle>
+            <DialogDescription>
+              {specialBlockField
+                ? specialBlockInfo(specialBlockField)?.summary ||
+                  "只读查看该特殊块采集内容"
+                : "只读查看"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-5 py-4 text-sm">
+            {specialBlockField ? (
+              <>
+                <div className="rounded-md border bg-muted/40 px-3 py-2">
+                  <div className="text-xs text-muted-foreground">字段名</div>
+                  <div className="font-medium">
+                    {specialBlockField.label || specialBlockField.key}
+                  </div>
+                  <div className="mt-1 font-mono text-xs text-muted-foreground">
+                    key: {specialBlockField.key}
+                    {specialBlockField.target
+                      ? ` · target: ${specialBlockField.target}`
+                      : ""}
+                  </div>
+                </div>
+                {specialBlockInfo(specialBlockField)?.legacy ? (
+                  <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+                    此为历史「检测项目」块。新采集请用设备列表覆盖细项；可在此删除本块以免与设备信息冲突。
+                  </p>
+                ) : null}
+                <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                  {(specialBlockInfo(specialBlockField)?.bullets || []).map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </div>
+          <DialogFooter className="border-t px-5 py-3">
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={saving || !specialBlockField}
+              onClick={() => void onDeleteSpecialBlock()}
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              删除此块
+            </Button>
+            <div className="flex flex-1 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSpecialBlockOpen(false)}
+              >
+                关闭
               </Button>
             </div>
           </DialogFooter>
