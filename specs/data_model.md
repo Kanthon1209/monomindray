@@ -45,17 +45,18 @@ survey_templates → survey_campaigns
 
 #### `archive` 约定（可查询）
 
-**化学发光（标量）**：`region`、`branchOffice`、`customerName`、`customerCode`、`customerLevel`、`model`、`serialNo`、`contactName`、`contactPhone`、`installedAt`、`enabledAt`、`annualRevenue`、`usageLocation`、`projectCount`、`mindrayReagentCount`、`matchingRate`、`otherAnalyzers`、`mindraySampleVolume`、`totalSampleVolume`、`qcVendor`、`qcLevels`、`qcCycle`、`reagentSupplier`、`unusedProjects`、`missingProjects`、`archiveRemark`。
+**化学发光（标量，医院侧）**：`region`、`branchOffice`、`customerName`、`customerCode`、`customerLevel`、`contactName`、`contactPhone`、`annualRevenue`、`usageLocation`、`projectCount`、`mindrayReagentCount`、`matchingRate`、`mindraySampleVolume`、`totalSampleVolume`、`qcVendor`、`qcLevels`、`qcCycle`、`reagentSupplier`、`unusedProjects`、`missingProjects`、`archiveRemark`。
+
+**已迁出至 `devices` / `device_block`（勿再作医院采集字段）**：`model`、`serialNo`、`installedAt`、`enabledAt`、`equipment`、`otherAnalyzers`、`competitorProjectDistribution`、`competitorDevicesProjects`、`mindrayDevicesProjectsVolume`。`collectable_fields` 已 soft-deactivate；`hospitals.archive` 旧键仅只读兼容。
 
 **结构化（统计友好）**：
 
 | 键 | 形态 | 说明 |
 |----|------|------|
-| `mindrayProjects` | `string[]` | 如 `["AFP","CEA","CA125"]` |
-| `newProjects` | `string[]` | 主导新增项目 |
-| `competitorProjectDistribution` | `object[]` | `{line,brand,instrument,projects[],note}` |
+| `mindrayProjects` | `string[]` | 如 `["AFP","CEA","CA125"]`（历史；开展项目以 assay / device_assay_items 为准） |
+| `newProjects` | `string[]` | 主导新增项目（历史） |
 
-**SVIP / 双大（标量）**：`svipLevel`、`dualMajorCustomer`、`groupName`、`volumeDirection`、`iotStock23`、`iotForecast24`、`iotIncrement24`、`iotGrowthRate24`、责任人工号字段、`dualMajorType`、`dualMajorTarget`、产出目标、`competitorDevicesProjects`、`mindrayDevicesProjectsVolume`、`supplyChannel`、`labDirector`、`workContact`、`customerSegment`、`segmentCategory` 等。
+**SVIP / 双大（标量）**：`svipLevel`（已 soft-archive）、`dualMajorCustomer`、`groupName`、`volumeDirection`、`iotStock23`、`iotForecast24`、`iotIncrement24`、`iotGrowthRate24`、责任人工号字段、`dualMajorType`、`dualMajorTarget`、产出目标、`supplyChannel`、`labDirector`、`workContact`、`customerSegment`、`segmentCategory` 等。
 
 查询示例：
 
@@ -90,11 +91,16 @@ WHERE archive @> '{"svipLevel":"SVIP1"}';
 
 | 字段 | 说明 |
 |------|------|
+| brand | 装机品牌（迈瑞 / 罗氏 / 雅培…）；竞品与自有同表 |
 | category | `biochem` 生化 / `immuno` 免疫 / `hematology` 血液 / `coag` 凝血 / `urine` 尿沉渣 |
+| assay_line_code | 所属检测线（biochem/immuno/coag/heme） |
 | model | 如 `BS-2000M`、`CL-8000` |
+| serial_no | 序列号 |
+| installed_at / enabled_at | 安装 / 启用日期 |
+| service_evaluation | 客户服务评价（系统预设枚举） |
 | status | `active` / `inactive` / `maintenance` |
 
-医院列表上的 `deviceCount` / `deviceModels` 由设备表聚合（见视图）。问卷「化学发光」模板中的 `devices[]` 审核通过后 upsert 到此表。
+医院列表上的 `deviceCount` / `deviceModels` 由设备表聚合（见视图）。问卷 `device_block`（及历史 `devices[]`）审核通过后 upsert 到此表，并经 `device_assay_items` 同步 `hospital_assays`。
 
 ### `customers`（客户联系人）
 

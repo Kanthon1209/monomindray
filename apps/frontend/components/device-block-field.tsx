@@ -20,6 +20,7 @@ export type DeviceBlockRow = {
   brand: string;
   model: string;
   serialNo?: string;
+  installedAt?: string;
   assayLineCode: string;
   itemCodes: string[];
   serviceEvaluation?: string;
@@ -57,6 +58,7 @@ function normalizeRow(raw: any): DeviceBlockRow | null {
     brand: String(raw.brand || raw.company || "迈瑞").trim() || "迈瑞",
     model: String(raw.model || "").trim(),
     serialNo: String(raw.serialNo || "").trim() || undefined,
+    installedAt: String(raw.installedAt || raw.installed_at || "").trim() || undefined,
     assayLineCode: String(raw.assayLineCode || raw.lineCode || "").trim(),
     itemCodes,
     serviceEvaluation:
@@ -71,6 +73,7 @@ function emptyRow(): DeviceBlockRow {
     brand: "迈瑞",
     model: "",
     serialNo: "",
+    installedAt: "",
     assayLineCode: "",
     itemCodes: [],
     serviceEvaluation: "",
@@ -290,6 +293,17 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                   disabled={disabled}
                   onChange={(e) =>
                     updateRow(index, { serialNo: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>安装日期（可选）</Label>
+                <Input
+                  type="date"
+                  value={row.installedAt || ""}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    updateRow(index, { installedAt: e.target.value })
                   }
                 />
               </div>

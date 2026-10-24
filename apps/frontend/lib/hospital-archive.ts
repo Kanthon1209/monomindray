@@ -93,17 +93,18 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "branchOffice", label: "分公司", section: "客户基础" },
   { key: "customerName", label: "客户名称", section: "客户基础" },
   { key: "customerCode", label: "客户代码", section: "客户基础" },
-  { key: "model", label: "机型", section: "设备信息" },
-  { key: "serialNo", label: "序列号", section: "设备信息" },
+  // device attrs → devices / device_block (soft-archived from hospital catalog)
+  // { key: "model", label: "机型", section: "设备信息" },
+  // { key: "serialNo", label: "序列号", section: "设备信息" },
   { key: "contactName", label: "负责人", section: "联系人" },
   { key: "contactPhone", label: "联系电话", section: "联系人" },
-  { key: "installedAt", label: "安装日期", section: "设备信息" },
-  { key: "enabledAt", label: "启用日期", section: "设备信息" },
+  // { key: "installedAt", label: "安装日期", section: "设备信息" },
+  // { key: "enabledAt", label: "启用日期", section: "设备信息" },
   { key: "annualRevenue", label: "医院年收入（亿）", section: "经营数据", valueType: "number" },
   { key: "projectCount", label: "开展项目数", section: "项目与试剂", valueType: "number" },
   { key: "mindrayReagentCount", label: "迈瑞试剂项目数", section: "项目与试剂", valueType: "number" },
   { key: "matchingRate", label: "配套率", section: "项目与试剂" },
-  { key: "otherAnalyzers", label: "其它发光仪", section: "竞品与标本" },
+  // { key: "otherAnalyzers", label: "其它发光仪", section: "竞品与标本" }, // → device_block
   { key: "mindraySampleVolume", label: "迈瑞标本量", section: "竞品与标本" },
   { key: "totalSampleVolume", label: "总标本量", section: "竞品与标本" },
   { key: "qcVendor", label: "质控品厂家", section: "质控" },
@@ -111,12 +112,7 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "qcCycle", label: "质控周期", section: "质控" },
   { key: "reagentSupplier", label: "试剂供应商", section: "项目与试剂" },
   { key: "unusedProjects", label: "未使用迈瑞项目及品牌及供应商", section: "竞品与标本" },
-  {
-    key: "competitorProjectDistribution",
-    label: "竞品仪器项目分布",
-    section: "竞品与标本",
-    valueType: "competitor_list",
-  },
+  // competitorProjectDistribution → device_block (competitor brands)
   { key: "archiveRemark", label: "备注", section: "其他" },
   // SVIP
   { key: "groupName", label: "分组", section: "SVIP" },
@@ -128,7 +124,7 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "iotForecast24", label: "24年预估化免凝IOT产出(W)", section: "SVIP", valueType: "number" },
   { key: "iotIncrement24", label: "24年预估化免凝增量(W)", section: "SVIP", valueType: "number" },
   { key: "iotGrowthRate24", label: "24年预估化免凝增长率(W)", section: "SVIP", valueType: "number" },
-  { key: "equipment", label: "设备", section: "SVIP" },
+  // { key: "equipment", label: "设备", section: "SVIP" }, // → device_block
   { key: "productLineSales", label: "产线销售", section: "SVIP责任人" },
   { key: "productLineSalesId", label: "产线销售工号", section: "SVIP责任人" },
   { key: "reagentSales", label: "试剂销售", section: "SVIP责任人" },
@@ -155,8 +151,7 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
     valueType: "number",
   },
   { key: "salesOwner", label: "销售责任人", section: "双大客户" },
-  { key: "competitorDevicesProjects", label: "竞品设备+项目", section: "双大客户" },
-  { key: "mindrayDevicesProjectsVolume", label: "迈瑞设备+项目+样本量", section: "双大客户" },
+  // competitorDevicesProjects / mindrayDevicesProjectsVolume → device_block + metrics
   { key: "supplyChannel", label: "供货渠道", section: "双大客户" },
   { key: "labDirector", label: "检验科主任", section: "双大客户" },
   { key: "workContact", label: "工作对接人", section: "双大客户" },
@@ -177,7 +172,7 @@ export const DASHBOARD_PRIMARY_COLUMNS: Array<ArchiveFieldKey | "customerLevel" 
 export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
   "region",
   "branchOffice",
-  "model",
+  // model shown via hospital.deviceModels aggregation, not archive.model
   "matchingRate",
   "mindraySampleVolume",
   "totalSampleVolume",
@@ -431,7 +426,14 @@ export function resolveArchiveField(
     case "pendingIssues":
       return attrs.pending_issues || "";
     case "model":
-      return formatArchiveValue(archive.model) || hospital.deviceModels?.[0] || "";
+      // Prefer devices aggregation; archive.model is legacy only.
+      return (
+        (hospital.deviceModels && hospital.deviceModels.length
+          ? hospital.deviceModels.join("、")
+          : "") ||
+        formatArchiveValue(archive.model) ||
+        ""
+      );
     case "competitorProjectDistribution":
       return formatArchiveValue(archiveRaw(hospital, key));
     case "archiveRemark":
