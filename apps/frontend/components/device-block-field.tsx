@@ -60,8 +60,14 @@ function normalizeRow(raw: any): DeviceBlockRow | null {
     : Array.isArray(raw.codes)
       ? raw.codes.map(String).map((s: string) => s.trim()).filter(Boolean)
       : [];
+  // Keep explicit empty brand while typing; only default when field is absent (legacy / new).
+  // Empty → 迈瑞 is applied on API create/submit, not on every keystroke.
+  const hasBrandKey = raw.brand != null || raw.company != null;
+  const brand = hasBrandKey
+    ? String(raw.brand ?? raw.company ?? "").trim()
+    : "迈瑞";
   return {
-    brand: String(raw.brand || raw.company || "迈瑞").trim() || "迈瑞",
+    brand,
     model: String(raw.model || "").trim(),
     serialNo: String(raw.serialNo || raw.serial_no || "").trim() || undefined,
     installedAt: String(raw.installedAt || raw.installed_at || "").trim() || undefined,
