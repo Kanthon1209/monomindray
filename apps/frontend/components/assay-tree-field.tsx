@@ -62,12 +62,16 @@ export function AssayTreeField({ value, onChange, disabled }: Props) {
       } else {
         const items = res.items || [];
         setTree(items);
+        const selectedCodes = new Set(normalizeAssayBlockAnswer(value).codes);
         const lines: Record<string, boolean> = {};
         const cats: Record<string, boolean> = {};
         for (const line of items) {
           lines[line.code] = true;
           for (const cat of line.children || []) {
-            cats[cat.code] = false;
+            const catItems = (cat.children || []).filter((c) => c.kind === "item");
+            const catHas = catItems.some((i) => selectedCodes.has(i.code));
+            // In read-only/review mode, auto-expand categories that have checks.
+            cats[cat.code] = disabled ? catHas : false;
           }
         }
         setOpenLines(lines);
@@ -78,6 +82,8 @@ export function AssayTreeField({ value, onChange, disabled }: Props) {
     return () => {
       cancelled = true;
     };
+    // value/disabled only seed initial expand state; tree fetch is once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleCode = (code: string, checked: boolean) => {
@@ -109,7 +115,7 @@ export function AssayTreeField({ value, onChange, disabled }: Props) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        已选 {selected.size} 项（按产线 → 类别展开，勾选叶子项目）
+        已选 {selected.size} 项（按检测线 → 类别展开，勾选叶子项目）
       </p>
       {tree.map((line) => {
         const lineItems = collectItems([line]);
@@ -124,7 +130,6 @@ export function AssayTreeField({ value, onChange, disabled }: Props) {
               onClick={() =>
                 setOpenLines((s) => ({ ...s, [line.code]: !s[line.code] }))
               }
-              disabled={disabled}
             >
               <span>
                 {lineOpen ? "▾" : "▸"} {line.name}
@@ -132,19 +137,21 @@ export function AssayTreeField({ value, onChange, disabled }: Props) {
                   {lineSelected}/{lineCodes.length}
                 </span>
               </span>
-              <span
-                className="text-xs font-normal text-primary"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (disabled) return;
-                  const allOn = lineSelected === lineCodes.length && lineCodes.length > 0;
-                  toggleMany(lineCodes, !allOn);
-                }}
-              >
-                {lineSelected === lineCodes.length && lineCodes.length > 0
-                  ? "取消全选"
-                  : "全选"}
-              </span>
+              {!disabled ? (
+                <span
+                  className="text-xs font-normal text-primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const allOn =
+                      lineSelected === lineCodes.length && lineCodes.length > 0;
+                    toggleMany(lineCodes, !allOn);
+                  }}
+                >
+                  {lineSelected === lineCodes.length && lineCodes.length > 0
+                    ? "取消全选"
+                    : "全选"}
+                </span>
+              ) : null}
             </button>
             {lineOpen ? (
               <div className="space-y-2 border-t px-3 py-2">
@@ -165,7 +172,6 @@ export function AssayTreeField({ value, onChange, disabled }: Props) {
                               [cat.code]: !s[cat.code],
                             }))
                           }
-                          disabled={disabled}
                         >
                           <span>{catOpen ? "▾" : "▸"}</span>
                           <span className="font-medium">{cat.name}</span>
@@ -173,27 +179,30 @@ export function AssayTreeField({ value, onChange, disabled }: Props) {
                             {catSelected}/{catCodes.length}
                           </span>
                         </button>
-                        <button
-                          type="button"
-                          className="text-xs text-primary"
-                          disabled={disabled || catCodes.length === 0}
-                          onClick={() => {
-                            const allOn =
-                              catSelected === catCodes.length && catCodes.length > 0;
-                            toggleMany(catCodes, !allOn);
-                          }}
-                        >
-                          {catSelected === catCodes.length && catCodes.length > 0
-                            ? "取消"
-                            : "全选"}
-                        </button>
+                        {!disabled ? (
+                          <button
+                            type="button"
+                            className="text-xs text-primary"
+                            disabled={catCodes.length === 0}
+                            onClick={() => {
+                              const allOn =
+                                catSelected === catCodes.length &&
+                                catCodes.length > 0;
+                              toggleMany(catCodes, !allOn);
+                            }}
+                          >
+                            {catSelected === catCodes.length && catCodes.length > 0
+                              ? "取消"
+                              : "全选"}
+                          </button>
+                        ) : null}
                       </div>
                       {catOpen ? (
                         <div className="grid gap-1 border-t px-2 py-2 sm:grid-cols-2 lg:grid-cols-3">
                           {catItems.map((item) => (
                             <label
                               key={item.code}
-                              className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1.5 text-sm"
+                              className={`flex min-h-9 items-center gap-2 rounded px-1.5 text-sm ${disabled ? "" : "cursor-pointer"}`}
                             >
                               <input
                                 type="checkbox"

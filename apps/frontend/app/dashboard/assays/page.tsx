@@ -61,7 +61,7 @@ const emptyForm = (kind: FormState["kind"] = "item", parentCode = ""): FormState
 });
 
 function kindLabel(kind: string) {
-  if (kind === "line") return "产线";
+  if (kind === "line") return "检测线";
   if (kind === "category") return "类别";
   return "细项";
 }
@@ -248,7 +248,7 @@ export default function AssayProjectsPage() {
               <div>
                 <CardTitle>检测项目目录</CardTitle>
                 <CardDescription>
-                  产线 → 类别 → 细项。医院开展只挂叶子细项。当前细项 {totalItems} 个。
+                  检测线 → 类别 → 细项。医院开展只挂叶子细项。当前细项 {totalItems} 个。
                 </CardDescription>
               </div>
             </div>
@@ -304,7 +304,7 @@ export default function AssayProjectsPage() {
                         {lineOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         {line.name}
                         <Badge variant="outline" className="font-normal">
-                          产线
+                          检测线
                         </Badge>
                         <span className="text-xs font-normal text-muted-foreground">{line.code}</span>
                       </button>
@@ -368,18 +368,21 @@ export default function AssayProjectsPage() {
                                       return (
                                         <li
                                           key={item.code}
-                                          className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm"
+                                          className="grid grid-cols-[10rem_minmax(0,1fr)_3rem_auto] items-center gap-x-3 px-3 py-1.5 text-sm"
                                         >
-                                          <div className="min-w-0">
-                                            <span className="font-medium">{item.name}</span>
-                                            <span className="ml-2 text-xs text-muted-foreground">{item.code}</span>
-                                            {usage > 0 ? (
-                                              <span className="ml-2 text-xs text-muted-foreground">
-                                                {usage} 院
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                          <div className="flex shrink-0 gap-1">
+                                          <span className="truncate font-medium" title={item.name}>
+                                            {item.name}
+                                          </span>
+                                          <span
+                                            className="truncate font-mono text-xs text-muted-foreground"
+                                            title={item.code}
+                                          >
+                                            {item.code}
+                                          </span>
+                                          <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                                            {usage > 0 ? `${usage} 院` : ""}
+                                          </span>
+                                          <div className="flex shrink-0 justify-end gap-1">
                                             <Button size="sm" variant="ghost" onClick={() => startEdit(item.code)}>
                                               编辑
                                             </Button>
@@ -424,9 +427,9 @@ export default function AssayProjectsPage() {
             </DialogTitle>
             <DialogDescription>
               {form.kind === "line"
-                ? "产线是顶层节点，例如生化、免疫。"
+                ? "检测线是顶层节点，例如生化、免疫、凝血、血球。"
                 : form.kind === "category"
-                  ? "类别挂在产线下，例如肝功类、肿瘤标志物。"
+                  ? "类别挂在检测线下，例如肝功类、肿瘤标志物。"
                   : "细项是叶子节点，医院开展项目只挂细项。"}
             </DialogDescription>
           </DialogHeader>
@@ -455,7 +458,7 @@ export default function AssayProjectsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="line">产线</SelectItem>
+                    <SelectItem value="line">检测线</SelectItem>
                     <SelectItem value="category">类别</SelectItem>
                     <SelectItem value="item">细项</SelectItem>
                   </SelectContent>
