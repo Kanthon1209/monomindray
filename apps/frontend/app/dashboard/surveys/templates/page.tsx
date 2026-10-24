@@ -71,6 +71,9 @@ import {
   MobileCardList,
   PageToolbar,
 } from "@/components/mobile-data-list";
+import { AssayTreeField } from "@/components/assay-tree-field";
+import { DeviceBlockField } from "@/components/device-block-field";
+import { EqaParticipationField } from "@/components/eqa-participation-field";
 
 /** 关联实体：必须映射可采集字段目录中的条目 */
 type MapEntity = "hospital" | "assay" | "eqa" | "device";
@@ -266,6 +269,8 @@ function specialBlockInfo(field: SurveyField): {
   title: string;
   summary: string;
   bullets: string[];
+  /** 采集端实际填写的每一个子字段 */
+  collectFields: { label: string; key: string; type: string; hint?: string }[];
   legacy?: boolean;
 } | null {
   const typ = (field.type || "").toLowerCase();
@@ -274,32 +279,97 @@ function specialBlockInfo(field: SurveyField): {
       title: "室间质评（EQA）复合块",
       summary: "采集该客户年度国考/省考参评科目，科目来自系统字典。",
       bullets: [
-        "可勾选是否参与国考、省考",
-        "展开后按字典勾选具体科目",
+        "勾选科目即视为参与对应级别（国考/省考），无需单独勾「是否参评」",
+        "科目字典按国考 / 省考分组展示",
         "写回 eqa_participation / eqa_participation_items",
+      ],
+      collectFields: [
+        {
+          label: "参评年份",
+          key: "year",
+          type: "number",
+          hint: "默认当年，可改",
+        },
+        {
+          label: "国考科目",
+          key: "national.codes",
+          type: "multi_select",
+          hint: "勾选 ≥1 项即算参与国考；科目来自字典 scope.national",
+        },
+        {
+          label: "省考科目",
+          key: "provincial.codes",
+          type: "multi_select",
+          hint: "勾选 ≥1 项即算参与省考；科目来自字典 scope.provincial",
+        },
       ],
     };
   }
   if (typ === "device_block") {
     return {
       title: "设备列表块",
-      summary: "采集客户设备；每台设备归属检测线并勾选覆盖细项，从而推导客户检测覆盖与竞品。",
+      summary:
+        "采集客户设备；每台设备归属检测线并勾选覆盖细项，从而推导客户检测覆盖与竞品。",
       bullets: [
-        "可添加多台设备（品牌/型号/序列号等）",
+        "可添加多台设备（每台一组下列字段）",
         "选择所属检测线后，勾选该线下细项",
-        "可选「客户服务评价」",
         "写回客户设备及 device→assay 覆盖；看板覆盖与竞品由此推导",
+      ],
+      collectFields: [
+        {
+          label: "所属公司",
+          key: "brand",
+          type: "text",
+          hint: "可联想或自定义（迈瑞 / 竞品）",
+        },
+        { label: "机型", key: "model", type: "text", hint: "必填" },
+        { label: "序列号", key: "serialNo", type: "text" },
+        { label: "安装日期", key: "installedAt", type: "date" },
+        { label: "启用日期", key: "enabledAt", type: "date" },
+        {
+          label: "使用位置",
+          key: "usageLocation",
+          type: "enum",
+          hint: "门急诊 / 住院部 / 体检中心 / 核医学科 / 其他（可自填）",
+        },
+        {
+          label: "所属检测线",
+          key: "assayLineCode",
+          type: "enum",
+          hint: "生化 / 免疫 / 凝血 / 血球等（字典）",
+        },
+        {
+          label: "检测细项覆盖",
+          key: "itemCodes",
+          type: "multi_select",
+          hint: "按检测线→类别展开叶子细项复选",
+        },
+        {
+          label: "客户服务评价",
+          key: "serviceEvaluation",
+          type: "enum",
+          hint: "系统预设四档评价",
+        },
       ],
     };
   }
   if (typ === "assay_block") {
     return {
       title: "检测项目树（旧块，只读保留）",
-      summary: "历史模板中的独立检测项目采集。新模板请改用设备列表覆盖细项，避免与设备信息冲突。",
+      summary:
+        "历史模板中的独立检测项目采集。新模板请改用设备列表覆盖细项，避免与设备信息冲突。",
       bullets: [
         "检测线 → 类别 → 叶子项目复选（字典树）",
         "写回 hospital_assays（与设备覆盖可能重复）",
         "建议删除本块，改由「设备列表」采集覆盖",
+      ],
+      collectFields: [
+        {
+          label: "检测项目（叶子）",
+          key: "codes",
+          type: "multi_select",
+          hint: "检测线 → 类别 → 细项复选",
+        },
       ],
       legacy: true,
     };
@@ -1709,8 +1779,8 @@ export default function SurveyTemplatesPage() {
           }
         }}
       >
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
-          <DialogHeader className="border-b px-5 py-4">
+        <DialogContent className="flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 border-b px-5 py-4">
             <DialogTitle>
               {specialBlockField
                 ? specialBlockInfo(specialBlockField)?.title ||
@@ -1721,11 +1791,11 @@ export default function SurveyTemplatesPage() {
             <DialogDescription>
               {specialBlockField
                 ? specialBlockInfo(specialBlockField)?.summary ||
-                  "只读查看该特殊块采集内容"
-                : "只读查看"}
+                  "查看该特殊块采集的每一个字段"
+                : "查看采集字段明细"}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 px-5 py-4 text-sm">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4 text-sm">
             {specialBlockField ? (
               <>
                 <div className="rounded-md border bg-muted/40 px-3 py-2">
@@ -1738,6 +1808,8 @@ export default function SurveyTemplatesPage() {
                     {specialBlockField.target
                       ? ` · target: ${specialBlockField.target}`
                       : ""}
+                    {" · "}
+                    {typeLabel(specialBlockField.type || "")}
                   </div>
                 </div>
                 {specialBlockInfo(specialBlockField)?.legacy ? (
@@ -1745,15 +1817,101 @@ export default function SurveyTemplatesPage() {
                     此为历史「检测项目」块。新采集请用设备列表覆盖细项；可在此删除本块以免与设备信息冲突。
                   </p>
                 ) : null}
+                <div>
+                  <p className="mb-2 text-sm font-medium">采集字段明细</p>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    以下为采集员在填报端实际填写的每一个字段（模板预览，无答卷值）。
+                  </p>
+                  <div className="overflow-hidden rounded-md border">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-muted/50 text-xs text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">字段</th>
+                          <th className="px-3 py-2 font-medium">类型</th>
+                          <th className="px-3 py-2 font-medium">说明</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(specialBlockInfo(specialBlockField)?.collectFields || []).map(
+                          (cf) => (
+                            <tr key={cf.key} className="border-t">
+                              <td className="px-3 py-2">
+                                <div className="font-medium">{cf.label}</div>
+                                <div className="font-mono text-[11px] text-muted-foreground">
+                                  {cf.key}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-muted-foreground">
+                                {typeLabel(cf.type)}
+                              </td>
+                              <td className="px-3 py-2 text-muted-foreground">
+                                {cf.hint || "—"}
+                              </td>
+                            </tr>
+                          ),
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
                 <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                   {(specialBlockInfo(specialBlockField)?.bullets || []).map((b) => (
                     <li key={b}>{b}</li>
                   ))}
                 </ul>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">采集表单预览</p>
+                  <p className="text-xs text-muted-foreground">
+                    与填报端一致的只读预览（空值示意）。
+                  </p>
+                  <div className="rounded-md border bg-background p-3">
+                    {(specialBlockField.type || "").toLowerCase() === "eqa_block" ? (
+                      <EqaParticipationField
+                        value={undefined}
+                        onChange={() => {}}
+                        disabled
+                        config={{
+                          enableNational:
+                            specialBlockField.enableNational !== false,
+                          enableProvincial:
+                            specialBlockField.enableProvincial !== false,
+                        }}
+                      />
+                    ) : (specialBlockField.type || "").toLowerCase() ===
+                      "device_block" ? (
+                      <DeviceBlockField
+                        value={{
+                          devices: [
+                            {
+                              brand: "迈瑞",
+                              model: "",
+                              serialNo: "",
+                              installedAt: "",
+                              enabledAt: "",
+                              usageLocation: "",
+                              assayLineCode: "",
+                              itemCodes: [],
+                              serviceEvaluation: "",
+                            },
+                          ],
+                        }}
+                        onChange={() => {}}
+                        disabled
+                      />
+                    ) : (specialBlockField.type || "").toLowerCase() ===
+                      "assay_block" ? (
+                      <AssayTreeField
+                        value={undefined}
+                        onChange={() => {}}
+                        disabled
+                      />
+                    ) : null}
+                  </div>
+                </div>
               </>
             ) : null}
           </div>
-          <DialogFooter className="border-t px-5 py-3">
+          <DialogFooter className="shrink-0 border-t px-5 py-3">
             <Button
               type="button"
               variant="destructive"
