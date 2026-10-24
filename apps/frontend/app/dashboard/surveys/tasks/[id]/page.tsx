@@ -21,6 +21,10 @@ import {
   AssayTreeField,
   normalizeAssayBlockAnswer,
 } from "@/components/assay-tree-field";
+import {
+  DeviceBlockField,
+  normalizeDeviceBlockAnswer,
+} from "@/components/device-block-field";
 import { HospitalNameTypeahead } from "@/components/hospital-name-typeahead";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -144,6 +148,9 @@ export default function SurveyTaskFillPage() {
         if (f.type === "assay_block" && (next[f.key] == null || typeof next[f.key] !== "object")) {
           next[f.key] = normalizeAssayBlockAnswer(undefined);
         }
+        if (f.type === "device_block" && (next[f.key] == null || typeof next[f.key] !== "object")) {
+          next[f.key] = normalizeDeviceBlockAnswer(undefined);
+        }
       }
       if (res.assignment.hospitalId && res.assignment.hospitalName) {
         const boundName = res.assignment.hospitalName;
@@ -255,18 +262,29 @@ export default function SurveyTaskFillPage() {
   };
 
   const onSubmit = async () => {
-    setSaving(true);
     setError(null);
     setMessage(null);
+    const resolvedHospitalId =
+      linkedHospitalId ??
+      (assignment?.hospitalId ? Number(assignment.hospitalId) : undefined);
+    if (
+      (assignment?.hospitalOpen || !hospitalBound) &&
+      (!resolvedHospitalId || resolvedHospitalId <= 0)
+    ) {
+      setError("请从医院名称联想列表中选择一家已有医院后再提交");
+      return;
+    }
+    setSaving(true);
     const res = await submitSurveyAssignment(id, {
       answers,
-      hospitalId:
-        linkedHospitalId ??
-        (assignment?.hospitalId ? Number(assignment.hospitalId) : undefined),
+      hospitalId: resolvedHospitalId,
     });
     setSaving(false);
     if (res.error) setError(res.error);
-    else {
+    else if (res.nextAssignmentId) {
+      setMessage("已提交审核。正在打开下一份空白填报…");
+      router.push(`/dashboard/surveys/tasks/${res.nextAssignmentId}`);
+    } else {
       setMessage("已提交审核");
       await load();
     }
@@ -547,6 +565,8 @@ export default function SurveyTaskFillPage() {
         <Badge variant="outline">{assignment.status}</Badge>
         {assignment.hospitalName ? (
           <Badge variant="secondary">{assignment.hospitalName}</Badge>
+        ) : assignment.hospitalOpen ? (
+          <Badge variant="outline">自选医院</Badge>
         ) : null}
         {assignment.campaignStatus === "closed" ? (
           <Badge variant="secondary">发放已关闭</Badge>
@@ -560,7 +580,9 @@ export default function SurveyTaskFillPage() {
             {assignment.templateTitle || assignment.templateCode}
             {assignment.hospitalName
               ? ` · 医院：${assignment.hospitalName}`
-              : ""}
+              : assignment.hospitalOpen
+                ? " · 请输入并选择客户/医院名称（数据库联想）"
+                : ""}
             {assignment.reviewNote
               ? ` · 驳回意见：${assignment.reviewNote}`
               : ""}
@@ -573,8 +595,12 @@ export default function SurveyTaskFillPage() {
           {sections.map(([section, fields]) => {
             const eqaFields = fields.filter((f) => f.type === "eqa_block");
             const assayFields = fields.filter((f) => f.type === "assay_block");
+            const deviceFields = fields.filter((f) => f.type === "device_block");
             const scalarFields = fields.filter(
-              (f) => f.type !== "eqa_block" && f.type !== "assay_block",
+              (f) =>
+                f.type !== "eqa_block" &&
+                f.type !== "assay_block" &&
+                f.type !== "device_block",
             );
             const mostlyBoolean =
               scalarFields.length > 0 &&
@@ -611,6 +637,21 @@ export default function SurveyTaskFillPage() {
                       ) : null}
                     </Label>
                     <AssayTreeField
+                      value={answers[field.key]}
+                      disabled={readOnly || lockedSet.has(field.key)}
+                      onChange={(v) => setField(field.key, v)}
+                    />
+                  </div>
+                ))}
+                {deviceFields.map((field) => (
+                  <div key={field.key} className="space-y-2">
+                    <Label>
+                      {field.label}
+                      {field.required ? (
+                        <span className="text-destructive"> *</span>
+                      ) : null}
+                    </Label>
+                    <DeviceBlockField
                       value={answers[field.key]}
                       disabled={readOnly || lockedSet.has(field.key)}
                       onChange={(v) => setField(field.key, v)}

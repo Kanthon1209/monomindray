@@ -25,20 +25,21 @@ type SurveyTemplate struct {
 }
 
 type SurveyCampaign struct {
-	Id              int64
-	TemplateId      int64
-	Title           string
-	Description     string
-	DueAt           *time.Time
-	Status          string
-	CreatedBy       *int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	Defaults        map[string]string
-	LockedKeys      []string
-	TemplateCode    string
-	TemplateTitle   string
-	AssignmentCount int
+	Id               int64
+	TemplateId       int64
+	Title            string
+	Description      string
+	DueAt            *time.Time
+	Status           string
+	CreatedBy        *int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Defaults         map[string]string
+	LockedKeys       []string
+	DistributionMode string
+	TemplateCode     string
+	TemplateTitle    string
+	AssignmentCount  int
 }
 
 type SurveyAssignment struct {
@@ -88,7 +89,7 @@ type SurveySubmission struct {
 
 type SurveyAssignmentSpec struct {
 	AssigneeID int64
-	HospitalID int64
+	HospitalID int64 // 0 ⇒ open assignment (hospital_id NULL); collector picks later
 	Prefill    map[string]any
 }
 
@@ -117,6 +118,8 @@ type SurveyModel interface {
 	FindTemplateByCode(ctx context.Context, code string) (*SurveyTemplate, error)
 	CreateTemplate(ctx context.Context, t *SurveyTemplate) (*SurveyTemplate, error)
 	UpdateTemplate(ctx context.Context, id int64, title, description, status string, schema json.RawMessage, bumpVersion bool) (*SurveyTemplate, error)
+	ArchiveTemplate(ctx context.Context, id int64) (*SurveyTemplate, error)
+	CountCampaignsByTemplate(ctx context.Context, templateID int64, statuses []string) (int64, error)
 
 	CreateCampaignWithAssignments(ctx context.Context, c *SurveyCampaign, specs []SurveyAssignmentSpec) (int64, error)
 	ListCampaigns(ctx context.Context, f SurveyCampaignFilter) ([]SurveyCampaign, int64, error)
@@ -135,6 +138,8 @@ type SurveyModel interface {
 	FindSubmissionById(ctx context.Context, id int64) (*SurveySubmission, error)
 	ReviewSubmission(ctx context.Context, id, reviewerID int64, status, note string) error
 	SetSubmissionHospital(ctx context.Context, submissionID, hospitalID int64) error
+	// CreateOpenAssignment inserts a hospital-unbound todo task + empty draft for multi-fill.
+	CreateOpenAssignment(ctx context.Context, campaignID, assigneeID int64) (int64, error)
 }
 
 type surveyModel struct{ conn *pgxpool.Pool }
@@ -228,6 +233,33 @@ func (m *surveyModel) UpdateTemplate(
 	return scanTemplate(row)
 }
 
+
+func (m *surveyModel) ArchiveTemplate(ctx context.Context, id int64) (*SurveyTemplate, error) {
+	row := m.conn.QueryRow(ctx, `
+		UPDATE survey_templates
+		SET status = 'archived',
+		    updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, code, title, description, schema, version, status, created_by, created_at, updated_at`, id)
+	return scanTemplate(row)
+}
+
+func (m *surveyModel) CountCampaignsByTemplate(ctx context.Context, templateID int64, statuses []string) (int64, error) {
+	q := `SELECT COUNT(*) FROM survey_campaigns WHERE template_id = $1`
+	args := []any{templateID}
+	if len(statuses) > 0 {
+		ph := make([]string, 0, len(statuses))
+		for _, s := range statuses {
+			args = append(args, s)
+			ph = append(ph, fmt.Sprintf("$%d", len(args)))
+		}
+		q += ` AND status IN (` + strings.Join(ph, ",") + `)`
+	}
+	var n int64
+	err := m.conn.QueryRow(ctx, q, args...).Scan(&n)
+	return n, err
+}
+
 func scanTemplate(row pgx.Row) (*SurveyTemplate, error) {
 	var t SurveyTemplate
 	var schema []byte
@@ -264,24 +296,35 @@ func (m *surveyModel) CreateCampaignWithAssignments(ctx context.Context, c *Surv
 		return 0, err
 	}
 
+	mode := strings.TrimSpace(c.DistributionMode)
+	if mode == "" {
+		mode = "hospital"
+	}
 	var id int64
 	err = tx.QueryRow(ctx, `
-		INSERT INTO survey_campaigns (template_id, title, description, due_at, status, created_by, defaults, locked_keys)
-		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) RETURNING id`,
-		c.TemplateId, c.Title, c.Description, c.DueAt, c.Status, c.CreatedBy, defaultsJSON, lockedJSON,
+		INSERT INTO survey_campaigns (template_id, title, description, due_at, status, created_by, defaults, locked_keys, distribution_mode)
+		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9) RETURNING id`,
+		c.TemplateId, c.Title, c.Description, c.DueAt, c.Status, c.CreatedBy, defaultsJSON, lockedJSON, mode,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
 	for _, spec := range specs {
-		if spec.AssigneeID <= 0 || spec.HospitalID <= 0 {
+		if spec.AssigneeID <= 0 {
 			return 0, fmt.Errorf("invalid assignment spec")
+		}
+		if mode == "hospital" && spec.HospitalID <= 0 {
+			return 0, fmt.Errorf("invalid assignment spec: hospital required")
+		}
+		var hospitalArg any
+		if spec.HospitalID > 0 {
+			hospitalArg = spec.HospitalID
 		}
 		var assignmentID int64
 		err := tx.QueryRow(ctx, `
 			INSERT INTO survey_assignments (campaign_id, assignee_id, hospital_id, status)
 			VALUES ($1,$2,$3,'todo')
-			RETURNING id`, id, spec.AssigneeID, spec.HospitalID).Scan(&assignmentID)
+			RETURNING id`, id, spec.AssigneeID, hospitalArg).Scan(&assignmentID)
 		if err != nil {
 			return 0, err
 		}
@@ -302,7 +345,7 @@ func (m *surveyModel) CreateCampaignWithAssignments(ctx context.Context, c *Surv
 			INSERT INTO survey_submissions (assignment_id, hospital_id, answers, status, collected_by)
 			VALUES ($1, $2, $3::jsonb, 'draft', $4)
 			ON CONFLICT (assignment_id) DO NOTHING`,
-			assignmentID, spec.HospitalID, answersJSON, spec.AssigneeID,
+			assignmentID, hospitalArg, answersJSON, spec.AssigneeID,
 		); err != nil {
 			return 0, err
 		}
@@ -331,6 +374,7 @@ func (m *surveyModel) ListCampaigns(ctx context.Context, f SurveyCampaignFilter)
 	rows, err := m.conn.Query(ctx, fmt.Sprintf(`
 		SELECT c.id, c.template_id, c.title, c.description, c.due_at, c.status, c.created_by, c.created_at, c.updated_at,
 		       COALESCE(c.defaults, '{}'::jsonb), COALESCE(c.locked_keys, '[]'::jsonb),
+		       COALESCE(c.distribution_mode, 'hospital'),
 		       COALESCE(t.code,''), COALESCE(t.title,''),
 		       (SELECT COUNT(*)::INT FROM survey_assignments a WHERE a.campaign_id = c.id)
 		FROM survey_campaigns c
@@ -357,6 +401,7 @@ func (m *surveyModel) FindCampaignById(ctx context.Context, id int64) (*SurveyCa
 	row := m.conn.QueryRow(ctx, `
 		SELECT c.id, c.template_id, c.title, c.description, c.due_at, c.status, c.created_by, c.created_at, c.updated_at,
 		       COALESCE(c.defaults, '{}'::jsonb), COALESCE(c.locked_keys, '[]'::jsonb),
+		       COALESCE(c.distribution_mode, 'hospital'),
 		       COALESCE(t.code,''), COALESCE(t.title,''),
 		       (SELECT COUNT(*)::INT FROM survey_assignments a WHERE a.campaign_id = c.id)
 		FROM survey_campaigns c
@@ -370,7 +415,7 @@ func scanCampaign(row pgx.Row) (*SurveyCampaign, error) {
 	var defaultsRaw, lockedRaw []byte
 	err := row.Scan(
 		&c.Id, &c.TemplateId, &c.Title, &c.Description, &c.DueAt, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
-		&defaultsRaw, &lockedRaw,
+		&defaultsRaw, &lockedRaw, &c.DistributionMode,
 		&c.TemplateCode, &c.TemplateTitle, &c.AssignmentCount,
 	)
 	if err != nil {
@@ -835,4 +880,36 @@ func (m *surveyModel) SetSubmissionHospital(ctx context.Context, submissionID, h
 	_, err := m.conn.Exec(ctx, `
 		UPDATE survey_submissions SET hospital_id=$1, updated_at=NOW() WHERE id=$2`, hospitalID, submissionID)
 	return err
+}
+
+func (m *surveyModel) CreateOpenAssignment(ctx context.Context, campaignID, assigneeID int64) (int64, error) {
+	if campaignID <= 0 || assigneeID <= 0 {
+		return 0, fmt.Errorf("invalid open assignment args")
+	}
+	tx, err := m.conn.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	var assignmentID int64
+	err = tx.QueryRow(ctx, `
+		INSERT INTO survey_assignments (campaign_id, assignee_id, hospital_id, status)
+		VALUES ($1,$2,NULL,'todo')
+		RETURNING id`, campaignID, assigneeID).Scan(&assignmentID)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO survey_submissions (assignment_id, hospital_id, answers, status, collected_by)
+		VALUES ($1, NULL, '{}'::jsonb, 'draft', $2)
+		ON CONFLICT (assignment_id) DO NOTHING`,
+		assignmentID, assigneeID,
+	); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return assignmentID, nil
 }

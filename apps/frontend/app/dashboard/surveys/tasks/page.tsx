@@ -121,7 +121,7 @@ export default function SurveyTasksPage() {
                       <TableCell className="font-medium">
                         {item.campaignTitle || "—"}
                       </TableCell>
-                      <TableCell>{item.hospitalName || "—"}</TableCell>
+                      <TableCell>{item.hospitalName || (item.hospitalOpen ? "自选医院" : "—")}</TableCell>
                       <TableCell>{item.templateTitle || item.templateCode}</TableCell>
                       <TableCell>{assignmentStatusBadge(item.status)}</TableCell>
                       <TableCell>{formatTime(item.dueAt)}</TableCell>
@@ -153,7 +153,7 @@ export default function SurveyTasksPage() {
                 <MobileCardItem key={item.id}>
                   <div className="font-medium">{item.campaignTitle || "—"}</div>
                   <div className="text-sm text-muted-foreground">
-                    {item.hospitalName || "—"}
+                    {item.hospitalName || (item.hospitalOpen ? "自选医院" : "—")}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {item.templateTitle || item.templateCode}

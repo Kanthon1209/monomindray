@@ -8,9 +8,10 @@ import { useAuth } from "@/lib/auth";
 import {
   closeSurveyCampaign,
   createSurveyCampaign,
-  listHospitals,
   listSurveyCampaigns,
   listSurveyTemplates,
+  searchHospitalsForSurvey,
+  type HospitalSearchOption,
   type SurveyCampaign,
   type SurveyTemplate,
 } from "@/lib/business";
@@ -66,9 +67,13 @@ export default function SurveyCampaignsPage() {
   const [items, setItems] = useState<SurveyCampaign[]>([]);
   const [templates, setTemplates] = useState<SurveyTemplate[]>([]);
   const [collectors, setCollectors] = useState<User[]>([]);
-  const [hospitals, setHospitals] = useState<
-    { id: string; name: string; province: string; city: string }[]
-  >([]);
+  const [hospitalOptions, setHospitalOptions] = useState<HospitalSearchOption[]>(
+    [],
+  );
+  const [hospitalSearching, setHospitalSearching] = useState(false);
+  const [selectedHospitalMap, setSelectedHospitalMap] = useState<
+    Record<string, HospitalSearchOption>
+  >({});
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +84,10 @@ export default function SurveyCampaignsPage() {
   const [dueAt, setDueAt] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
+  const [selectedCollectorIds, setSelectedCollectorIds] = useState<string[]>([]);
+  const [distributionMode, setDistributionMode] = useState<
+    "hospital" | "collector_open"
+  >("hospital");
   const [selectedHospitals, setSelectedHospitals] = useState<string[]>([]);
   const [hospitalKeyword, setHospitalKeyword] = useState("");
 
@@ -91,24 +100,15 @@ export default function SurveyCampaignsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [campRes, tplRes, hospRes] = await Promise.all([
+    const [campRes, tplRes] = await Promise.all([
       listSurveyCampaigns(),
       listSurveyTemplates(),
-      listHospitals({ page: 1, pageSize: 200 }),
     ]);
     if (campRes.error) setError(campRes.error);
     setItems(campRes.items);
     setTotal(campRes.total);
     setTemplates(tplRes.items);
     setTemplateId((prev) => prev || tplRes.items[0]?.id || "");
-    setHospitals(
-      (hospRes.items || []).map((h) => ({
-        id: h.id,
-        name: h.name,
-        province: h.province,
-        city: h.city,
-      })),
-    );
 
     const token = getAuthToken();
     if (token) {
@@ -136,29 +136,69 @@ export default function SurveyCampaignsPage() {
     if (user?.role === "admin") load();
   }, [user, load]);
 
-  const filteredHospitals = useMemo(() => {
+  // Server-side hospital search — do NOT preload a capped page (1500+ rows;
+  // pageSize 200 previously hid newly created hospitals past rank ~200).
+  useEffect(() => {
+    if (!showForm) return;
     const kw = hospitalKeyword.trim();
-    if (!kw) return hospitals.slice(0, 80);
-    return hospitals
-      .filter(
-        (h) =>
-          h.name.includes(kw) ||
-          h.province.includes(kw) ||
-          h.city.includes(kw),
-      )
-      .slice(0, 80);
-  }, [hospitals, hospitalKeyword]);
+    if (!kw) {
+      setHospitalOptions([]);
+      setHospitalSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setHospitalSearching(true);
+    const t = window.setTimeout(async () => {
+      const res = await searchHospitalsForSurvey(kw, 40);
+      if (cancelled) return;
+      setHospitalSearching(false);
+      if (!res.error) setHospitalOptions(res.items);
+      else setHospitalOptions([]);
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [hospitalKeyword, showForm]);
 
-  const toggleHospital = (id: string) => {
-    setSelectedHospitals((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+  const filteredHospitals = useMemo(() => {
+    const byId = new Map<string, HospitalSearchOption>();
+    for (const id of selectedHospitals) {
+      const pinned = selectedHospitalMap[id];
+      if (pinned) byId.set(id, pinned);
+    }
+    for (const h of hospitalOptions) byId.set(h.id, h);
+    return Array.from(byId.values());
+  }, [hospitalOptions, selectedHospitals, selectedHospitalMap]);
+
+  const toggleHospital = (h: HospitalSearchOption) => {
+    setSelectedHospitals((prev) => {
+      if (prev.includes(h.id)) {
+        setSelectedHospitalMap((m) => {
+          const next = { ...m };
+          delete next[h.id];
+          return next;
+        });
+        return prev.filter((x) => x !== h.id);
+      }
+      setSelectedHospitalMap((m) => ({ ...m, [h.id]: h }));
+      return [...prev, h.id];
+    });
   };
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !templateId || !assigneeId || selectedHospitals.length === 0) {
-      setError("请填写标题、选择模板、采集员，并至少选择一家医院");
+    if (!title.trim() || !templateId) {
+      setError("请填写标题并选择模板");
+      return;
+    }
+    if (distributionMode === "hospital") {
+      if (!assigneeId || selectedHospitals.length === 0) {
+        setError("按医院派发：请选择采集员，并至少选择一家医院");
+        return;
+      }
+    } else if (selectedCollectorIds.length === 0) {
+      setError("发给采集员：请至少选择一名采集员");
       return;
     }
     const selectedTpl = templates.find((t) => t.id === templateId);
@@ -179,14 +219,26 @@ export default function SurveyCampaignsPage() {
       }
       dueAtIso = d.toISOString();
     }
-    const res = await createSurveyCampaign({
-      templateId: Number(templateId),
-      title: title.trim(),
-      description: description.trim() || undefined,
-      dueAt: dueAtIso,
-      assigneeId: Number(assigneeId),
-      hospitalIds: selectedHospitals.map(Number),
-    });
+    const res = await createSurveyCampaign(
+      distributionMode === "hospital"
+        ? {
+            templateId: Number(templateId),
+            title: title.trim(),
+            description: description.trim() || undefined,
+            dueAt: dueAtIso,
+            distributionMode: "hospital",
+            assigneeId: Number(assigneeId),
+            hospitalIds: selectedHospitals.map(Number),
+          }
+        : {
+            templateId: Number(templateId),
+            title: title.trim(),
+            description: description.trim() || undefined,
+            dueAt: dueAtIso,
+            distributionMode: "collector_open",
+            assigneeIds: selectedCollectorIds.map(Number),
+          },
+    );
     setSaving(false);
     if (res.error) {
       setError(res.error);
@@ -197,7 +249,12 @@ export default function SurveyCampaignsPage() {
     setDescription("");
     setDueAt("");
     setAssigneeId("");
+    setSelectedCollectorIds([]);
+    setDistributionMode("hospital");
     setSelectedHospitals([]);
+    setSelectedHospitalMap({});
+    setHospitalKeyword("");
+    setHospitalOptions([]);
     await load();
   };
 
@@ -228,7 +285,7 @@ export default function SurveyCampaignsPage() {
               <div>
                 <CardTitle>问卷发放</CardTitle>
                 <CardDescription>
-                  按「采集员 × 医院」派发任务。当前共 {total} 次发放。
+                  支持「按医院锁定」或「发给采集员自选医院（可重复填）」。当前共 {total} 次发放。
                 </CardDescription>
               </div>
             </div>
@@ -269,6 +326,41 @@ export default function SurveyCampaignsPage() {
               onSubmit={onCreate}
               className="space-y-4 rounded-lg border p-4"
             >
+              <div className="space-y-2">
+                <Label>发放方式</Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <label className="flex flex-1 cursor-pointer items-start gap-2 rounded-md border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-muted/50">
+                    <input
+                      type="radio"
+                      name="distributionMode"
+                      className="mt-1"
+                      checked={distributionMode === "hospital"}
+                      onChange={() => setDistributionMode("hospital")}
+                    />
+                    <span>
+                      <span className="font-medium">按医院派发</span>
+                      <span className="mt-0.5 block text-muted-foreground">
+                        选定医院后锁定客户名，每家一条任务
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex flex-1 cursor-pointer items-start gap-2 rounded-md border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-muted/50">
+                    <input
+                      type="radio"
+                      name="distributionMode"
+                      className="mt-1"
+                      checked={distributionMode === "collector_open"}
+                      onChange={() => setDistributionMode("collector_open")}
+                    />
+                    <span>
+                      <span className="font-medium">发给采集员（自选医院）</span>
+                      <span className="mt-0.5 block text-muted-foreground">
+                        不锁客户名；填报时联想数据库已有医院，可重复提交
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>标题</Label>
@@ -297,21 +389,23 @@ export default function SurveyCampaignsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>采集员</Label>
-                  <Select value={assigneeId} onValueChange={setAssigneeId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择采集员" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {collectors.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name} ({c.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {distributionMode === "hospital" ? (
+                  <div className="space-y-2">
+                    <Label>采集员</Label>
+                    <Select value={assigneeId} onValueChange={setAssigneeId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择采集员" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {collectors.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name} ({c.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
                 <div className="space-y-2">
                   <Label>截止时间（可选）</Label>
                   <Input
@@ -328,39 +422,85 @@ export default function SurveyCampaignsPage() {
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>
-                  医院（已选 {selectedHospitals.length} 家，每家生成一条任务）
-                </Label>
-                <Input
-                  placeholder="搜索医院名称/省/市"
-                  value={hospitalKeyword}
-                  onChange={(e) => setHospitalKeyword(e.target.value)}
-                />
-                <div className="max-h-48 overflow-auto rounded-md border p-2">
-                  {filteredHospitals.map((h) => (
-                    <label
-                      key={h.id}
-                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedHospitals.includes(h.id)}
-                        onChange={() => toggleHospital(h.id)}
-                      />
-                      <span>
-                        {h.name}
-                        <span className="ml-2 text-muted-foreground">
-                          {h.province} {h.city}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                  {filteredHospitals.length === 0 ? (
-                    <p className="p-2 text-sm text-muted-foreground">无匹配医院</p>
-                  ) : null}
+              {distributionMode === "collector_open" ? (
+                <div className="space-y-2">
+                  <Label>
+                    采集员（已选 {selectedCollectorIds.length} 人，每人一条可重复填报任务）
+                  </Label>
+                  <div className="max-h-48 overflow-auto rounded-md border p-2">
+                    {collectors.length === 0 ? (
+                      <p className="p-2 text-sm text-muted-foreground">
+                        暂无已审核的非管理员用户
+                      </p>
+                    ) : (
+                      collectors.map((c) => (
+                        <label
+                          key={c.id}
+                          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedCollectorIds.includes(c.id)}
+                            onChange={() => {
+                              setSelectedCollectorIds((prev) =>
+                                prev.includes(c.id)
+                                  ? prev.filter((x) => x !== c.id)
+                                  : [...prev, c.id],
+                              );
+                            }}
+                          />
+                          <span>
+                            {c.name}
+                            <span className="ml-2 text-muted-foreground">
+                              {c.email}
+                            </span>
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>
+                    医院（已选 {selectedHospitals.length} 家，每家生成一条任务）
+                  </Label>
+                  <Input
+                    placeholder="输入医院名称搜索（支持客户编码）"
+                    value={hospitalKeyword}
+                    onChange={(e) => setHospitalKeyword(e.target.value)}
+                  />
+                  <div className="max-h-48 overflow-auto rounded-md border p-2">
+                    {filteredHospitals.map((h) => (
+                      <label
+                        key={h.id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedHospitals.includes(h.id)}
+                          onChange={() => toggleHospital(h)}
+                        />
+                        <span>
+                          {h.name}
+                          <span className="ml-2 text-muted-foreground">
+                            {[h.province, h.city].filter(Boolean).join(" ")}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                    {filteredHospitals.length === 0 ? (
+                      <p className="p-2 text-sm text-muted-foreground">
+                        {hospitalSearching
+                          ? "搜索中…"
+                          : hospitalKeyword.trim()
+                            ? "无匹配医院"
+                            : "输入关键字搜索已有医院（含客户管理新建）"}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
               <Button type="submit" disabled={saving}>
                 {saving ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -398,7 +538,14 @@ export default function SurveyCampaignsPage() {
                 ) : (
                   items.map((c) => (
                     <TableRow key={c.id}>
-                      <TableCell className="font-medium">{c.title}</TableCell>
+                      <TableCell className="font-medium">
+                        <div>{c.title}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {c.distributionMode === "collector_open"
+                            ? "自选医院 · 可重复填"
+                            : "按医院锁定"}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         {templateLabel(c.templateId, c.templateTitle)}
                       </TableCell>
@@ -437,6 +584,11 @@ export default function SurveyCampaignsPage() {
               items.map((c) => (
                 <MobileCardItem key={c.id}>
                   <div className="font-medium">{c.title}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {c.distributionMode === "collector_open"
+                      ? "自选医院 · 可重复填"
+                      : "按医院锁定"}
+                  </div>
                   <div className="text-sm text-muted-foreground">
                     {templateLabel(c.templateId, c.templateTitle)}
                   </div>
