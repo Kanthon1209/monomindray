@@ -400,6 +400,28 @@ func (l *SurveyLogic) CloseCampaign(id int64) (*types.SurveyCampaignResponse, er
 	return l.GetCampaign(id)
 }
 
+func (l *SurveyLogic) DeleteCampaign(id int64) error {
+	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
+		return err
+	}
+	existing, err := l.svcCtx.SurveyModel.FindCampaignById(l.ctx, id)
+	if err != nil {
+		l.Errorf("find campaign: %v", err)
+		return ErrInternal
+	}
+	if existing == nil {
+		return NewCodeError(404, "发放不存在")
+	}
+	if err := l.svcCtx.SurveyModel.DeleteCampaign(l.ctx, id); err != nil {
+		if err == pgx.ErrNoRows {
+			return NewCodeError(404, "发放不存在")
+		}
+		l.Errorf("delete campaign: %v", err)
+		return ErrInternal
+	}
+	return nil
+}
+
 func (l *SurveyLogic) ListMyAssignments(req *types.ListMySurveyAssignmentsRequest) (*types.ListMySurveyAssignmentsResponse, error) {
 	uid, err := authx.UserIDFromCtx(l.ctx)
 	if err != nil {
@@ -1184,7 +1206,8 @@ func toSurveyCampaignInfo(c *model.SurveyCampaign, assigns []types.SurveyAssignm
 		Id: c.Id, TemplateId: c.TemplateId, TemplateCode: c.TemplateCode, TemplateTitle: c.TemplateTitle,
 		Title: c.Title, Description: c.Description, Status: c.Status,
 		Defaults: c.Defaults, LockedKeys: c.LockedKeys, DistributionMode: mode,
-		AssignmentCount: c.AssignmentCount, CreatedAt: formatTime(c.CreatedAt),
+		AssignmentCount: c.AssignmentCount, ApprovedCount: c.ApprovedCount,
+		PendingReviewCount: c.PendingReviewCount, CreatedAt: formatTime(c.CreatedAt),
 		Assignments: assigns,
 	}
 	if c.DueAt != nil {

@@ -156,6 +156,22 @@ func CloseSurveyCampaignHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+func DeleteSurveyCampaignHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.IdPathRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		err := logic.NewSurveyLogic(r.Context(), svcCtx).DeleteCampaign(req.Id)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, map[string]any{"ok": true})
+		}
+	}
+}
+
 func ListMySurveyAssignmentsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req types.ListMySurveyAssignmentsRequest

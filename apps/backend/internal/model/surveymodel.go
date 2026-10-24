@@ -37,9 +37,11 @@ type SurveyCampaign struct {
 	Defaults         map[string]string
 	LockedKeys       []string
 	DistributionMode string
-	TemplateCode     string
-	TemplateTitle    string
-	AssignmentCount  int
+	TemplateCode       string
+	TemplateTitle      string
+	AssignmentCount    int
+	ApprovedCount      int
+	PendingReviewCount int
 }
 
 type SurveyAssignment struct {
@@ -126,6 +128,7 @@ type SurveyModel interface {
 	FindCampaignById(ctx context.Context, id int64) (*SurveyCampaign, error)
 	ListAssignmentsByCampaign(ctx context.Context, campaignID int64) ([]SurveyAssignment, error)
 	CloseCampaign(ctx context.Context, id int64) error
+	DeleteCampaign(ctx context.Context, id int64) error
 
 	ListAssignments(ctx context.Context, f SurveyAssignmentFilter) ([]SurveyAssignment, int64, error)
 	FindAssignmentById(ctx context.Context, id int64) (*SurveyAssignment, error)
@@ -376,7 +379,13 @@ func (m *surveyModel) ListCampaigns(ctx context.Context, f SurveyCampaignFilter)
 		       COALESCE(c.defaults, '{}'::jsonb), COALESCE(c.locked_keys, '[]'::jsonb),
 		       COALESCE(c.distribution_mode, 'hospital'),
 		       COALESCE(t.code,''), COALESCE(t.title,''),
-		       (SELECT COUNT(*)::INT FROM survey_assignments a WHERE a.campaign_id = c.id)
+		       (SELECT COUNT(*)::INT FROM survey_assignments a WHERE a.campaign_id = c.id),
+		       (SELECT COUNT(*)::INT FROM survey_submissions s
+		          JOIN survey_assignments a ON a.id = s.assignment_id
+		          WHERE a.campaign_id = c.id AND s.status = 'approved'),
+		       (SELECT COUNT(*)::INT FROM survey_submissions s
+		          JOIN survey_assignments a ON a.id = s.assignment_id
+		          WHERE a.campaign_id = c.id AND s.status = 'submitted')
 		FROM survey_campaigns c
 		LEFT JOIN survey_templates t ON t.id = c.template_id
 		WHERE %s
@@ -403,7 +412,13 @@ func (m *surveyModel) FindCampaignById(ctx context.Context, id int64) (*SurveyCa
 		       COALESCE(c.defaults, '{}'::jsonb), COALESCE(c.locked_keys, '[]'::jsonb),
 		       COALESCE(c.distribution_mode, 'hospital'),
 		       COALESCE(t.code,''), COALESCE(t.title,''),
-		       (SELECT COUNT(*)::INT FROM survey_assignments a WHERE a.campaign_id = c.id)
+		       (SELECT COUNT(*)::INT FROM survey_assignments a WHERE a.campaign_id = c.id),
+		       (SELECT COUNT(*)::INT FROM survey_submissions s
+		          JOIN survey_assignments a ON a.id = s.assignment_id
+		          WHERE a.campaign_id = c.id AND s.status = 'approved'),
+		       (SELECT COUNT(*)::INT FROM survey_submissions s
+		          JOIN survey_assignments a ON a.id = s.assignment_id
+		          WHERE a.campaign_id = c.id AND s.status = 'submitted')
 		FROM survey_campaigns c
 		LEFT JOIN survey_templates t ON t.id = c.template_id
 		WHERE c.id=$1`, id)
@@ -417,6 +432,7 @@ func scanCampaign(row pgx.Row) (*SurveyCampaign, error) {
 		&c.Id, &c.TemplateId, &c.Title, &c.Description, &c.DueAt, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 		&defaultsRaw, &lockedRaw, &c.DistributionMode,
 		&c.TemplateCode, &c.TemplateTitle, &c.AssignmentCount,
+		&c.ApprovedCount, &c.PendingReviewCount,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -483,6 +499,18 @@ func (m *surveyModel) ListAssignmentsByCampaign(ctx context.Context, campaignID 
 
 func (m *surveyModel) CloseCampaign(ctx context.Context, id int64) error {
 	ct, err := m.conn.Exec(ctx, `UPDATE survey_campaigns SET status='closed' WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteCampaign hard-deletes a campaign; assignments/submissions cascade via FK.
+func (m *surveyModel) DeleteCampaign(ctx context.Context, id int64) error {
+	ct, err := m.conn.Exec(ctx, `DELETE FROM survey_campaigns WHERE id=$1`, id)
 	if err != nil {
 		return err
 	}

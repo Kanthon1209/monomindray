@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, RefreshCw, Send, X } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 import {
   closeSurveyCampaign,
   createSurveyCampaign,
+  deleteSurveyCampaign,
   listSurveyCampaigns,
   listSurveyTemplates,
   searchHospitalsForSurvey,
@@ -49,6 +50,17 @@ import {
   MobileCardList,
   PageToolbar,
 } from "@/components/mobile-data-list";
+
+
+function reviewProgressLabel(c: SurveyCampaign) {
+  const approved = c.approvedCount ?? 0;
+  const pending = c.pendingReviewCount ?? 0;
+  const reviewedTotal = approved + pending;
+  if (reviewedTotal === 0) {
+    return `已审 0 · 待审 0`;
+  }
+  return `已审 ${approved}/${reviewedTotal} · 待审 ${pending}`;
+}
 
 function campaignStatusBadge(status: string) {
   switch (status) {
@@ -261,6 +273,22 @@ export default function SurveyCampaignsPage() {
   const onClose = async (id: string) => {
     setSaving(true);
     const res = await closeSurveyCampaign(id);
+    setSaving(false);
+    if (res.error) setError(res.error);
+    else await load();
+  };
+
+  const onDelete = async (c: SurveyCampaign) => {
+    const approved = c.approvedCount ?? 0;
+    const pending = c.pendingReviewCount ?? 0;
+    const tip =
+      `确定删除发放「${c.title}」？\n` +
+      `将同时删除其全部任务与答卷（任务 ${c.assignmentCount} · 已审 ${approved} · 待审 ${pending}）。\n` +
+      `注意：已审核并写入客户/设备的数据不会回滚。`;
+    if (!window.confirm(tip)) return;
+    setSaving(true);
+    setError(null);
+    const res = await deleteSurveyCampaign(c.id);
     setSaving(false);
     if (res.error) setError(res.error);
     else await load();
@@ -517,21 +545,22 @@ export default function SurveyCampaignsPage() {
                   <TableHead>标题</TableHead>
                   <TableHead>模板</TableHead>
                   <TableHead>任务数</TableHead>
+                  <TableHead>审核进度</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>创建时间</TableHead>
-                  <TableHead className="w-[100px]">操作</TableHead>
+                  <TableHead className="w-[160px]">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       加载中…
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       暂无发放
                     </TableCell>
                   </TableRow>
@@ -550,19 +579,39 @@ export default function SurveyCampaignsPage() {
                         {templateLabel(c.templateId, c.templateTitle)}
                       </TableCell>
                       <TableCell>{c.assignmentCount}</TableCell>
+                      <TableCell>
+                        <span className="text-sm">{reviewProgressLabel(c)}</span>
+                        {(c.pendingReviewCount ?? 0) > 0 ? (
+                          <Badge variant="secondary" className="ml-2">
+                            待审 {c.pendingReviewCount}
+                          </Badge>
+                        ) : null}
+                      </TableCell>
                       <TableCell>{campaignStatusBadge(c.status)}</TableCell>
                       <TableCell>{formatTime(c.createdAt)}</TableCell>
                       <TableCell>
-                        {c.status === "active" ? (
+                        <div className="flex flex-wrap gap-2">
+                          {c.status === "active" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={saving}
+                              onClick={() => onClose(c.id)}
+                            >
+                              关闭
+                            </Button>
+                          ) : null}
                           <Button
                             variant="outline"
                             size="sm"
+                            className="text-destructive hover:bg-destructive/10"
                             disabled={saving}
-                            onClick={() => onClose(c.id)}
+                            onClick={() => onDelete(c)}
                           >
-                            关闭
+                            <Trash2 className="mr-1 h-3.5 w-3.5" />
+                            删除
                           </Button>
-                        ) : null}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -598,19 +647,38 @@ export default function SurveyCampaignsPage() {
                     </span>
                     {campaignStatusBadge(c.status)}
                   </div>
+                  <div className="text-sm text-muted-foreground">
+                    {reviewProgressLabel(c)}
+                    {(c.pendingReviewCount ?? 0) > 0 ? (
+                      <Badge variant="secondary" className="ml-2">
+                        待审 {c.pendingReviewCount}
+                      </Badge>
+                    ) : null}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {formatTime(c.createdAt)}
                   </div>
-                  {c.status === "active" ? (
+                  <div className="flex flex-col gap-2">
+                    {c.status === "active" ? (
+                      <Button
+                        variant="outline"
+                        className="min-h-10 w-full"
+                        disabled={saving}
+                        onClick={() => onClose(c.id)}
+                      >
+                        关闭
+                      </Button>
+                    ) : null}
                     <Button
                       variant="outline"
-                      className="min-h-10 w-full"
+                      className="min-h-10 w-full text-destructive hover:bg-destructive/10"
                       disabled={saving}
-                      onClick={() => onClose(c.id)}
+                      onClick={() => onDelete(c)}
                     >
-                      关闭
+                      <Trash2 className="mr-1 h-4 w-4" />
+                      删除
                     </Button>
-                  ) : null}
+                  </div>
                 </MobileCardItem>
               ))
             )}

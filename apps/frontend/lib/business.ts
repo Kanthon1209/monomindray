@@ -454,6 +454,10 @@ export interface SurveyCampaign {
   /** hospital = pin hospitals; collector_open = assignee picks hospital, multi-fill */
   distributionMode?: "hospital" | "collector_open" | string;
   assignmentCount: number;
+  /** Submissions already approved for this campaign. */
+  approvedCount: number;
+  /** Submissions waiting for review (status=submitted). */
+  pendingReviewCount: number;
   createdAt?: string;
   assignments?: {
     id: string;
@@ -549,6 +553,8 @@ function mapCampaign(raw: any): SurveyCampaign {
     lockedKeys: Array.isArray(raw.lockedKeys) ? raw.lockedKeys : undefined,
     distributionMode: raw.distributionMode || "hospital",
     assignmentCount: raw.assignmentCount ?? 0,
+    approvedCount: raw.approvedCount ?? 0,
+    pendingReviewCount: raw.pendingReviewCount ?? 0,
     createdAt: raw.createdAt || undefined,
     assignments: (raw.assignments || []).map((a: any) => ({
       id: String(a.id),
@@ -740,6 +746,14 @@ export async function closeSurveyCampaign(id: string) {
   );
   if (error) return { error };
   return { campaign: mapCampaign(data!.campaign) };
+}
+
+export async function deleteSurveyCampaign(id: string) {
+  const { error } = await apiFetch<{ ok?: boolean }>(`/surveys/campaigns/${id}`, {
+    method: "DELETE",
+  });
+  if (error) return { error };
+  return { ok: true as const };
 }
 
 export async function listMySurveyAssignments(params?: { status?: string }) {

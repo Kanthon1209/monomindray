@@ -314,10 +314,12 @@ type (
 		Status           string                  `json:"status"`
 		Defaults         map[string]string       `json:"defaults,omitempty"`
 		LockedKeys       []string                `json:"lockedKeys,omitempty"`
-		DistributionMode string                  `json:"distributionMode,omitempty"`
-		AssignmentCount  int                     `json:"assignmentCount"`
-		CreatedAt        string                  `json:"createdAt,omitempty"`
-		Assignments      []SurveyAssignmentBrief `json:"assignments,omitempty"`
+		DistributionMode   string                  `json:"distributionMode,omitempty"`
+		AssignmentCount    int                     `json:"assignmentCount"`
+		ApprovedCount      int                     `json:"approvedCount"`
+		PendingReviewCount int                     `json:"pendingReviewCount"`
+		CreatedAt          string                  `json:"createdAt,omitempty"`
+		Assignments        []SurveyAssignmentBrief `json:"assignments,omitempty"`
 	}
 	CreateSurveyCampaignRequest struct {
 		TemplateId  int64             `json:"templateId"`
