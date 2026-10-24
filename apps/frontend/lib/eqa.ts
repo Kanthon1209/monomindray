@@ -9,7 +9,17 @@ export type EqaFieldNode = {
   parentCode?: string;
   enumValues?: string[];
   sortOrder: number;
+  usageCount?: number;
   children?: EqaFieldNode[];
+};
+
+export type EqaFieldUpsert = {
+  code?: string;
+  name: string;
+  valueType?: string;
+  parentCode?: string;
+  enumValues?: string[];
+  sortOrder?: number;
 };
 
 export type EqaParticipationItem = {
@@ -70,6 +80,26 @@ async function eqaFetch<T>(path: string, init?: RequestInit): Promise<{ data?: T
 
 export async function fetchEqaFields() {
   return eqaFetch<{ items: EqaFieldNode[] }>("/eqa/fields");
+}
+
+export async function createEqaField(body: EqaFieldUpsert) {
+  return eqaFetch<{ field: EqaFieldNode }>("/eqa/fields", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateEqaField(code: string, body: EqaFieldUpsert) {
+  return eqaFetch<{ field: EqaFieldNode }>(`/eqa/fields/${encodeURIComponent(code)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteEqaField(code: string) {
+  return eqaFetch<{ ok: boolean }>(`/eqa/fields/${encodeURIComponent(code)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function fetchEqaDashboard(year?: number) {

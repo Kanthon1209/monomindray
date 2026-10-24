@@ -43,7 +43,8 @@ func (l *EqaLogic) ListFields() (*types.EqaFieldTreeResponse, error) {
 		}
 		n := types.EqaFieldNode{
 			Code: r.Code, Name: r.Name, ValueType: r.ValueType,
-			EnumValues: enums, SortOrder: int64(r.SortOrder), Children: []types.EqaFieldNode{},
+			EnumValues: enums, SortOrder: int64(r.SortOrder), UsageCount: r.UsageCount,
+			Children: []types.EqaFieldNode{},
 		}
 		if r.ParentCode != nil {
 			n.ParentCode = *r.ParentCode
@@ -85,7 +86,8 @@ func buildFieldTree(rows []model.FieldRegistry) []types.EqaFieldNode {
 		}
 		w := &wrap{node: types.EqaFieldNode{
 			Code: r.Code, Name: r.Name, ValueType: r.ValueType,
-			EnumValues: enums, SortOrder: int64(r.SortOrder), Children: []types.EqaFieldNode{},
+			EnumValues: enums, SortOrder: int64(r.SortOrder), UsageCount: r.UsageCount,
+			Children: []types.EqaFieldNode{},
 		}}
 		if r.ParentCode != nil {
 			w.parent = *r.ParentCode
@@ -119,6 +121,94 @@ func buildFieldTree(rows []model.FieldRegistry) []types.EqaFieldNode {
 	}
 	return out
 }
+
+func toEqaFieldNode(r *model.FieldRegistry) types.EqaFieldNode {
+	var enums []string
+	_ = json.Unmarshal(r.EnumValues, &enums)
+	if enums == nil {
+		enums = []string{}
+	}
+	n := types.EqaFieldNode{
+		Code: r.Code, Name: r.Name, ValueType: r.ValueType,
+		EnumValues: enums, SortOrder: int64(r.SortOrder), UsageCount: r.UsageCount,
+		Children: []types.EqaFieldNode{},
+	}
+	if r.ParentCode != nil {
+		n.ParentCode = *r.ParentCode
+	}
+	return n
+}
+
+func (l *EqaLogic) CreateField(req *types.EqaFieldUpsertRequest) (*types.EqaFieldResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
+	f, err := l.svcCtx.EqaModel.CreateField(l.ctx, model.FieldRegistryInput{
+		Code: req.Code, Name: req.Name, ValueType: req.ValueType,
+		ParentCode: req.ParentCode, EnumValues: req.EnumValues, SortOrder: req.SortOrder,
+	})
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique") {
+			return nil, NewCodeError(409, "科目编码已存在")
+		}
+		if strings.Contains(msg, "不能") || strings.Contains(msg, "必须") ||
+			strings.Contains(msg, "不存在") || strings.Contains(msg, "无效") {
+			return nil, NewCodeError(400, msg)
+		}
+		l.Errorf("create eqa field: %v", err)
+		return nil, ErrInternal
+	}
+	return &types.EqaFieldResponse{Field: toEqaFieldNode(f)}, nil
+}
+
+func (l *EqaLogic) UpdateField(code string, req *types.EqaFieldUpsertRequest) (*types.EqaFieldResponse, error) {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return nil, err
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, NewCodeError(400, "编码不能为空")
+	}
+	f, err := l.svcCtx.EqaModel.UpdateField(l.ctx, code, model.FieldRegistryInput{
+		Code: code, Name: req.Name, ValueType: req.ValueType,
+		ParentCode: req.ParentCode, EnumValues: req.EnumValues, SortOrder: req.SortOrder,
+	})
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "不能") || strings.Contains(msg, "必须") ||
+			strings.Contains(msg, "不存在") || strings.Contains(msg, "无效") {
+			return nil, NewCodeError(400, msg)
+		}
+		l.Errorf("update eqa field: %v", err)
+		return nil, ErrInternal
+	}
+	if f == nil {
+		return nil, NewCodeError(404, "科目不存在")
+	}
+	return &types.EqaFieldResponse{Field: toEqaFieldNode(f)}, nil
+}
+
+func (l *EqaLogic) DeleteField(code string) error {
+	if err := requireAdminCtx(l.ctx); err != nil {
+		return err
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return NewCodeError(400, "编码不能为空")
+	}
+	if err := l.svcCtx.EqaModel.DeleteField(l.ctx, code); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "子科目") || strings.Contains(msg, "引用") ||
+			strings.Contains(msg, "不存在") {
+			return NewCodeError(400, msg)
+		}
+		l.Errorf("delete eqa field: %v", err)
+		return ErrInternal
+	}
+	return nil
+}
+
 
 func (l *EqaLogic) Dashboard(req *types.EqaDashboardRequest) (*types.EqaDashboardResponse, error) {
 	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {

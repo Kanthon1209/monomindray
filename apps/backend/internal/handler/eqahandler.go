@@ -132,3 +132,55 @@ func EnsureEqaSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc
 		}
 	}
 }
+
+func CreateEqaFieldHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req types.EqaFieldUpsertRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewEqaLogic(r.Context(), svcCtx).CreateField(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
+func UpdateEqaFieldHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		code, err := parsePathCode(r)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		var req types.EqaFieldUpsertRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewEqaLogic(r.Context(), svcCtx).UpdateField(code, &req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
+func DeleteEqaFieldHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		code, err := parsePathCode(r)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		if err := logic.NewEqaLogic(r.Context(), svcCtx).DeleteField(code); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, types.OkResponse{Ok: true})
+		}
+	}
+}

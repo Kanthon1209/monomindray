@@ -88,75 +88,13 @@ export interface ArchiveFieldDef {
   valueType?: "string" | "string_array" | "competitor_list" | "number";
 }
 
+/** Active archive/display defs for kept customer fields (xlsx sheet1+4). Legacy keys remain in ArchiveFieldKey for resolve/read. */
 export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
-  { key: "region", label: "大区", section: "客户基础" },
+  { key: "region", label: "区域", section: "客户基础" },
   { key: "branchOffice", label: "分公司", section: "客户基础" },
   { key: "customerName", label: "客户名称", section: "客户基础" },
-  { key: "customerCode", label: "客户代码", section: "客户基础" },
-  // device attrs → devices / device_block (soft-archived from hospital catalog)
-  // { key: "model", label: "机型", section: "设备信息" },
-  // { key: "serialNo", label: "序列号", section: "设备信息" },
-  { key: "contactName", label: "负责人", section: "联系人" },
-  { key: "contactPhone", label: "联系电话", section: "联系人" },
-  // { key: "installedAt", label: "安装日期", section: "设备信息" },
-  // { key: "enabledAt", label: "启用日期", section: "设备信息" },
-  { key: "annualRevenue", label: "医院年收入（亿）", section: "经营数据", valueType: "number" },
-  { key: "projectCount", label: "开展项目数", section: "项目与试剂", valueType: "number" },
-  { key: "mindrayReagentCount", label: "迈瑞试剂项目数", section: "项目与试剂", valueType: "number" },
-  { key: "matchingRate", label: "配套率", section: "项目与试剂" },
-  // { key: "otherAnalyzers", label: "其它发光仪", section: "竞品与标本" }, // → device_block
-  { key: "mindraySampleVolume", label: "迈瑞标本量", section: "竞品与标本" },
-  { key: "totalSampleVolume", label: "总标本量", section: "竞品与标本" },
-  { key: "qcVendor", label: "质控品厂家", section: "质控" },
-  { key: "qcLevels", label: "质控水平数", section: "质控" },
-  { key: "qcCycle", label: "质控周期", section: "质控" },
-  { key: "reagentSupplier", label: "试剂供应商", section: "项目与试剂" },
-  { key: "unusedProjects", label: "未使用迈瑞项目及品牌及供应商", section: "竞品与标本" },
-  // competitorProjectDistribution → device_block (competitor brands)
-  { key: "archiveRemark", label: "备注", section: "其他" },
-  // SVIP
-  { key: "groupName", label: "分组", section: "SVIP" },
-  // soft-archived: use 客户等级 / 医院等级 instead
-  // { key: "svipLevel", label: "SVIP级别", section: "SVIP" },
-  { key: "dualMajorCustomer", label: "双大客户", section: "SVIP" },
-  { key: "volumeDirection", label: "上量方向", section: "SVIP" },
-  { key: "iotStock23", label: "23年化免凝IOT存量(W)", section: "SVIP", valueType: "number" },
-  { key: "iotForecast24", label: "24年预估化免凝IOT产出(W)", section: "SVIP", valueType: "number" },
-  { key: "iotIncrement24", label: "24年预估化免凝增量(W)", section: "SVIP", valueType: "number" },
-  { key: "iotGrowthRate24", label: "24年预估化免凝增长率(W)", section: "SVIP", valueType: "number" },
-  // { key: "equipment", label: "设备", section: "SVIP" }, // → device_block
-  { key: "productLineSales", label: "产线销售", section: "SVIP责任人" },
-  { key: "productLineSalesId", label: "产线销售工号", section: "SVIP责任人" },
-  { key: "reagentSales", label: "试剂销售", section: "SVIP责任人" },
-  { key: "reagentSalesId", label: "试剂销售工号", section: "SVIP责任人" },
-  { key: "psName", label: "PS", section: "SVIP责任人" },
-  { key: "psId", label: "PS工号", section: "SVIP责任人" },
-  { key: "clinicalApp", label: "临床应用", section: "SVIP责任人" },
-  { key: "clinicalAppId", label: "临床应用工号", section: "SVIP责任人" },
-  { key: "serviceEngineer", label: "用服工程师", section: "SVIP责任人" },
-  { key: "serviceEngineerId", label: "用服工程师工号", section: "SVIP责任人" },
-  // 双大
-  { key: "dualMajorType", label: "双大类型", section: "双大客户" },
-  { key: "dualMajorTarget", label: "双大突破目标", section: "双大客户" },
-  {
-    key: "hospitalReagentOutput",
-    label: "医院试剂年产出（万元）",
-    section: "双大客户",
-    valueType: "number",
-  },
-  {
-    key: "reagentOutputTarget",
-    label: "试剂产出目标（万元）",
-    section: "双大客户",
-    valueType: "number",
-  },
-  { key: "salesOwner", label: "销售责任人", section: "双大客户" },
-  // competitorDevicesProjects / mindrayDevicesProjectsVolume → device_block + metrics
-  { key: "supplyChannel", label: "供货渠道", section: "双大客户" },
-  { key: "labDirector", label: "检验科主任", section: "双大客户" },
-  { key: "workContact", label: "工作对接人", section: "双大客户" },
-  { key: "customerSegment", label: "客户细分", section: "双大客户" },
-  { key: "segmentCategory", label: "细分类别", section: "双大客户" },
+  { key: "customerCode", label: "客户编码", section: "客户基础" },
+  { key: "dualMajorCustomer", label: "26年是否双大", section: "客户基础" },
 ];
 
 /** 看板默认列（关键指标，适配窄侧栏） */
@@ -164,20 +102,15 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
 export const DASHBOARD_PRIMARY_COLUMNS: Array<ArchiveFieldKey | "customerLevel" | "assays"> = [
   "customerName",
   "customerLevel",
-  "mindrayReagentCount",
   "assays",
 ];
 
 /** 展开后追加列 */
 export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
+  "customerCode",
   "region",
   "branchOffice",
-  // model shown via hospital.deviceModels aggregation, not archive.model
-  "matchingRate",
-  "mindraySampleVolume",
-  "totalSampleVolume",
-  "projectCount",
-  "contactName",
+  "dualMajorCustomer",
 ];
 
 /** @deprecated 使用 PRIMARY + EXTRA */
@@ -251,19 +184,10 @@ export const HOSPITAL_COLUMN_TARGETS = HOSPITAL_COLUMNS.map((c) => ({
 }));
 
 /** 可扩展标签（hospital_attributes） */
+/** Active hospital_attributes keys aligned with xlsx sheet1+4 (+ dual_major). */
 export const HOSPITAL_ATTRIBUTE_KEYS = [
   "customer_level",
-  // usage_location → devices.usage_location (device instance)
-  "customer_stage",
-  "pending_issues",
-  // svip_level soft-archived: redundant with customer_level + hospital.level
   "dual_major",
-  "sales_group",
-  "volume_direction",
-  "dual_major_type",
-  "dual_major_target",
-  "customer_segment",
-  "segment_category",
 ] as const;
 
 /** 系统预设枚举（与 collectable_fields.enum_values 一致，模板/管理端不可自增选项） */
@@ -298,7 +222,7 @@ export const HOSPITAL_ATTRIBUTE_LABELS: Record<string, string> = {
   pending_issues: "客户端待解决问题及需求",
   // deprecated / soft-archived from catalog — keep label for legacy attribute rows
   svip_level: "SVIP级别（已停用）",
-  dual_major: "双大客户",
+  dual_major: "26年是否双大",
   sales_group: "分组",
   volume_direction: "上量方向",
   dual_major_type: "双大类型",
@@ -405,6 +329,9 @@ export function resolveArchiveField(
     province?: string;
     level?: string;
     remark?: string;
+    customerCode?: string;
+    region?: string;
+    branchOffice?: string;
     deviceModels?: string[];
     attributes?: Record<string, string>;
     archive?: Record<string, ArchiveValue>;
@@ -416,15 +343,32 @@ export function resolveArchiveField(
   switch (key) {
     case "region":
       return (
+        hospital.region ||
         formatArchiveValue(archive.region) ||
         regionLabelFromCity(hospital.city) ||
         regionLabelFromProvince(hospital.province) ||
         ""
       );
     case "branchOffice":
-      return formatArchiveValue(archive.branchOffice) || hospital.city || "";
+      return (
+        hospital.branchOffice ||
+        formatArchiveValue(archive.branchOffice) ||
+        ""
+      );
     case "customerName":
       return formatArchiveValue(archive.customerName) || hospital.name || "";
+    case "customerCode":
+      return (
+        hospital.customerCode ||
+        formatArchiveValue(archive.customerCode) ||
+        ""
+      );
+    case "dualMajorCustomer":
+      return (
+        attrs.dual_major ||
+        formatArchiveValue(archive.dualMajorCustomer) ||
+        ""
+      );
     case "customerLevel":
       return (
         attrs.customer_level ||

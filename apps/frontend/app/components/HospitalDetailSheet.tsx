@@ -6,9 +6,7 @@ import { Loader2 } from "lucide-react";
 import {
   fetchHospitalAssays,
   getHospital,
-  listCustomers,
   listDevices,
-  type Customer,
   type Device,
   type HospitalAssayCategory,
   type HospitalAssayCompetitorCategory,
@@ -24,12 +22,8 @@ import {
   type EqaParticipationItem,
 } from "@/lib/eqa";
 import {
-  ARCHIVE_FIELD_DEFS,
   displayValue,
-  formatMatchingRate,
   HOSPITAL_ATTRIBUTE_LABELS,
-  resolveArchiveField,
-  type ArchiveFieldKey,
 } from "@/lib/hospital-archive";
 import type { Hospital } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +48,6 @@ export function HospitalDetailSheet({
 }: HospitalDetailSheetProps) {
   const [hospital, setHospital] = useState<Hospital | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [assayCategories, setAssayCategories] = useState<HospitalAssayCategory[]>([]);
   const [competitors, setCompetitors] = useState<HospitalAssayCompetitorCategory[]>([]);
   const [mindrayLines, setMindrayLines] = useState<string[]>([]);
@@ -73,10 +66,9 @@ export function HospitalDetailSheet({
     const load = async () => {
       setLoading(true);
       setError(null);
-      const [hRes, dRes, cRes, aRes, eRes, fRes] = await Promise.all([
+      const [hRes, dRes, aRes, eRes, fRes] = await Promise.all([
         getHospital(hospitalId),
         listDevices(hospitalId),
-        listCustomers({ hospitalId, page: 1, pageSize: 20 }),
         fetchHospitalAssays(hospitalId),
         fetchEqaParticipations({ hospitalId, page: 1, pageSize: 50 }),
         fetchEqaFields(),
@@ -86,7 +78,6 @@ export function HospitalDetailSheet({
         setError(hRes.error);
         setHospital(null);
         setDevices([]);
-        setCustomers([]);
         setAssayCategories([]);
         setCompetitors([]);
         setMindrayLines([]);
@@ -98,7 +89,6 @@ export function HospitalDetailSheet({
       } else {
         setHospital(hRes.hospital || null);
         setDevices(dRes.items);
-        setCustomers(cRes.items);
         const cats = aRes.categories || [];
         setAssayCategories(cats);
         setCompetitors(aRes.competitors || []);
@@ -131,63 +121,6 @@ export function HospitalDetailSheet({
       cancelled = true;
     };
   }, [open, hospitalId]);
-
-  const values = useMemo(() => {
-    const map: Partial<Record<ArchiveFieldKey, string>> = {};
-    for (const field of ARCHIVE_FIELD_DEFS) {
-      map[field.key] = hospital
-        ? resolveArchiveField(
-            {
-              name: hospital.name,
-              city: hospital.city,
-              province: hospital.province,
-              level: hospital.level,
-              remark: hospital.remark,
-              deviceModels: hospital.deviceModels,
-              archive: {
-                ...(hospital.archive || {}),
-                // prefer live device/customer when archive empty
-                model:
-                  hospital.archive?.model ||
-                  devices[0]?.model ||
-                  hospital.deviceModels?.[0] ||
-                  "",
-                serialNo:
-                  hospital.archive?.serialNo || devices[0]?.serialNo || "",
-                contactName:
-                  hospital.archive?.contactName || customers[0]?.name || "",
-                contactPhone:
-                  hospital.archive?.contactPhone || customers[0]?.phone || "",
-                installedAt:
-                  hospital.archive?.installedAt || devices[0]?.installedAt || "",
-              },
-            },
-            field.key,
-          )
-        : "";
-    }
-    return map;
-  }, [hospital, devices, customers]);
-
-  const sections = useMemo(() => {
-    const order: string[] = [];
-    const grouped = new Map<string, typeof ARCHIVE_FIELD_DEFS>();
-    for (const field of ARCHIVE_FIELD_DEFS) {
-      // Retired flat project lists — shown from hospital_assays below.
-      if ((field.key as string) === "mindrayProjects" || (field.key as string) === "newProjects" || (field.key as string) === "missingProjects") {
-        continue;
-      }
-      if (!grouped.has(field.section)) {
-        grouped.set(field.section, []);
-        order.push(field.section);
-      }
-      grouped.get(field.section)!.push(field);
-    }
-    return order.map((section) => ({
-      section,
-      fields: grouped.get(section) || [],
-    }));
-  }, []);
 
   /** Group selected leaves as 检测线 → 类别 → 细项 for the card. */
   const assayLines = useMemo(() => {
@@ -260,21 +193,31 @@ export function HospitalDetailSheet({
             <>
             <section className="space-y-2">
               <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
-                客户阶段与需求
+                客户基础
               </h3>
               <div className="grid divide-y rounded-lg border bg-background md:grid-cols-2 md:divide-x md:divide-y-0">
                 {[
+                  { label: "客户名称", value: hospital?.name || "" },
+                  { label: "客户编码", value: hospital?.customerCode || "" },
+                  { label: "区域", value: hospital?.region || "" },
+                  { label: "分公司", value: hospital?.branchOffice || "" },
                   {
                     label: HOSPITAL_ATTRIBUTE_LABELS.customer_level || "客户等级",
-                    value: hospital?.attributes?.customer_level || resolveArchiveField(hospital || {}, "customerLevel"),
+                    value: hospital?.attributes?.customer_level || "",
                   },
                   {
-                    label: HOSPITAL_ATTRIBUTE_LABELS.customer_stage || "客户所在阶段",
-                    value: hospital?.attributes?.customer_stage || "",
+                    label: "26年是否双大",
+                    value: hospital?.attributes?.dual_major || "",
                   },
                   {
-                    label: HOSPITAL_ATTRIBUTE_LABELS.pending_issues || "客户端待解决问题及需求",
-                    value: hospital?.attributes?.pending_issues || "",
+                    label: "26年EQA标签",
+                    value: Array.from(
+                      new Set(
+                        (eqaRows || [])
+                          .flatMap((r) => r.tags || [])
+                          .filter(Boolean),
+                      ),
+                    ).join("、"),
                   },
                 ].map((row) => (
                   <div
@@ -586,30 +529,7 @@ export function HospitalDetailSheet({
                 )}
               </div>
             </section>
-            {sections.map((group) => (
-              <section key={group.section} className="space-y-2">
-                <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
-                  {group.section}
-                </h3>
-                <div className="grid divide-y rounded-lg border bg-background md:grid-cols-2 md:divide-x md:divide-y-0">
-                  {group.fields.map((field) => (
-                    <div
-                      key={field.key}
-                      className="flex flex-col gap-1 border-b px-3 py-3 text-sm last:border-b-0 md:grid md:grid-cols-[8rem_1fr] md:gap-3 md:border-b md:px-4 md:odd:border-r"
-                    >
-                      <div className="text-xs text-muted-foreground md:text-sm">
-                        {field.label}
-                      </div>
-                      <div className="break-words whitespace-pre-wrap text-foreground">
-                        {field.key === "matchingRate"
-                          ? formatMatchingRate(values[field.key])
-                          : displayValue(values[field.key])}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ))}
+
             </>
           )}
         </div>

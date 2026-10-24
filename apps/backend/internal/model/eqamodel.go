@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,17 @@ type FieldRegistry struct {
 	SortOrder  int             `db:"sort_order"`
 	CreatedAt  time.Time       `db:"created_at"`
 	UpdatedAt  time.Time       `db:"updated_at"`
+	UsageCount int64           `db:"usage_count"` // eqa_participation_items refs; not a column
+}
+
+// FieldRegistryInput is used to create/update field_registry rows (EQA subject tree).
+type FieldRegistryInput struct {
+	Code       string
+	Name       string
+	ValueType  string
+	ParentCode string
+	EnumValues []string
+	SortOrder  int
 }
 
 type EqaParticipation struct {
@@ -73,6 +85,10 @@ type EqaOwnerProgress struct {
 
 type EqaModel interface {
 	ListFields(ctx context.Context) ([]FieldRegistry, error)
+	GetField(ctx context.Context, code string) (*FieldRegistry, error)
+	CreateField(ctx context.Context, in FieldRegistryInput) (*FieldRegistry, error)
+	UpdateField(ctx context.Context, code string, in FieldRegistryInput) (*FieldRegistry, error)
+	DeleteField(ctx context.Context, code string) error
 	ListParticipations(ctx context.Context, year int, scope string, hospitalID, ownerID int64, limit, offset int) ([]EqaParticipation, int64, error)
 	FindParticipation(ctx context.Context, id int64) (*EqaParticipation, error)
 	FindParticipationByKey(ctx context.Context, hospitalID int64, year int, scope string) (*EqaParticipation, error)
@@ -92,8 +108,11 @@ func NewEqaModel(conn *pgxpool.Pool) EqaModel { return &eqaModel{conn: conn} }
 
 func (m *eqaModel) ListFields(ctx context.Context) ([]FieldRegistry, error) {
 	rows, err := m.conn.Query(ctx, `
-		SELECT code, name, value_type, parent_code, COALESCE(enum_values, '[]'::jsonb), sort_order, created_at, updated_at
-		FROM field_registry ORDER BY sort_order, code`)
+		SELECT f.code, f.name, f.value_type, f.parent_code, COALESCE(f.enum_values, '[]'::jsonb),
+		       f.sort_order, f.created_at, f.updated_at,
+		       COALESCE((SELECT COUNT(*) FROM eqa_participation_items i WHERE i.field_code = f.code), 0)
+		FROM field_registry f
+		ORDER BY f.sort_order, f.code`)
 	if err != nil {
 		return nil, fmt.Errorf("list fields: %w", err)
 	}
@@ -102,13 +121,173 @@ func (m *eqaModel) ListFields(ctx context.Context) ([]FieldRegistry, error) {
 	for rows.Next() {
 		var f FieldRegistry
 		var enum []byte
-		if err := rows.Scan(&f.Code, &f.Name, &f.ValueType, &f.ParentCode, &enum, &f.SortOrder, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.Code, &f.Name, &f.ValueType, &f.ParentCode, &enum, &f.SortOrder, &f.CreatedAt, &f.UpdatedAt, &f.UsageCount); err != nil {
 			return nil, err
 		}
 		f.EnumValues = json.RawMessage(enum)
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+func scanField(row pgx.Row) (*FieldRegistry, error) {
+	var f FieldRegistry
+	var enum []byte
+	err := row.Scan(&f.Code, &f.Name, &f.ValueType, &f.ParentCode, &enum, &f.SortOrder, &f.CreatedAt, &f.UpdatedAt, &f.UsageCount)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	f.EnumValues = json.RawMessage(enum)
+	return &f, nil
+}
+
+func (m *eqaModel) GetField(ctx context.Context, code string) (*FieldRegistry, error) {
+	return scanField(m.conn.QueryRow(ctx, `
+		SELECT f.code, f.name, f.value_type, f.parent_code, COALESCE(f.enum_values, '[]'::jsonb),
+		       f.sort_order, f.created_at, f.updated_at,
+		       COALESCE((SELECT COUNT(*) FROM eqa_participation_items i WHERE i.field_code = f.code), 0)
+		FROM field_registry f WHERE f.code = $1`, code))
+}
+
+func (m *eqaModel) validateFieldInput(ctx context.Context, in FieldRegistryInput, existingCode string) (code, name, vt string, parentPtr *string, enumBytes json.RawMessage, err error) {
+	code = strings.TrimSpace(in.Code)
+	name = strings.TrimSpace(in.Name)
+	vt = strings.TrimSpace(in.ValueType)
+	parent := strings.TrimSpace(in.ParentCode)
+	if name == "" {
+		err = fmt.Errorf("名称不能为空")
+		return
+	}
+	if existingCode == "" && code == "" {
+		err = fmt.Errorf("编码不能为空")
+		return
+	}
+	if existingCode != "" {
+		code = existingCode
+	}
+	switch vt {
+	case "":
+		if parent == "" {
+			vt = "group"
+		} else {
+			vt = "boolean"
+		}
+	case "boolean", "text", "number", "enum", "group":
+	default:
+		err = fmt.Errorf("无效的 value_type：%s", vt)
+		return
+	}
+	if vt == "group" {
+		if parent != "" {
+			err = fmt.Errorf("分组节点不能有父节点")
+			return
+		}
+	} else {
+		if parent == "" {
+			err = fmt.Errorf("科目必须选择父节点（国家/省级）")
+			return
+		}
+		var p *FieldRegistry
+		p, err = m.GetField(ctx, parent)
+		if err != nil {
+			return
+		}
+		if p == nil {
+			err = fmt.Errorf("父节点不存在：%s", parent)
+			return
+		}
+		if p.ValueType != "group" {
+			err = fmt.Errorf("父节点必须是分组（group）")
+			return
+		}
+		parentPtr = &parent
+	}
+	enums := in.EnumValues
+	if enums == nil {
+		enums = []string{}
+	}
+	var b []byte
+	b, err = json.Marshal(enums)
+	if err != nil {
+		return
+	}
+	enumBytes = json.RawMessage(b)
+	return
+}
+
+func (m *eqaModel) CreateField(ctx context.Context, in FieldRegistryInput) (*FieldRegistry, error) {
+	code, name, vt, parentPtr, enumBytes, err := m.validateFieldInput(ctx, in, "")
+	if err != nil {
+		return nil, err
+	}
+	_, err = m.conn.Exec(ctx, `
+		INSERT INTO field_registry (code, name, value_type, parent_code, enum_values, sort_order)
+		VALUES ($1,$2,$3,$4,$5,$6)`,
+		code, name, vt, parentPtr, []byte(enumBytes), in.SortOrder)
+	if err != nil {
+		return nil, err
+	}
+	return m.GetField(ctx, code)
+}
+
+func (m *eqaModel) UpdateField(ctx context.Context, code string, in FieldRegistryInput) (*FieldRegistry, error) {
+	existing, err := m.GetField(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, nil
+	}
+	// Code / parent / value_type immutable after create; only rename display + sort + enum.
+	in.Code = existing.Code
+	if existing.ParentCode != nil {
+		in.ParentCode = *existing.ParentCode
+	} else {
+		in.ParentCode = ""
+	}
+	in.ValueType = existing.ValueType
+	_, name, _, parentPtr, enumBytes, err := m.validateFieldInput(ctx, in, existing.Code)
+	if err != nil {
+		return nil, err
+	}
+	tag, err := m.conn.Exec(ctx, `
+		UPDATE field_registry SET
+			name=$2, parent_code=$3, enum_values=$4, sort_order=$5, updated_at=NOW()
+		WHERE code=$1`,
+		existing.Code, name, parentPtr, []byte(enumBytes), in.SortOrder)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, nil
+	}
+	return m.GetField(ctx, existing.Code)
+}
+
+func (m *eqaModel) DeleteField(ctx context.Context, code string) error {
+	existing, err := m.GetField(ctx, code)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return fmt.Errorf("科目不存在")
+	}
+	var childCount int64
+	if err := m.conn.QueryRow(ctx, `
+		SELECT COUNT(*) FROM field_registry WHERE parent_code=$1`, code).Scan(&childCount); err != nil {
+		return err
+	}
+	if childCount > 0 {
+		return fmt.Errorf("仍有 %d 个子科目，请先删除子科目", childCount)
+	}
+	if existing.UsageCount > 0 {
+		return fmt.Errorf("该科目已被 %d 条参评记录引用，无法删除（请先在参评记录中取消勾选）", existing.UsageCount)
+	}
+	_, err = m.conn.Exec(ctx, `DELETE FROM field_registry WHERE code=$1`, code)
+	return err
 }
 
 func (m *eqaModel) ListParticipations(ctx context.Context, year int, scope string, hospitalID, ownerID int64, limit, offset int) ([]EqaParticipation, int64, error) {

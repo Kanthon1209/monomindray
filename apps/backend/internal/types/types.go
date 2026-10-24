@@ -524,10 +524,22 @@ type (
 		ParentCode string         `json:"parentCode,omitempty"`
 		EnumValues []string       `json:"enumValues,omitempty"`
 		SortOrder  int64          `json:"sortOrder"`
+		UsageCount int64          `json:"usageCount,omitempty"`
 		Children   []EqaFieldNode `json:"children"`
 	}
 	EqaFieldTreeResponse struct {
 		Items []EqaFieldNode `json:"items"`
+	}
+	EqaFieldUpsertRequest struct {
+		Code       string   `json:"code,optional"`
+		Name       string   `json:"name"`
+		ValueType  string   `json:"valueType,optional"`
+		ParentCode string   `json:"parentCode,optional"`
+		EnumValues []string `json:"enumValues,optional"`
+		SortOrder  int      `json:"sortOrder,optional"`
+	}
+	EqaFieldResponse struct {
+		Field EqaFieldNode `json:"field"`
 	}
 	EqaParticipationItemInfo struct {
 		Id        int64  `json:"id,omitempty"`

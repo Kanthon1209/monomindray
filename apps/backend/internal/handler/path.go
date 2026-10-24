@@ -19,3 +19,11 @@ func parsePathID(r *http.Request) (int64, error) {
 	}
 	return id, nil
 }
+
+func parsePathCode(r *http.Request) (string, error) {
+	raw := pathvar.Vars(r)["code"]
+	if raw == "" {
+		return "", fmt.Errorf("missing path code")
+	}
+	return raw, nil
+}

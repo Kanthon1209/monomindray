@@ -99,6 +99,10 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPut, Path: "/api/v1/eqa/participations/:id", Handler: UpdateEqaParticipationHandler(svcCtx)},
 		{Method: http.MethodDelete, Path: "/api/v1/eqa/participations/:id", Handler: DeleteEqaParticipationHandler(svcCtx)},
 		{Method: http.MethodPost, Path: "/api/v1/eqa/survey-template/ensure", Handler: EnsureEqaSurveyTemplateHandler(svcCtx)},
+
+		{Method: http.MethodPost, Path: "/api/v1/eqa/fields", Handler: CreateEqaFieldHandler(svcCtx)},
+		{Method: http.MethodPut, Path: "/api/v1/eqa/fields/:code", Handler: UpdateEqaFieldHandler(svcCtx)},
+		{Method: http.MethodDelete, Path: "/api/v1/eqa/fields/:code", Handler: DeleteEqaFieldHandler(svcCtx)},
 	}
 
 	// 仅管理员：看板 / 医院 / 设备 / 客户 / 用户管理 / 问卷管理审核

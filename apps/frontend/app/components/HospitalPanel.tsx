@@ -218,7 +218,8 @@ export function HospitalPanel({
             {filtered.map((hospital) => {
               const name = cellValue(hospital, "customerName");
               const level = cellValue(hospital, "customerLevel");
-              const reagent = cellValue(hospital, "mindrayReagentCount");
+              const region = cellValue(hospital, "region");
+              const branch = cellValue(hospital, "branchOffice");
               const active = selectedId === hospital.id && detailOpen;
               return (
                 <li key={hospital.id}>
@@ -245,12 +246,8 @@ export function HospitalPanel({
                         ) : null}
                       </div>
                       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        <span>
-                          试剂项目{" "}
-                          <span className="tabular-nums text-foreground">
-                            {reagent}
-                          </span>
-                        </span>
+                        {region !== "—" ? <span>{region}</span> : null}
+                        {branch !== "—" ? <span>{branch}</span> : null}
                       </div>
                       {(hospital.assayNames || []).length ? (
                         <div className="pt-0.5">{renderAssayCategories(hospital, true)}</div>
@@ -322,11 +319,7 @@ export function HospitalPanel({
                             key !== "assays" && "truncate",
                             key === "customerName" && "font-medium",
                             key === "assays" && "max-w-[280px]",
-                            (key === "mindrayReagentCount" ||
-                              key === "matchingRate" ||
-                              key === "mindraySampleVolume" ||
-                              key === "totalSampleVolume") &&
-                              "tabular-nums text-muted-foreground",
+                            key === "customerCode" && "font-mono text-xs text-muted-foreground",
                           )}
                           title={key === "assays" ? cellValue(hospital, key) : cellValue(hospital, key)}
                         >
