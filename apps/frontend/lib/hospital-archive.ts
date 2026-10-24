@@ -120,7 +120,8 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "archiveRemark", label: "备注", section: "其他" },
   // SVIP
   { key: "groupName", label: "分组", section: "SVIP" },
-  { key: "svipLevel", label: "SVIP级别", section: "SVIP" },
+  // soft-archived: use 客户等级 / 医院等级 instead
+  // { key: "svipLevel", label: "SVIP级别", section: "SVIP" },
   { key: "dualMajorCustomer", label: "双大客户", section: "SVIP" },
   { key: "volumeDirection", label: "上量方向", section: "SVIP" },
   { key: "iotStock23", label: "23年化免凝IOT存量(W)", section: "SVIP", valueType: "number" },
@@ -260,7 +261,7 @@ export const HOSPITAL_ATTRIBUTE_KEYS = [
   "usage_location",
   "customer_stage",
   "pending_issues",
-  "svip_level",
+  // svip_level soft-archived: redundant with customer_level + hospital.level
   "dual_major",
   "sales_group",
   "volume_direction",
@@ -290,7 +291,8 @@ export const HOSPITAL_ATTRIBUTE_LABELS: Record<string, string> = {
   usage_location: "使用位置",
   customer_stage: "客户所在阶段",
   pending_issues: "客户端待解决问题及需求",
-  svip_level: "SVIP级别",
+  // deprecated / soft-archived from catalog — keep label for legacy attribute rows
+  svip_level: "SVIP级别（已停用）",
   dual_major: "双大客户",
   sales_group: "分组",
   volume_direction: "上量方向",
