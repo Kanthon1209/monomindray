@@ -12,6 +12,7 @@ import {
   type HospitalAssayCompetitorCategory,
 } from "@/lib/business";
 import {
+  deriveEqaLabel,
   fetchEqaFields,
   fetchEqaParticipation,
   fetchEqaParticipations,
@@ -57,6 +58,7 @@ export function HospitalDetailSheet({
   const [openEqa, setOpenEqa] = useState<Record<number, boolean>>({});
   const [eqaItems, setEqaItems] = useState<Record<number, EqaParticipationItem[]>>({});
   const [eqaDetailLoading, setEqaDetailLoading] = useState<number | null>(null);
+  const [selectedEqaYear, setSelectedEqaYear] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,6 +88,7 @@ export function HospitalDetailSheet({
         setEqaFields([]);
         setOpenEqa({});
         setEqaItems({});
+        setSelectedEqaYear(null);
       } else {
         setHospital(hRes.hospital || null);
         setDevices(dRes.items);
@@ -109,10 +112,13 @@ export function HospitalDetailSheet({
           }
         }
         setOpenCats(nextOpen);
-        setEqaRows(eRes.data?.items || []);
+        const rows = eRes.data?.items || [];
+        setEqaRows(rows);
         setEqaFields(fRes.data?.items || []);
         setOpenEqa({});
         setEqaItems({});
+        const years = Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => b - a);
+        setSelectedEqaYear(years[0] ?? null);
       }
       setLoading(false);
     };
@@ -147,6 +153,51 @@ export function HospitalDetailSheet({
     }
     return order.map((k) => map.get(k)!);
   }, [assayCategories]);
+
+  /** Group participation rows by year (desc); derive per-year EQA label from scopes. */
+  const eqaYears = useMemo(() => {
+    type YearGroup = {
+      year: number;
+      label: string;
+      rows: EqaParticipation[];
+      hasNational: boolean;
+      hasProvincial: boolean;
+    };
+    const map = new Map<number, YearGroup>();
+    for (const row of eqaRows || []) {
+      let g = map.get(row.year);
+      if (!g) {
+        g = {
+          year: row.year,
+          label: "",
+          rows: [],
+          hasNational: false,
+          hasProvincial: false,
+        };
+        map.set(row.year, g);
+      }
+      g.rows.push(row);
+      if (row.scope === "national") g.hasNational = true;
+      if (row.scope === "provincial") g.hasProvincial = true;
+    }
+    const out = Array.from(map.values()).sort((a, b) => b.year - a.year);
+    for (const g of out) {
+      g.label = deriveEqaLabel(g.hasNational, g.hasProvincial);
+      g.rows.sort((a, b) => {
+        const order = (s: string) => (s === "national" ? 0 : s === "provincial" ? 1 : 2);
+        return order(a.scope) - order(b.scope);
+      });
+    }
+    return out;
+  }, [eqaRows]);
+
+  const activeEqaYear = useMemo(() => {
+    if (!eqaYears.length) return null;
+    if (selectedEqaYear != null && eqaYears.some((y) => y.year === selectedEqaYear)) {
+      return eqaYears.find((y) => y.year === selectedEqaYear) || eqaYears[0];
+    }
+    return eqaYears[0];
+  }, [eqaYears, selectedEqaYear]);
 
   const toggleEqa = async (id: number) => {
     const willOpen = !openEqa[id];
@@ -208,16 +259,6 @@ export function HospitalDetailSheet({
                   {
                     label: "26年是否双大",
                     value: hospital?.attributes?.dual_major || "",
-                  },
-                  {
-                    label: "26年EQA标签",
-                    value: Array.from(
-                      new Set(
-                        (eqaRows || [])
-                          .flatMap((r) => r.tags || [])
-                          .filter(Boolean),
-                      ),
-                    ).join("、"),
                   },
                 ].map((row) => (
                   <div
@@ -454,78 +495,143 @@ export function HospitalDetailSheet({
             </section>
             <section className="space-y-2">
               <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
-                室间质评参与
+                室间质评
               </h3>
               <div className="rounded-lg border bg-background text-sm">
-                {eqaRows.length === 0 ? (
+                {eqaYears.length === 0 ? (
                   <div className="px-3 py-3 text-muted-foreground md:px-4">
-                    暂无 EQA 参评记录（国家/省级科目，与上方「检测项目」类别不同）
+                    暂无 EQA 参评记录（按年采集国家/省级科目）
                   </div>
                 ) : (
-                  <ul className="divide-y">
-                    {eqaRows.map((row) => {
-                      const isOpen = !!openEqa[row.id];
-                      const items = eqaItems[row.id];
-                      const groups = isOpen
-                        ? groupEqaItemsByParent(items, eqaFields)
-                        : [];
-                      return (
-                        <li key={row.id}>
-                          <button
-                            type="button"
-                            className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-muted/40 md:px-4"
-                            onClick={() => toggleEqa(row.id)}
-                          >
-                            <span className="min-w-0">
-                              <span className="mr-1.5 text-muted-foreground">
-                                {isOpen ? "▾" : "▸"}
-                              </span>
-                              <span className="font-medium">{row.year} 年</span>
-                              <span className="ml-2 text-xs text-muted-foreground">
-                                {scopeLabel(row.scope)}
-                              </span>
-                              {row.ownerName ? (
-                                <span className="ml-2 text-xs text-muted-foreground">
-                                  {row.ownerName}
-                                </span>
-                              ) : null}
-                            </span>
-                            <Badge variant="secondary" className="shrink-0 font-normal">
-                              {row.itemCount} 科
-                            </Badge>
-                          </button>
-                          {isOpen ? (
-                            <div className="space-y-2 border-t bg-muted/20 px-3 py-2.5 md:px-4">
-                              {eqaDetailLoading === row.id ? (
-                                <span className="text-xs text-muted-foreground">加载中…</span>
-                              ) : !items?.length ? (
-                                <span className="text-xs text-muted-foreground">无勾选科目</span>
-                              ) : (
-                                groups.map((g) => (
-                                  <div key={g.parentCode} className="space-y-1.5">
-                                    <div className="text-xs font-medium text-muted-foreground">
-                                      {g.parentName}
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {g.items.map((it) => (
-                                        <Badge
-                                          key={it.fieldCode}
-                                          variant="outline"
-                                          className="font-normal"
-                                        >
-                                          {it.fieldName || it.fieldCode}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))
-                              )}
+                  <>
+                    <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2.5 md:px-4">
+                      <span className="text-xs text-muted-foreground">参评年份</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {eqaYears.map((y) => {
+                          const active = activeEqaYear?.year === y.year;
+                          return (
+                            <button
+                              key={y.year}
+                              type="button"
+                              className={
+                                active
+                                  ? "rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground"
+                                  : "rounded-md border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/50"
+                              }
+                              onClick={() => setSelectedEqaYear(y.year)}
+                            >
+                              {y.year}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {activeEqaYear?.label ? (
+                        <Badge variant="secondary" className="font-normal">
+                          {activeEqaYear.label}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {activeEqaYear ? (
+                      <div className="space-y-0 divide-y">
+                        <div className="grid gap-2 px-3 py-2.5 sm:grid-cols-2 md:px-4">
+                          <div className="rounded-md border bg-muted/10 px-3 py-2">
+                            <div className="text-xs text-muted-foreground">派生标签</div>
+                            <div className="mt-0.5 font-medium">
+                              {activeEqaYear.label || "—"}
                             </div>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
+                          </div>
+                          <div className="rounded-md border bg-muted/10 px-3 py-2">
+                            <div className="text-xs text-muted-foreground">参评级别</div>
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              {activeEqaYear.hasNational ? (
+                                <Badge variant="outline" className="font-normal">
+                                  国考
+                                </Badge>
+                              ) : null}
+                              {activeEqaYear.hasProvincial ? (
+                                <Badge variant="outline" className="font-normal">
+                                  省考
+                                </Badge>
+                              ) : null}
+                              {!activeEqaYear.hasNational && !activeEqaYear.hasProvincial ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                        <ul className="divide-y">
+                          {activeEqaYear.rows.map((row) => {
+                            const isOpen = !!openEqa[row.id];
+                            const items = eqaItems[row.id];
+                            const groups = isOpen
+                              ? groupEqaItemsByParent(items, eqaFields)
+                              : [];
+                            return (
+                              <li key={row.id}>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-muted/40 md:px-4"
+                                  onClick={() => toggleEqa(row.id)}
+                                >
+                                  <span className="min-w-0">
+                                    <span className="mr-1.5 text-muted-foreground">
+                                      {isOpen ? "▾" : "▸"}
+                                    </span>
+                                    <span className="font-medium">
+                                      {scopeLabel(row.scope)}
+                                    </span>
+                                    {row.ownerName ? (
+                                      <span className="ml-2 text-xs text-muted-foreground">
+                                        {row.ownerName}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <Badge
+                                    variant="secondary"
+                                    className="shrink-0 font-normal"
+                                  >
+                                    {row.itemCount} 科
+                                  </Badge>
+                                </button>
+                                {isOpen ? (
+                                  <div className="space-y-2 border-t bg-muted/20 px-3 py-2.5 md:px-4">
+                                    {eqaDetailLoading === row.id ? (
+                                      <span className="text-xs text-muted-foreground">
+                                        加载中…
+                                      </span>
+                                    ) : !items?.length ? (
+                                      <span className="text-xs text-muted-foreground">
+                                        无勾选科目
+                                      </span>
+                                    ) : (
+                                      groups.map((g) => (
+                                        <div key={g.parentCode} className="space-y-1.5">
+                                          <div className="text-xs font-medium text-muted-foreground">
+                                            {g.parentName}
+                                          </div>
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {g.items.map((it) => (
+                                              <Badge
+                                                key={it.fieldCode}
+                                                variant="outline"
+                                                className="font-normal"
+                                              >
+                                                {it.fieldName || it.fieldCode}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             </section>

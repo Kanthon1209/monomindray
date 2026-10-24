@@ -561,6 +561,22 @@ type EqaHospitalUpsert struct {
 	Provincial *EqaScopeUpsert
 }
 
+
+// deriveEqaParticipationTag builds the year-level EQA label from scope presence.
+// Matches common xlsx values such as EQA（国）+EQA（省、市）.
+func deriveEqaParticipationTag(hasNational, hasProvincial bool) string {
+	if hasNational && hasProvincial {
+		return "EQA（国）+EQA（省、市）"
+	}
+	if hasNational {
+		return "EQA（国）"
+	}
+	if hasProvincial {
+		return "EQA（省、市）"
+	}
+	return ""
+}
+
 // UpsertHospitalEQA writes national and/or provincial participation for one hospital×year.
 // participating=false deletes that scope's participation row (if any).
 // Codes must belong to the matching field_registry parent (scope.national / scope.provincial).
@@ -665,6 +681,42 @@ func (l *EqaLogic) UpsertHospitalEQA(actorID, hospitalID int64, payload EqaHospi
 	}
 	if err := applyScope("provincial", payload.Provincial); err != nil {
 		return err
+	}
+
+	// Sync year-level tags from remaining scopes so list/API match derived display.
+	nat, err := l.svcCtx.EqaModel.FindParticipationByKey(l.ctx, hospitalID, year, "national")
+	if err != nil {
+		return err
+	}
+	prov, err := l.svcCtx.EqaModel.FindParticipationByKey(l.ctx, hospitalID, year, "provincial")
+	if err != nil {
+		return err
+	}
+	derived := deriveEqaParticipationTag(nat != nil, prov != nil)
+	tags := []string{}
+	if derived != "" {
+		tags = []string{derived}
+	}
+	for _, row := range []*model.EqaParticipation{nat, prov} {
+		if row == nil {
+			continue
+		}
+		same := len(row.Tags) == len(tags)
+		if same {
+			for i := range tags {
+				if row.Tags[i] != tags[i] {
+					same = false
+					break
+				}
+			}
+		}
+		if same {
+			continue
+		}
+		row.Tags = tags
+		if _, err := l.svcCtx.EqaModel.UpdateParticipation(l.ctx, row); err != nil {
+			return err
+		}
 	}
 	return nil
 }

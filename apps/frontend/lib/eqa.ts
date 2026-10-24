@@ -195,6 +195,15 @@ export async function ensureEqaSurveyTemplate() {
   );
 }
 
+
+/** Derive display label from national/provincial presence for a year. */
+export function deriveEqaLabel(hasNational: boolean, hasProvincial: boolean): string {
+  if (hasNational && hasProvincial) return "EQA（国）+EQA（省、市）";
+  if (hasNational) return "EQA（国）";
+  if (hasProvincial) return "EQA（省、市）";
+  return "";
+}
+
 export function scopeLabel(scope?: string) {
   if (scope === "national") return "国家";
   if (scope === "provincial") return "省级";
