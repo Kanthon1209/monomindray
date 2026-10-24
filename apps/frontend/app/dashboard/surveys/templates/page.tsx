@@ -825,7 +825,7 @@ export default function SurveyTemplatesPage() {
                       </p>
                     ) : f.type === "assay_block" ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        产线 → 类别 → 叶子项目复选（字典树）
+                        检测线 → 类别 → 叶子项目复选（字典树）
                       </p>
                     ) : f.target ? (
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">
@@ -888,43 +888,61 @@ export default function SurveyTemplatesPage() {
             </div>
             <div>
               <p className="mb-2 text-sm font-medium text-muted-foreground">特殊块</p>
+              {error ? (
+                <p className="mb-2 text-sm text-destructive">{error}</p>
+              ) : null}
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:min-w-[140px]"
-                  disabled={
-                    saving ||
-                    (normalizeSchema(item.schema).fields || []).some(
-                      (f) => f.type === "eqa_block",
-                    )
-                  }
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void onInsertEqaBlock(item);
-                  }}
-                  title="插入 EQA 复合块"
-                >
-                  <Plus className="h-5 w-5" />
-                  <span>插入 EQA</span>
-                </button>
-                <button
-                  type="button"
-                  className="flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:min-w-[140px]"
-                  disabled={
-                    saving ||
-                    (normalizeSchema(item.schema).fields || []).some(
-                      (f) => f.type === "assay_block",
-                    )
-                  }
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void onInsertAssayBlock(item);
-                  }}
-                  title="插入检测项目树"
-                >
-                  <Plus className="h-5 w-5" />
-                  <span>插入检测项目</span>
-                </button>
+                {(() => {
+                  const fields = normalizeSchema(item.schema).fields || [];
+                  const hasEqa = fields.some((f) => f.type === "eqa_block");
+                  const hasAssay = fields.some((f) => f.type === "assay_block");
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        className={`flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm transition sm:min-w-[140px] ${
+                          hasEqa
+                            ? "cursor-not-allowed text-muted-foreground/70 opacity-70"
+                            : "text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                        }`}
+                        disabled={saving}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void onInsertEqaBlock(item);
+                        }}
+                        title={
+                          hasEqa
+                            ? "该模板已有 EQA 块，每个模板只需一个"
+                            : "插入 EQA 复合块"
+                        }
+                      >
+                        <Plus className="h-5 w-5" />
+                        <span>{hasEqa ? "已有 EQA" : "插入 EQA"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-background/60 px-4 text-sm transition sm:min-w-[140px] ${
+                          hasAssay
+                            ? "cursor-not-allowed text-muted-foreground/70 opacity-70"
+                            : "text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                        }`}
+                        disabled={saving}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void onInsertAssayBlock(item);
+                        }}
+                        title={
+                          hasAssay
+                            ? "该模板已有检测项目块，每个模板只需一个"
+                            : "插入检测项目树"
+                        }
+                      >
+                        <Plus className="h-5 w-5" />
+                        <span>{hasAssay ? "已有检测项目" : "插入检测项目"}</span>
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
