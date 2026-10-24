@@ -49,10 +49,16 @@ export function HospitalNameTypeahead({
     if (disabled) return;
     const q = value.trim();
     if (!open) return;
+    if (!q) {
+      setItems([]);
+      setLoading(false);
+      setActiveIndex(-1);
+      return;
+    }
     const seq = ++reqSeq.current;
     const timer = window.setTimeout(async () => {
       setLoading(true);
-      const res = await searchHospitalsForSurvey(q, 20);
+      const res = await searchHospitalsForSurvey(q, 40);
       if (seq !== reqSeq.current) return;
       setLoading(false);
       if (!res.error) setItems(res.items);

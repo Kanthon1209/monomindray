@@ -44,6 +44,8 @@ type HospitalFilter struct {
 	DeviceCategory string
 	DeviceModel    string
 	Keyword        string
+	// Sort: "" = province,city,name (default); "updated" = updated_at DESC
+	Sort           string
 	Limit          int
 	Offset         int
 }
@@ -55,6 +57,8 @@ type ProvinceCount struct {
 
 type HospitalModel interface {
 	List(ctx context.Context, f HospitalFilter) ([]Hospital, int64, error)
+	// Search ranks name/customer_code matches for typeahead (not city/province).
+	Search(ctx context.Context, keyword string, limit int) ([]Hospital, error)
 	FindById(ctx context.Context, id int64) (*Hospital, error)
 	FindByNameProvinceCity(ctx context.Context, name, province, city string) (*Hospital, error)
 	Insert(ctx context.Context, h *Hospital) (int64, error)
@@ -70,6 +74,66 @@ type hospitalModel struct {
 
 func NewHospitalModel(conn *pgxpool.Pool) HospitalModel {
 	return &hospitalModel{conn: conn}
+}
+
+// Search is for hospital-name typeahead. Matches name + customer_code only
+// (List keyword also hits city/province, which floods results when many rows
+// share city=合肥市). Ranks prefix > contains, prefers active, shorter names.
+func (m *hospitalModel) Search(ctx context.Context, keyword string, limit int) ([]Hospital, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return []Hospital{}, nil
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	like := "%" + keyword + "%"
+	prefix := keyword + "%"
+	rows, err := m.conn.Query(ctx, `
+		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
+		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
+		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       0, ARRAY[]::TEXT[]
+		FROM hospitals h
+		WHERE h.name ILIKE $1 OR h.customer_code ILIKE $1
+		ORDER BY
+			CASE WHEN h.status = 'active' THEN 0 ELSE 1 END,
+			CASE
+				WHEN h.name ILIKE $2 THEN 0
+				WHEN h.name ILIKE $1 THEN 1
+				WHEN h.customer_code ILIKE $2 THEN 2
+				ELSE 3
+			END,
+			length(h.name),
+			h.name
+		LIMIT $3`, like, prefix, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search hospitals: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Hospital, 0)
+	for rows.Next() {
+		var h Hospital
+		var archiveRaw []byte
+		if err := rows.Scan(
+			&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
+			&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
+			&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+			&h.DeviceCount, &h.DeviceModels,
+		); err != nil {
+			return nil, fmt.Errorf("scan hospital search: %w", err)
+		}
+		h.Archive = decodeArchive(archiveRaw)
+		if h.DeviceModels == nil {
+			h.DeviceModels = []string{}
+		}
+		items = append(items, h)
+	}
+	return items, rows.Err()
 }
 
 func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital, int64, error) {
@@ -127,6 +191,10 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 		return nil, 0, fmt.Errorf("count hospitals: %w", err)
 	}
 
+	orderSQL := "h.province, h.city, h.name"
+	if f.Sort == "updated" {
+		orderSQL = "h.updated_at DESC, h.name"
+	}
 	args = append(args, limit, offset)
 	listSQL := fmt.Sprintf(`
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
@@ -136,8 +204,8 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
 		WHERE %s
-		ORDER BY h.province, h.city, h.name
-		LIMIT $%d OFFSET $%d`, whereSQL, len(args)-1, len(args))
+		ORDER BY %s
+		LIMIT $%d OFFSET $%d`, whereSQL, orderSQL, len(args)-1, len(args))
 
 	rows, err := m.conn.Query(ctx, listSQL, args...)
 	if err != nil {

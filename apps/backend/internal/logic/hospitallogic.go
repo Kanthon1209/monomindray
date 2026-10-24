@@ -36,7 +36,7 @@ func (l *HospitalLogic) List(req *types.ListHospitalsRequest) (*types.ListHospit
 	items, total, err := l.svcCtx.HospitalModel.List(l.ctx, model.HospitalFilter{
 		Province: req.Province, Level: resolveLevel(req.Level), Type: resolveType(req.Type),
 		Status: req.Status, DeviceCategory: req.DeviceCategory, DeviceModel: resolveModel(req.DeviceModel),
-		Keyword: req.Keyword, Limit: size, Offset: (page - 1) * size,
+		Keyword: req.Keyword, Sort: req.Sort, Limit: size, Offset: (page - 1) * size,
 	})
 	if err != nil {
 		l.Errorf("list hospitals: %v", err)
@@ -55,16 +55,12 @@ func (l *HospitalLogic) Search(req *types.SearchHospitalsRequest) (*types.Search
 	// Any logged-in caller may search hospitals for survey fill typeahead.
 	limit := req.Limit
 	if limit <= 0 {
-		limit = 20
+		limit = 30
 	}
 	if limit > 50 {
 		limit = 50
 	}
-	items, _, err := l.svcCtx.HospitalModel.List(l.ctx, model.HospitalFilter{
-		Keyword: strings.TrimSpace(req.Keyword),
-		Limit:   limit,
-		Offset:  0,
-	})
+	items, err := l.svcCtx.HospitalModel.Search(l.ctx, strings.TrimSpace(req.Keyword), limit)
 	if err != nil {
 		l.Errorf("search hospitals: %v", err)
 		return nil, ErrInternal
@@ -185,6 +181,9 @@ func (l *HospitalLogic) Create(req *types.HospitalUpsertRequest) (*types.Hospita
 		return nil, NewCodeError(400, "创建医院失败，可能已存在同名医院")
 	}
 	h.Id = id
+	if err := l.upsertHospitalAttributes(id, req.Attributes); err != nil {
+		return nil, err
+	}
 	return l.Get(id)
 }
 
@@ -229,6 +228,9 @@ func (l *HospitalLogic) Update(id int64, req *types.HospitalUpsertRequest) (*typ
 		l.Errorf("update hospital: %v", err)
 		return nil, ErrInternal
 	}
+	if err := l.upsertHospitalAttributes(id, req.Attributes); err != nil {
+		return nil, err
+	}
 	return l.Get(id)
 }
 
@@ -251,6 +253,33 @@ func (l *HospitalLogic) Delete(id int64) error {
 }
 
 
+
+
+func (l *HospitalLogic) upsertHospitalAttributes(hospitalID int64, attrs map[string]string) error {
+	if len(attrs) == 0 {
+		return nil
+	}
+	normalized := map[string]string{}
+	for k, v := range attrs {
+		key := strings.TrimSpace(k)
+		if mapped, ok := model.KnownAttributeKeys[key]; ok {
+			key = mapped
+		}
+		val := strings.TrimSpace(v)
+		if key == "" {
+			continue
+		}
+		if key == "customer_stage" && !model.IsAllowedEnum(val, model.CustomerStageEnum) {
+			return NewCodeError(400, "客户所在阶段不在可选范围内")
+		}
+		normalized[key] = val
+	}
+	if err := l.svcCtx.MasterDataModel.UpsertAttributes(l.ctx, hospitalID, normalized); err != nil {
+		l.Errorf("upsert hospital attributes: %v", err)
+		return ErrInternal
+	}
+	return nil
+}
 
 func (l *HospitalLogic) attachAssayNames(items []model.Hospital, out []types.HospitalInfo) []types.HospitalInfo {
 	ids := make([]int64, 0, len(items))
