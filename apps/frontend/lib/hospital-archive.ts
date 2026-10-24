@@ -164,7 +164,7 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
 ];
 
 /** 看板默认列（关键指标，适配窄侧栏） */
-/** Primary dashboard columns; "assays" is resolved from hospital.assayNames (not archive). */
+/** Primary dashboard columns; "assays" shows derived category names from hospital.assayNames (not archive). */
 export const DASHBOARD_PRIMARY_COLUMNS: Array<ArchiveFieldKey | "customerLevel" | "assays"> = [
   "customerName",
   "customerLevel",
@@ -193,7 +193,10 @@ export const DASHBOARD_LIST_COLUMNS: Array<ArchiveFieldKey | "customerLevel" | "
 export function archiveFieldLabel(key: ArchiveFieldKey | string) {
   if (key === "customerLevel") return "客户等级";
   if (key === "usageLocation") return "使用位置";
-  if (key === "assays") return "开展项目";
+  if (key === "customerStage") return "客户所在阶段";
+  if (key === "pendingIssues") return "客户端待解决问题及需求";
+  if (key === "assays") return "检测类别";
+  if (HOSPITAL_ATTRIBUTE_LABELS[key]) return HOSPITAL_ATTRIBUTE_LABELS[key];
   return ARCHIVE_FIELD_DEFS.find((f) => f.key === key)?.label || key;
 }
 
@@ -255,6 +258,8 @@ export const HOSPITAL_COLUMN_TARGETS = HOSPITAL_COLUMNS.map((c) => ({
 export const HOSPITAL_ATTRIBUTE_KEYS = [
   "customer_level",
   "usage_location",
+  "customer_stage",
+  "pending_issues",
   "svip_level",
   "dual_major",
   "sales_group",
@@ -264,6 +269,36 @@ export const HOSPITAL_ATTRIBUTE_KEYS = [
   "customer_segment",
   "segment_category",
 ] as const;
+
+/** 系统预设枚举（与 collectable_fields.enum_values 一致，模板/管理端不可自增选项） */
+export const CUSTOMER_STAGE_OPTIONS = [
+  "覆盖不满足",
+  "覆盖满足",
+  "客户满意",
+  "客户认可",
+] as const;
+
+export const DEVICE_SERVICE_EVALUATION_OPTIONS = [
+  "无专人负责",
+  "新人 有资质",
+  "负责区域一年以上",
+  "客户关系良好, 口碑优于竞品",
+] as const;
+
+export const HOSPITAL_ATTRIBUTE_LABELS: Record<string, string> = {
+  customer_level: "客户等级",
+  usage_location: "使用位置",
+  customer_stage: "客户所在阶段",
+  pending_issues: "客户端待解决问题及需求",
+  svip_level: "SVIP级别",
+  dual_major: "双大客户",
+  sales_group: "分组",
+  volume_direction: "上量方向",
+  dual_major_type: "双大类型",
+  dual_major_target: "双大突破目标",
+  customer_segment: "客户细分",
+  segment_category: "细分类别",
+};
 
 /** 年度指标码（hospital_metrics） */
 export const HOSPITAL_METRIC_CODES = [
@@ -367,7 +402,7 @@ export function resolveArchiveField(
     attributes?: Record<string, string>;
     archive?: Record<string, ArchiveValue>;
   },
-  key: ArchiveFieldKey | "customerLevel",
+  key: ArchiveFieldKey | "customerLevel" | "customerStage" | "pendingIssues",
 ): string {
   const archive = hospital.archive || {};
   const attrs = hospital.attributes || {};
@@ -389,6 +424,10 @@ export function resolveArchiveField(
         formatArchiveValue(archive.customerLevel) ||
         ""
       );
+    case "customerStage":
+      return attrs.customer_stage || "";
+    case "pendingIssues":
+      return attrs.pending_issues || "";
     case "model":
       return formatArchiveValue(archive.model) || hospital.deviceModels?.[0] || "";
     case "competitorProjectDistribution":

@@ -22,6 +22,7 @@ type MasterDataModel interface {
 	SyncAssaysFromArchive(ctx context.Context, hospitalID int64, archive map[string]any) error
 	ReplaceHospitalAssaysByCodes(ctx context.Context, hospitalID int64, codes []string, source string) error
 	ListHospitalAssayCodes(ctx context.Context, hospitalID int64) ([]string, error)
+	ListHospitalAssayGroups(ctx context.Context, hospitalID int64) ([]HospitalAssayCategoryGroup, error)
 	ListAssayNamesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64][]string, error)
 	ResolveAssayItemCodesByNames(ctx context.Context, names []string) ([]string, error)
 	ListAssayTree(ctx context.Context) ([]AssayTreeNode, error)
@@ -358,6 +359,10 @@ var KnownAttributeKeys = map[string]string{
 	"customer_level":    "customer_level",
 	"usageLocation":     "usage_location",
 	"usage_location":    "usage_location",
+	"customerStage":     "customer_stage",
+	"customer_stage":    "customer_stage",
+	"pendingIssues":     "pending_issues",
+	"pending_issues":    "pending_issues",
 	"svipLevel":         "svip_level",
 	"dualMajorCustomer": "dual_major",
 	"groupName":         "sales_group",
@@ -366,6 +371,29 @@ var KnownAttributeKeys = map[string]string{
 	"dualMajorTarget":   "dual_major_target",
 	"customerSegment":   "customer_segment",
 	"segmentCategory":   "segment_category",
+}
+
+// CustomerStageEnum / DeviceServiceEvaluationEnum are system-preset; do not accept free invent.
+var CustomerStageEnum = []string{"覆盖不满足", "覆盖满足", "客户满意", "客户认可"}
+
+var DeviceServiceEvaluationEnum = []string{
+	"无专人负责",
+	"新人 有资质",
+	"负责区域一年以上",
+	"客户关系良好, 口碑优于竞品",
+}
+
+func IsAllowedEnum(value string, allowed []string) bool {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return true
+	}
+	for _, a := range allowed {
+		if v == a {
+			return true
+		}
+	}
+	return false
 }
 
 // KnownMetricKeys maps survey/archive keys to hospital_metrics codes.

@@ -142,10 +142,14 @@ func toDeviceInfo(d *model.Device) types.DeviceInfo {
 	if brand == "" {
 		brand = "迈瑞"
 	}
+	items := d.ItemCodes
+	if items == nil {
+		items = []string{}
+	}
 	return types.DeviceInfo{
 		Id: d.Id, HospitalId: d.HospitalId, HospitalName: d.HospitalName, Brand: brand,
-		Category: d.Category, Model: d.Model, SerialNo: d.SerialNo, Status: d.Status,
-		InstalledAt: formatDate(d.InstalledAt), Remark: d.Remark,
+		Category: d.Category, AssayLineCode: d.AssayLineCode, Model: d.Model, SerialNo: d.SerialNo, Status: d.Status,
+		InstalledAt: formatDate(d.InstalledAt), Remark: d.Remark, ServiceEvaluation: d.ServiceEvaluation, ItemCodes: items,
 	}
 }
 

@@ -70,6 +70,9 @@ import {
   allCities,
   citiesForProvince,
 } from "@/lib/china-regions";
+import {
+  CUSTOMER_STAGE_OPTIONS,
+} from "@/lib/hospital-archive";
 
 const levels = filterOptions.hospitalLevel
   .filter((x) => x.value !== "all")
@@ -115,6 +118,8 @@ const emptyForm = {
   status: "active",
   address: "",
   remark: "",
+  customerStage: "",
+  pendingIssues: "",
 };
 
 function withKind(
@@ -161,6 +166,8 @@ export default function CustomersPage() {
   const [items, setItems] = useState<Hospital[]>([]);
   const [total, setTotal] = useState(0);
   const [keyword, setKeyword] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -181,16 +188,27 @@ export default function CustomersPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const res = await listHospitals({ keyword, page: 1, pageSize: 100 });
+    // sort=updated: newest edits/creates first so 客户管理新建 immediately visible
+    const res = await listHospitals({
+      keyword: keyword.trim() || undefined,
+      sort: "updated",
+      page,
+      pageSize,
+    });
     if (res.error) setError(res.error);
     setItems(res.items);
     setTotal(res.total);
     setLoading(false);
-  }, [keyword]);
+  }, [keyword, page, pageSize]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Reset to first page when search changes
+  useEffect(() => {
+    setPage(1);
+  }, [keyword]);
 
   const loadDevices = useCallback(async (hospitalId: string) => {
     setDevicesLoading(true);
@@ -260,6 +278,8 @@ export default function CustomersPage() {
       status: h.status,
       address: h.address || "",
       remark: h.remark || "",
+      customerStage: h.attributes?.customer_stage || "",
+      pendingIssues: h.attributes?.pending_issues || "",
     });
     setDialogOpen(true);
     setDevicesLoading(true);
@@ -277,6 +297,8 @@ export default function CustomersPage() {
         status: full.status,
         address: full.address || "",
         remark: full.remark || "",
+        customerStage: full.attributes?.customer_stage || "",
+        pendingIssues: full.attributes?.pending_issues || "",
       });
     } else if (detail.error) {
       setError(detail.error);
@@ -298,8 +320,15 @@ export default function CustomersPage() {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    const { kind, ...payload } = form;
+    const { kind, customerStage, pendingIssues, ...rest } = form;
     void kind;
+    const payload = {
+      ...rest,
+      attributes: {
+        customer_stage: customerStage,
+        pending_issues: pendingIssues,
+      },
+    };
     const res = editingId
       ? await updateHospital(editingId, payload)
       : await createHospital(payload);
@@ -308,12 +337,25 @@ export default function CustomersPage() {
       setError(res.error);
       return;
     }
-    await load();
     if (!editingId && res.hospital) {
       setEditingId(res.hospital.id);
+      setKeyword("");
+      setPage(1);
       await loadDevices(res.hospital.id);
-    } else if (editingId) {
-      closeDialog(false);
+      // Explicit refresh with page=1 / empty keyword (avoid stale closure)
+      setLoading(true);
+      const listRes = await listHospitals({
+        sort: "updated",
+        page: 1,
+        pageSize,
+      });
+      if (listRes.error) setError(listRes.error);
+      setItems(listRes.items);
+      setTotal(listRes.total);
+      setLoading(false);
+    } else {
+      await load();
+      if (editingId) closeDialog(false);
     }
   };
 
@@ -428,7 +470,8 @@ export default function CustomersPage() {
               <div>
                 <CardTitle>客户管理</CardTitle>
                 <CardDescription>
-                  维护医院与机构客户，以及装机设备。当前共 {total} 家。
+                  维护医院与机构客户，以及装机设备。全国共 {total}{" "}
+                  家（数据看板默认仅安徽省，数量会少于此处属正常）。
                 </CardDescription>
               </div>
             </div>
@@ -578,7 +621,36 @@ export default function CustomersPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={closeDialog}>
+                {total > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+              <span>
+                第 {page} / {Math.max(1, Math.ceil(total / pageSize))} 页 · 本页{" "}
+                {items.length} 家
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  上一页
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page * pageSize >= total || loading}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  下一页
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+<Dialog open={dialogOpen} onOpenChange={closeDialog}>
         <DialogContent className="flex max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="shrink-0 border-b px-5 py-4 pr-10">
             <DialogTitle>{editingId ? "编辑客户" : "新增客户"}</DialogTitle>
@@ -728,6 +800,34 @@ export default function CustomersPage() {
                     <SelectItem value="inactive">停用</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>客户所在阶段</Label>
+                <Select
+                  value={form.customerStage || undefined}
+                  onValueChange={(v) => setForm({ ...form, customerStage: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="系统预设阶段（可选）" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CUSTOMER_STAGE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>客户端待解决问题及需求</Label>
+                <Input
+                  value={form.pendingIssues}
+                  placeholder="自由文本"
+                  onChange={(e) =>
+                    setForm({ ...form, pendingIssues: e.target.value })
+                  }
+                />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>备注</Label>
