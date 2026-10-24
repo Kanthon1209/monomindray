@@ -121,6 +121,28 @@ export function HospitalPanel({
     return displayValue(raw);
   };
 
+  /** List column: category names only (derived from hospital_assays leaves). */
+  const renderAssayCategories = (h: Hospital, compact = false) => {
+    const names = (h.assayNames || []).filter(Boolean);
+    if (!names.length) {
+      return <span className="text-muted-foreground">—</span>;
+    }
+    return (
+      <div className={cn("flex flex-wrap gap-1", compact && "line-clamp-2 overflow-hidden")}>
+        {names.map((n) => (
+          <Badge
+            key={n}
+            variant="secondary"
+            className="max-w-[9rem] truncate font-normal"
+            title={n}
+          >
+            {n}
+          </Badge>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background md:border-l">
       <div className="shrink-0 space-y-3 px-3 py-3 md:px-4 md:py-4">
@@ -197,7 +219,6 @@ export function HospitalPanel({
               const name = cellValue(hospital, "customerName");
               const level = cellValue(hospital, "customerLevel");
               const reagent = cellValue(hospital, "mindrayReagentCount");
-              const projects = cellValue(hospital, "assays");
               const active = selectedId === hospital.id && detailOpen;
               return (
                 <li key={hospital.id}>
@@ -231,10 +252,8 @@ export function HospitalPanel({
                           </span>
                         </span>
                       </div>
-                      {projects !== "—" ? (
-                        <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                          {projects}
-                        </p>
+                      {(hospital.assayNames || []).length ? (
+                        <div className="pt-0.5">{renderAssayCategories(hospital, true)}</div>
                       ) : null}
                     </div>
                     <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -299,18 +318,21 @@ export function HospitalPanel({
                         <TableCell
                           key={key}
                           className={cn(
-                            "max-w-[160px] truncate px-3 py-3 text-sm",
+                            "max-w-[160px] px-3 py-3 text-sm",
+                            key !== "assays" && "truncate",
                             key === "customerName" && "font-medium",
-                            key === "assays" && "max-w-[220px]",
+                            key === "assays" && "max-w-[280px]",
                             (key === "mindrayReagentCount" ||
                               key === "matchingRate" ||
                               key === "mindraySampleVolume" ||
                               key === "totalSampleVolume") &&
                               "tabular-nums text-muted-foreground",
                           )}
-                          title={cellValue(hospital, key)}
+                          title={key === "assays" ? cellValue(hospital, key) : cellValue(hospital, key)}
                         >
-                          {cellValue(hospital, key)}
+                          {key === "assays"
+                            ? renderAssayCategories(hospital)
+                            : cellValue(hospital, key)}
                         </TableCell>
                       ))}
                       <TableCell className="w-8 px-2 py-3">

@@ -14,11 +14,14 @@ import {
   ensureEqaSurveyTemplate,
   fetchEqaDashboard,
   fetchEqaFields,
+  fetchEqaParticipation,
   fetchEqaParticipations,
+  groupEqaItemsByParent,
   scopeLabel,
   type EqaDashboard,
   type EqaFieldNode,
   type EqaParticipation,
+  type EqaParticipationItem,
 } from "@/lib/eqa";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,15 +51,19 @@ import {
 function FieldTree({ nodes, depth = 0 }: { nodes: EqaFieldNode[]; depth?: number }) {
   if (!nodes?.length) return null;
   return (
-    <ul className={depth ? "ml-4 border-l pl-3" : "space-y-1"}>
+    <ul className={depth ? "ml-4 space-y-0.5 border-l pl-3" : "space-y-0.5"}>
       {nodes.map((n) => (
         <li key={n.code} className="py-0.5">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-medium">{n.name}</span>
-            <Badge variant="outline" className="text-[10px]">
+          <div className="grid grid-cols-[12rem_minmax(0,1fr)_auto] items-center gap-x-3 text-sm">
+            <span className="truncate font-medium" title={n.name}>
+              {n.name}
+            </span>
+            <span className="truncate font-mono text-xs text-muted-foreground" title={n.code}>
+              {n.code}
+            </span>
+            <Badge variant="outline" className="justify-self-end text-[10px]">
               {n.valueType}
             </Badge>
-            <span className="text-xs text-muted-foreground">{n.code}</span>
           </div>
           {n.children?.length ? <FieldTree nodes={n.children} depth={depth + 1} /> : null}
         </li>
@@ -78,10 +85,14 @@ export default function EqaDashboardPage() {
   const [total, setTotal] = useState(0);
   const [ensuring, setEnsuring] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [detailItems, setDetailItems] = useState<Record<number, EqaParticipationItem[]>>({});
+  const [detailLoading, setDetailLoading] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setExpandedId(null);
     const [d, f, p] = await Promise.all([
       fetchEqaDashboard(year),
       fetchEqaFields(),
@@ -114,6 +125,23 @@ export default function EqaDashboardPage() {
     else setMessage(`已生成/更新问卷模板「${res.data?.template?.title || res.data?.template?.code}」，可在问卷发放中使用。`);
   };
 
+  const toggleExpand = async (id: number) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(id);
+    if (detailItems[id]) return;
+    setDetailLoading(id);
+    const res = await fetchEqaParticipation(id);
+    setDetailLoading(null);
+    if (res.data?.participation?.items) {
+      setDetailItems((s) => ({ ...s, [id]: res.data!.participation.items || [] }));
+    } else {
+      setDetailItems((s) => ({ ...s, [id]: [] }));
+    }
+  };
+
   if (!user || user.role !== "admin") return null;
 
   return (
@@ -126,7 +154,7 @@ export default function EqaDashboardPage() {
           <div>
             <h1 className="text-lg font-semibold">室间质评 (EQA)</h1>
             <p className="text-sm text-muted-foreground">
-              覆盖统计、参评记录与字段树。答卷审核通过后会回写参评数据。
+              按年度展示国家/省级参评科目（与「检测项目」树无关）。点开参评记录可查看已勾选科目；客户开展的检测类别请看数据看板「检测类别」列或点开医院详情。
             </p>
           </div>
         </div>
@@ -231,6 +259,7 @@ export default function EqaDashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">参评记录（{total}）</CardTitle>
+          <CardDescription>点击行展开：按字段树父级（国家/省级）查看已勾选科目</CardDescription>
         </CardHeader>
         <CardContent className="overflow-auto">
           <Table>
@@ -257,15 +286,64 @@ export default function EqaDashboardPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>{r.hospitalName || r.hospitalId}</TableCell>
-                    <TableCell>{r.year}</TableCell>
-                    <TableCell>{scopeLabel(r.scope)}</TableCell>
-                    <TableCell>{r.ownerName || "-"}</TableCell>
-                    <TableCell>{r.itemCount}</TableCell>
-                  </TableRow>
-                ))
+                rows.flatMap((r) => {
+                  const open = expandedId === r.id;
+                  const items = detailItems[r.id];
+                  const groups = open ? groupEqaItemsByParent(items, fields) : [];
+                  const main = (
+                    <TableRow
+                      key={r.id}
+                      className="cursor-pointer hover:bg-muted/40"
+                      onClick={() => toggleExpand(r.id)}
+                    >
+                      <TableCell>
+                        <span className="mr-1.5 text-muted-foreground">{open ? "▾" : "▸"}</span>
+                        {r.hospitalName || r.hospitalId}
+                      </TableCell>
+                      <TableCell>{r.year}</TableCell>
+                      <TableCell>{scopeLabel(r.scope)}</TableCell>
+                      <TableCell>{r.ownerName || "-"}</TableCell>
+                      <TableCell>{r.itemCount}</TableCell>
+                    </TableRow>
+                  );
+                  if (!open) return [main];
+                  const detail = (
+                    <TableRow key={`${r.id}-detail`} className="bg-muted/20 hover:bg-muted/20">
+                      <TableCell colSpan={5} className="px-4 py-3">
+                        {detailLoading === r.id ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" /> 加载科目…
+                          </div>
+                        ) : !items?.length ? (
+                          <p className="text-sm text-muted-foreground">暂无勾选科目</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {groups.map((g) => (
+                              <div key={g.parentCode} className="space-y-1.5">
+                                <div className="text-xs font-semibold text-muted-foreground">
+                                  {g.parentName}
+                                  <span className="ml-2 font-normal">({g.items.length})</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {g.items.map((it) => (
+                                    <Badge
+                                      key={it.fieldCode}
+                                      variant="outline"
+                                      className="font-normal"
+                                    >
+                                      {it.fieldName || it.fieldCode}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                  return [main, detail];
+                })
               )}
             </TableBody>
           </Table>
@@ -274,8 +352,10 @@ export default function EqaDashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">字段注册树</CardTitle>
-          <CardDescription>来自 field_registry，问卷模板按此生成</CardDescription>
+          <CardTitle className="text-base">EQA 科目树</CardTitle>
+          <CardDescription>
+            来自 field_registry（国家/省级 → 科目）。这不是「检测项目」的检测线→类别→细项树。
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {fields.length ? <FieldTree nodes={fields} /> : (

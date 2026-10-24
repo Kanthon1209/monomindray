@@ -80,16 +80,55 @@ export async function fetchEqaDashboard(year?: number) {
 export async function fetchEqaParticipations(params?: {
   year?: number;
   scope?: string;
+  hospitalId?: number | string;
   page?: number;
+  pageSize?: number;
 }) {
   const qs = new URLSearchParams();
   if (params?.year) qs.set("year", String(params.year));
   if (params?.scope) qs.set("scope", params.scope);
+  if (params?.hospitalId) qs.set("hospitalId", String(params.hospitalId));
   qs.set("page", String(params?.page || 1));
-  qs.set("pageSize", "50");
+  qs.set("pageSize", String(params?.pageSize || 50));
   return eqaFetch<{ total: number; items: EqaParticipation[] }>(
     `/eqa/participations?${qs.toString()}`,
   );
+}
+
+export async function fetchEqaParticipation(id: number | string) {
+  return eqaFetch<{ participation: EqaParticipation }>(`/eqa/participations/${id}`);
+}
+
+/** Group checked EQA subjects under field_registry parents (国家/省级). */
+export function groupEqaItemsByParent(
+  items: EqaParticipationItem[] | undefined,
+  fields: EqaFieldNode[],
+): { parentCode: string; parentName: string; items: EqaParticipationItem[] }[] {
+  const parentOf = new Map<string, { code: string; name: string }>();
+  const walk = (nodes: EqaFieldNode[], parent?: EqaFieldNode) => {
+    for (const n of nodes || []) {
+      if (parent) parentOf.set(n.code, { code: parent.code, name: parent.name });
+      if (n.children?.length) walk(n.children, n);
+    }
+  };
+  walk(fields || []);
+  const checked = (items || []).filter((it) => it.value);
+  const order: string[] = [];
+  const buckets = new Map<string, { parentCode: string; parentName: string; items: EqaParticipationItem[] }>();
+  for (const it of checked) {
+    const p = parentOf.get(it.fieldCode);
+    const key = p?.code || "_";
+    if (!buckets.has(key)) {
+      order.push(key);
+      buckets.set(key, {
+        parentCode: key,
+        parentName: p?.name || "参评科目",
+        items: [],
+      });
+    }
+    buckets.get(key)!.items.push(it);
+  }
+  return order.map((k) => buckets.get(k)!);
 }
 
 export async function createEqaParticipation(body: {
