@@ -95,7 +95,7 @@ func (l *SurveyLogic) CreateTemplate(req *types.CreateSurveyTemplateRequest) (*t
 	if len(schemaBytes) == 0 {
 		schemaBytes = []byte(`{"fields":[],"sections":["未分组"]}`)
 	}
-	if err := l.validateSurveySchemaFields(schemaBytes); err != nil {
+	if err := l.validateSurveySchemaFields(schemaBytes, nil); err != nil {
 		return nil, err
 	}
 
@@ -146,7 +146,7 @@ func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRe
 	if err != nil {
 		return nil, NewCodeError(400, "schema 不是合法 JSON")
 	}
-	if err := l.validateSurveySchemaFields(schemaBytes); err != nil {
+	if err := l.validateSurveySchemaFields(schemaBytes, schemaTargetSet(existing.Schema)); err != nil {
 		return nil, err
 	}
 
@@ -1262,7 +1262,10 @@ func normalizeAnswers(in map[string]any) map[string]any {
 
 // validateSurveySchemaFields requires every collectable field to map to an active
 // collectable_fields.storage_target. Unmapped / invented targets are rejected.
-func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
+// allowTargets grandfathers storage targets already present on an existing template
+// (e.g. fields later marked is_active=false) so metadata edits like device_block
+// subFieldOrder can still be saved.
+func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte, allowTargets map[string]struct{}) error {
 	if len(schemaBytes) == 0 {
 		return nil
 	}
@@ -1314,7 +1317,9 @@ func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
 			return NewCodeError(400, "字段「"+label+"」必须绑定到系统字段目录中的 storage_target")
 		}
 		if _, ok := catalog[target]; !ok {
-			return NewCodeError(400, "字段「"+label+"」的映射「"+target+"」不在可采集字段目录中")
+			if _, allowed := allowTargets[target]; !allowed {
+				return NewCodeError(400, "字段「"+label+"」的映射「"+target+"」不在可采集字段目录中")
+			}
 		}
 		return nil
 	}
@@ -1750,6 +1755,21 @@ func schemaFieldKeySet(schemaJSON json.RawMessage) map[string]struct{} {
 		k := strings.TrimSpace(f.Key)
 		if k != "" {
 			out[k] = struct{}{}
+		}
+	}
+	return out
+}
+
+func schemaTargetSet(schemaJSON json.RawMessage) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, f := range parseSchemaFields(schemaJSON) {
+		t := strings.TrimSpace(f.Target)
+		if t != "" {
+			out[t] = struct{}{}
+		}
+		if strings.EqualFold(strings.TrimSpace(f.Type), "repeat") {
+			// nested targets not in schemaFieldMeta; ignore — repeat child
+			// targets are validated against the active catalog on create/update.
 		}
 	}
 	return out
