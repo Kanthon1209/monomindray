@@ -177,25 +177,33 @@ type (
 		Status             string   `json:"status"`
 		InstalledAt        string   `json:"installedAt,omitempty"`
 		EnabledAt          string   `json:"enabledAt,omitempty"`
-		UsageLocation      string   `json:"usageLocation,omitempty"`
-		Remark             string   `json:"remark,omitempty"`
-		ServiceEvaluation  string   `json:"serviceEvaluation,omitempty"`
-		ItemCodes          []string `json:"itemCodes,omitempty"`
+		UsageLocation         string   `json:"usageLocation,omitempty"`
+		Remark                string   `json:"remark,omitempty"`
+		ServiceEvaluation     string   `json:"serviceEvaluation,omitempty"`
+		ReagentBrand          string   `json:"reagentBrand,omitempty"`
+		MonthlySampleVolume   string   `json:"monthlySampleVolume,omitempty"`
+		DeptHead              string   `json:"deptHead,omitempty"`
+		ChannelCsa            string   `json:"channelCsa,omitempty"`
+		ItemCodes             []string `json:"itemCodes,omitempty"`
 	}
 	DeviceUpsertRequest struct {
-		HospitalId         int64    `json:"hospitalId,optional"`
-		Brand              string   `json:"brand,optional"`
-		Category           string   `json:"category,optional"`
-		AssayLineCode      string   `json:"assayLineCode,optional"`
-		Model              string   `json:"model"`
-		SerialNo           string   `json:"serialNo,optional"`
-		Status             string   `json:"status,optional"`
-		InstalledAt        string   `json:"installedAt,optional"`
-		EnabledAt          string   `json:"enabledAt,optional"`
-		UsageLocation      string   `json:"usageLocation,optional"`
-		Remark             string   `json:"remark,optional"`
-		ServiceEvaluation  string   `json:"serviceEvaluation,optional"`
-		ItemCodes          []string `json:"itemCodes,optional"`
+		HospitalId            int64    `json:"hospitalId,optional"`
+		Brand                 string   `json:"brand,optional"`
+		Category              string   `json:"category,optional"`
+		AssayLineCode         string   `json:"assayLineCode,optional"`
+		Model                 string   `json:"model"`
+		SerialNo              string   `json:"serialNo,optional"`
+		Status                string   `json:"status,optional"`
+		InstalledAt           string   `json:"installedAt,optional"`
+		EnabledAt             string   `json:"enabledAt,optional"`
+		UsageLocation         string   `json:"usageLocation,optional"`
+		Remark                string   `json:"remark,optional"`
+		ServiceEvaluation     string   `json:"serviceEvaluation,optional"`
+		ReagentBrand          string   `json:"reagentBrand,optional"`
+		MonthlySampleVolume   string   `json:"monthlySampleVolume,optional"`
+		DeptHead              string   `json:"deptHead,optional"`
+		ChannelCsa            string   `json:"channelCsa,optional"`
+		ItemCodes             []string `json:"itemCodes,optional"`
 	}
 	ListDevicesRequest struct {
 		HospitalId int64  `form:"hospitalId,optional"`

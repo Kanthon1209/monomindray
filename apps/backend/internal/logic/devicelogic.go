@@ -107,6 +107,8 @@ func (l *DeviceLogic) Create(hospitalID int64, req *types.DeviceUpsertRequest) (
 		Model: strings.TrimSpace(req.Model),
 		SerialNo: strings.TrimSpace(req.SerialNo), Status: normalizeStatus(req.Status, "active"),
 		Remark: strings.TrimSpace(req.Remark), ServiceEvaluation: strings.TrimSpace(req.ServiceEvaluation),
+		ReagentBrand: strings.TrimSpace(req.ReagentBrand), MonthlySampleVolume: strings.TrimSpace(req.MonthlySampleVolume),
+		DeptHead: strings.TrimSpace(req.DeptHead), ChannelCsa: strings.TrimSpace(req.ChannelCsa),
 		CreatedBy: ptrInt64(uid), UpdatedBy: ptrInt64(uid),
 		InstalledAt: parseDate(req.InstalledAt), EnabledAt: parseDate(req.EnabledAt),
 		UsageLocation: strings.TrimSpace(req.UsageLocation), ItemCodes: req.ItemCodes,
@@ -181,6 +183,10 @@ func (l *DeviceLogic) Update(id int64, req *types.DeviceUpsertRequest) (*types.D
 	existing.InstalledAt = parseDate(req.InstalledAt)
 	existing.EnabledAt = parseDate(req.EnabledAt)
 	existing.UsageLocation = strings.TrimSpace(req.UsageLocation)
+	existing.ReagentBrand = strings.TrimSpace(req.ReagentBrand)
+	existing.MonthlySampleVolume = strings.TrimSpace(req.MonthlySampleVolume)
+	existing.DeptHead = strings.TrimSpace(req.DeptHead)
+	existing.ChannelCsa = strings.TrimSpace(req.ChannelCsa)
 	existing.UpdatedBy = ptrInt64(uid)
 	if req.ItemCodes != nil {
 		existing.ItemCodes = req.ItemCodes

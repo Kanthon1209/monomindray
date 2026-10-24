@@ -28,6 +28,10 @@ export interface Device {
   usageLocation?: string;
   remark?: string;
   serviceEvaluation?: string;
+  reagentBrand?: string;
+  monthlySampleVolume?: string;
+  deptHead?: string;
+  channelCsa?: string;
   itemCodes?: string[];
 }
 
@@ -111,6 +115,10 @@ function mapDevice(raw: any): Device {
     usageLocation: raw.usageLocation || undefined,
     remark: raw.remark || undefined,
     serviceEvaluation: raw.serviceEvaluation || undefined,
+    reagentBrand: raw.reagentBrand || undefined,
+    monthlySampleVolume: raw.monthlySampleVolume || undefined,
+    deptHead: raw.deptHead || undefined,
+    channelCsa: raw.channelCsa || undefined,
     itemCodes: Array.isArray(raw.itemCodes) ? raw.itemCodes.map(String) : [],
   };
 }
@@ -289,6 +297,10 @@ export async function createDeviceGlobal(payload: {
   usageLocation?: string;
   remark?: string;
   serviceEvaluation?: string;
+  reagentBrand?: string;
+  monthlySampleVolume?: string;
+  deptHead?: string;
+  channelCsa?: string;
   itemCodes?: string[];
 }) {
   const { data, error } = await apiFetch<{ device: any }>("/devices", {
@@ -314,6 +326,10 @@ export async function updateDevice(
     usageLocation?: string;
     remark?: string;
     serviceEvaluation?: string;
+    reagentBrand?: string;
+    monthlySampleVolume?: string;
+    deptHead?: string;
+    channelCsa?: string;
     itemCodes?: string[];
   },
 ) {
@@ -404,6 +420,8 @@ export interface SurveyField {
   /** EQA composite block: show national / provincial scopes */
   enableNational?: boolean;
   enableProvincial?: boolean;
+  /** device_block: ordered list of collectable sub-field keys (e.g. brand, model) */
+  subFieldOrder?: string[];
 }
 
 export interface SurveySchema {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   GripVertical,
   LayoutTemplate,
   Loader2,
@@ -268,6 +269,114 @@ const CUSTOMER_BLOCK_PREREQ_MSG =
   "设备列表 / 室间质评都属于客户（医院）属性。请先添加「医院名称」字段（绑定 hospital.name）标识客户，再插入这些特殊块。检测覆盖由设备列表推导，勿再单独插入检测项目块。";
 
 
+const DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS: {
+  label: string;
+  key: string;
+  type: string;
+  hint?: string;
+}[] = [
+  {
+    label: "所属公司",
+    key: "devices[].brand",
+    type: "text",
+    hint: "可联想或自定义（迈瑞 / 竞品）；每台设备一组",
+  },
+  {
+    label: "机型",
+    key: "devices[].model",
+    type: "text",
+    hint: "必填，如 BS-2000M / CL-8000",
+  },
+  {
+    label: "序列号",
+    key: "devices[].serialNo",
+    type: "text",
+    hint: "设备序列号",
+  },
+  {
+    label: "安装日期",
+    key: "devices[].installedAt",
+    type: "date",
+    hint: "日历选择",
+  },
+  {
+    label: "启用日期",
+    key: "devices[].enabledAt",
+    type: "date",
+    hint: "日历选择",
+  },
+  {
+    label: "使用位置",
+    key: "devices[].usageLocation",
+    type: "enum",
+    hint: `${DEVICE_USAGE_LOCATION_OPTIONS.join(" / ")}（选「其他」可自填）`,
+  },
+  {
+    label: "所属检测线",
+    key: "devices[].assayLineCode",
+    type: "enum",
+    hint: "生化 / 免疫 / 凝血 / 血球等（assay_projects 字典）",
+  },
+  {
+    label: "检测细项覆盖",
+    key: "devices[].itemCodes",
+    type: "multi_select",
+    hint: "选检测线后按 类别→叶子细项 复选；推导客户检测覆盖与竞品",
+  },
+  {
+    label: "试剂品牌",
+    key: "devices[].reagentBrand",
+    type: "text",
+    hint: "该设备使用的试剂品牌",
+  },
+  {
+    label: "月样本量",
+    key: "devices[].monthlySampleVolume",
+    type: "text",
+    hint: "月均样本量",
+  },
+  {
+    label: "科室负责人",
+    key: "devices[].deptHead",
+    type: "text",
+    hint: "科室负责人姓名",
+  },
+  {
+    label: "渠道CSA",
+    key: "devices[].channelCsa",
+    type: "text",
+    hint: "渠道 CSA",
+  },
+  {
+    label: "客户服务评价",
+    key: "devices[].serviceEvaluation",
+    type: "enum",
+    hint: DEVICE_SERVICE_EVALUATION_OPTIONS.join("；"),
+  },
+];
+
+function orderDeviceCollectFields(
+  field: SurveyField,
+): typeof DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS {
+  const byKey = new Map(
+    DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS.map((f) => [f.key, f]),
+  );
+  const order = Array.isArray(field.subFieldOrder) ? field.subFieldOrder : [];
+  const seen = new Set<string>();
+  const out: typeof DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS = [];
+  for (const k of order) {
+    const hit = byKey.get(k);
+    if (hit && !seen.has(k)) {
+      out.push(hit);
+      seen.add(k);
+    }
+  }
+  for (const f of DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS) {
+    if (!seen.has(f.key)) out.push(f);
+  }
+  return out;
+}
+
 function specialBlockInfo(field: SurveyField): {
   title: string;
   summary: string;
@@ -317,63 +426,9 @@ function specialBlockInfo(field: SurveyField): {
         "可添加多台设备（每台一组下列字段）",
         "选择所属检测线后，勾选该线下细项",
         "写回客户设备及 device→assay 覆盖；看板覆盖与竞品由此推导",
+        "下方列表可调整子字段展示顺序（上移 / 下移）",
       ],
-      collectFields: [
-        {
-          label: "所属公司",
-          key: "devices[].brand",
-          type: "text",
-          hint: "可联想或自定义（迈瑞 / 竞品）；每台设备一组",
-        },
-        {
-          label: "机型",
-          key: "devices[].model",
-          type: "text",
-          hint: "必填，如 BS-2000M / CL-8000",
-        },
-        {
-          label: "序列号",
-          key: "devices[].serialNo",
-          type: "text",
-          hint: "设备序列号",
-        },
-        {
-          label: "安装日期",
-          key: "devices[].installedAt",
-          type: "date",
-          hint: "日历选择",
-        },
-        {
-          label: "启用日期",
-          key: "devices[].enabledAt",
-          type: "date",
-          hint: "日历选择",
-        },
-        {
-          label: "使用位置",
-          key: "devices[].usageLocation",
-          type: "enum",
-          hint: `${DEVICE_USAGE_LOCATION_OPTIONS.join(" / ")}（选「其他」可自填）`,
-        },
-        {
-          label: "所属检测线",
-          key: "devices[].assayLineCode",
-          type: "enum",
-          hint: "生化 / 免疫 / 凝血 / 血球等（assay_projects 字典）",
-        },
-        {
-          label: "检测细项覆盖",
-          key: "devices[].itemCodes",
-          type: "multi_select",
-          hint: "选检测线后按 类别→叶子细项 复选；推导客户检测覆盖与竞品",
-        },
-        {
-          label: "客户服务评价",
-          key: "devices[].serviceEvaluation",
-          type: "enum",
-          hint: DEVICE_SERVICE_EVALUATION_OPTIONS.join("；"),
-        },
-      ],
+      collectFields: orderDeviceCollectFields(field),
     };
   }
   if (typ === "assay_block") {
@@ -899,6 +954,30 @@ export default function SurveyTemplatesPage() {
       setSpecialBlockOpen(false);
       setSpecialBlockField(null);
       setSpecialBlockTemplateId(null);
+    }
+  };
+
+  const reorderDeviceSubField = async (key: string, dir: -1 | 1) => {
+    if (!specialBlockTemplateId || !specialBlockField) return;
+    if ((specialBlockField.type || "").toLowerCase() !== "device_block") return;
+    const template = items.find((t) => t.id === specialBlockTemplateId);
+    if (!template) return;
+    const ordered = orderDeviceCollectFields(specialBlockField);
+    const idx = ordered.findIndex((f) => f.key === key);
+    const nextIdx = idx + dir;
+    if (idx < 0 || nextIdx < 0 || nextIdx >= ordered.length) return;
+    const keys = ordered.map((f) => f.key);
+    const tmp = keys[idx];
+    keys[idx] = keys[nextIdx];
+    keys[nextIdx] = tmp;
+    const schema = normalizeSchema(template.schema);
+    const fields = (schema.fields || []).map((f) =>
+      f.key === specialBlockField.key ? { ...f, subFieldOrder: keys } : f,
+    );
+    setError(null);
+    const ok = await persistSchema(template, { fields, sections: schema.sections });
+    if (ok) {
+      setSpecialBlockField({ ...specialBlockField, subFieldOrder: keys });
     }
   };
 
@@ -1928,6 +2007,10 @@ export default function SurveyTemplatesPage() {
                     <p className="text-sm font-semibold">本块采集的全部字段</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       采集员在填报端会填写下列每一项（模板结构预览，无答卷值）。
+                      {(specialBlockField.type || "").toLowerCase() ===
+                      "device_block"
+                        ? " 可用上下箭头调整子字段顺序。"
+                        : ""}
                     </p>
                   </div>
 
@@ -2036,31 +2119,68 @@ export default function SurveyTemplatesPage() {
                       ) : null}
                     </div>
                   ) : (
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-2">
                       {(specialBlockInfo(specialBlockField)?.collectFields || []).map(
-                        (cf) => (
-                          <div
-                            key={cf.key}
-                            className="rounded-md border bg-background px-3 py-2.5"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="font-medium">{cf.label}</div>
-                                <div className="font-mono text-[11px] text-muted-foreground">
-                                  {cf.key}
+                        (cf, i, arr) => {
+                          const canReorder =
+                            (specialBlockField.type || "").toLowerCase() ===
+                            "device_block";
+                          return (
+                            <div
+                              key={cf.key}
+                              className="rounded-md border bg-background px-3 py-2.5"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="font-medium">{cf.label}</div>
+                                  <div className="font-mono text-[11px] text-muted-foreground">
+                                    {cf.key}
+                                  </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <Badge variant="outline">
+                                    {typeLabel(cf.type)}
+                                  </Badge>
+                                  {canReorder ? (
+                                    <div className="flex flex-col">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        disabled={saving || i === 0}
+                                        title="上移"
+                                        onClick={() =>
+                                          void reorderDeviceSubField(cf.key, -1)
+                                        }
+                                      >
+                                        <ChevronUp className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        disabled={saving || i === arr.length - 1}
+                                        title="下移"
+                                        onClick={() =>
+                                          void reorderDeviceSubField(cf.key, 1)
+                                        }
+                                      >
+                                        <ChevronDown className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  ) : null}
                                 </div>
                               </div>
-                              <Badge variant="outline" className="shrink-0">
-                                {typeLabel(cf.type)}
-                              </Badge>
+                              {cf.hint ? (
+                                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                                  {cf.hint}
+                                </p>
+                              ) : null}
                             </div>
-                            {cf.hint ? (
-                              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                                {cf.hint}
-                              </p>
-                            ) : null}
-                          </div>
-                        ),
+                          );
+                        },
                       )}
                     </div>
                   )}
@@ -2105,6 +2225,10 @@ export default function SurveyTemplatesPage() {
                               assayLineCode: "",
                               itemCodes: [],
                               serviceEvaluation: "",
+                              reagentBrand: "",
+                              monthlySampleVolume: "",
+                              deptHead: "",
+                              channelCsa: "",
                             },
                           ],
                         }}

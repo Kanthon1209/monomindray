@@ -149,7 +149,8 @@ func toDeviceInfo(d *model.Device) types.DeviceInfo {
 	return types.DeviceInfo{
 		Id: d.Id, HospitalId: d.HospitalId, HospitalName: d.HospitalName, Brand: brand,
 		Category: d.Category, AssayLineCode: d.AssayLineCode, Model: d.Model, SerialNo: d.SerialNo, Status: d.Status,
-		InstalledAt: formatDate(d.InstalledAt), EnabledAt: formatDate(d.EnabledAt), UsageLocation: d.UsageLocation, Remark: d.Remark, ServiceEvaluation: d.ServiceEvaluation, ItemCodes: items,
+		InstalledAt: formatDate(d.InstalledAt), EnabledAt: formatDate(d.EnabledAt), UsageLocation: d.UsageLocation, Remark: d.Remark, ServiceEvaluation: d.ServiceEvaluation,
+		ReagentBrand: d.ReagentBrand, MonthlySampleVolume: d.MonthlySampleVolume, DeptHead: d.DeptHead, ChannelCsa: d.ChannelCsa, ItemCodes: items,
 	}
 }
 

@@ -99,6 +99,30 @@ function DeviceCard({ device }: { device: Device }) {
             <dd className="mt-0.5 text-sm text-foreground">{device.serviceEvaluation}</dd>
           </div>
         ) : null}
+        {device.reagentBrand ? (
+          <div>
+            <dt className="text-muted-foreground">试剂品牌</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.reagentBrand}</dd>
+          </div>
+        ) : null}
+        {device.monthlySampleVolume ? (
+          <div>
+            <dt className="text-muted-foreground">月样本量</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.monthlySampleVolume}</dd>
+          </div>
+        ) : null}
+        {device.deptHead ? (
+          <div>
+            <dt className="text-muted-foreground">科室负责人</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.deptHead}</dd>
+          </div>
+        ) : null}
+        {device.channelCsa ? (
+          <div>
+            <dt className="text-muted-foreground">渠道CSA</dt>
+            <dd className="mt-0.5 text-sm text-foreground">{device.channelCsa}</dd>
+          </div>
+        ) : null}
         {device.status ? (
           <div>
             <dt className="text-muted-foreground">状态</dt>
@@ -124,6 +148,10 @@ type FlatCompetitor = {
   installedAt: string;
   enabledAt: string;
   serviceEvaluation: string;
+  reagentBrand: string;
+  monthlySampleVolume: string;
+  deptHead: string;
+  channelCsa: string;
   status: string;
   assayLine: string;
   lineName: string;
@@ -236,6 +264,10 @@ export function HospitalDetailSheet({
         installedAt: d.installedAt || "",
         enabledAt: d.enabledAt || "",
         serviceEvaluation: d.serviceEvaluation || "",
+        reagentBrand: d.reagentBrand || "",
+        monthlySampleVolume: d.monthlySampleVolume || "",
+        deptHead: d.deptHead || "",
+        channelCsa: d.channelCsa || "",
         status: d.status || "",
         assayLine: d.assayLineCode || d.category || "",
         lineName: meta?.lineName || "",
@@ -481,6 +513,38 @@ export function HospitalDetailSheet({
                               <dt className="text-muted-foreground">客户服务评价</dt>
                               <dd className="mt-0.5 text-sm text-foreground">
                                 {dev.serviceEvaluation}
+                              </dd>
+                            </div>
+                          ) : null}
+                          {dev.reagentBrand ? (
+                            <div>
+                              <dt className="text-muted-foreground">试剂品牌</dt>
+                              <dd className="mt-0.5 text-sm text-foreground">
+                                {dev.reagentBrand}
+                              </dd>
+                            </div>
+                          ) : null}
+                          {dev.monthlySampleVolume ? (
+                            <div>
+                              <dt className="text-muted-foreground">月样本量</dt>
+                              <dd className="mt-0.5 text-sm text-foreground">
+                                {dev.monthlySampleVolume}
+                              </dd>
+                            </div>
+                          ) : null}
+                          {dev.deptHead ? (
+                            <div>
+                              <dt className="text-muted-foreground">科室负责人</dt>
+                              <dd className="mt-0.5 text-sm text-foreground">
+                                {dev.deptHead}
+                              </dd>
+                            </div>
+                          ) : null}
+                          {dev.channelCsa ? (
+                            <div>
+                              <dt className="text-muted-foreground">渠道CSA</dt>
+                              <dd className="mt-0.5 text-sm text-foreground">
+                                {dev.channelCsa}
                               </dd>
                             </div>
                           ) : null}

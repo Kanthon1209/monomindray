@@ -34,6 +34,10 @@ export type DeviceBlockRow = {
   assayLineCode: string;
   itemCodes: string[];
   serviceEvaluation?: string;
+  reagentBrand?: string;
+  monthlySampleVolume?: string;
+  deptHead?: string;
+  channelCsa?: string;
   remark?: string;
 };
 
@@ -83,6 +87,14 @@ function normalizeRow(raw: any): DeviceBlockRow | null {
     serviceEvaluation:
       String(raw.serviceEvaluation || raw.service_evaluation || "").trim() ||
       undefined,
+    reagentBrand:
+      String(raw.reagentBrand || raw.reagent_brand || "").trim() || undefined,
+    monthlySampleVolume:
+      String(raw.monthlySampleVolume || raw.monthly_sample_volume || "").trim() ||
+      undefined,
+    deptHead: String(raw.deptHead || raw.dept_head || "").trim() || undefined,
+    channelCsa:
+      String(raw.channelCsa || raw.channel_csa || "").trim() || undefined,
     remark: String(raw.remark || "").trim() || undefined,
   };
 }
@@ -98,6 +110,10 @@ function emptyRow(): DeviceBlockRow {
     assayLineCode: "",
     itemCodes: [],
     serviceEvaluation: "",
+    reagentBrand: "",
+    monthlySampleVolume: "",
+    deptHead: "",
+    channelCsa: "",
   };
 }
 
@@ -387,6 +403,50 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
                     />
                   );
                 })()}
+              </div>
+              <div className="space-y-1.5">
+                <Label>试剂品牌</Label>
+                <Input
+                  value={row.reagentBrand || ""}
+                  disabled={disabled}
+                  placeholder="如 迈瑞 / 罗氏"
+                  onChange={(e) =>
+                    updateRow(index, { reagentBrand: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>月样本量</Label>
+                <Input
+                  value={row.monthlySampleVolume || ""}
+                  disabled={disabled}
+                  placeholder="如 1200"
+                  onChange={(e) =>
+                    updateRow(index, { monthlySampleVolume: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>科室负责人</Label>
+                <Input
+                  value={row.deptHead || ""}
+                  disabled={disabled}
+                  placeholder="姓名"
+                  onChange={(e) =>
+                    updateRow(index, { deptHead: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>渠道CSA</Label>
+                <Input
+                  value={row.channelCsa || ""}
+                  disabled={disabled}
+                  placeholder="渠道 CSA"
+                  onChange={(e) =>
+                    updateRow(index, { channelCsa: e.target.value })
+                  }
+                />
               </div>
               <div className="space-y-1.5 md:col-span-2">
                 <Label>客户服务评价</Label>

@@ -93,6 +93,10 @@ export default function DevicesPage() {
     installedAt: "",
     enabledAt: "",
     usageLocation: "",
+    reagentBrand: "",
+    monthlySampleVolume: "",
+    deptHead: "",
+    channelCsa: "",
     remark: "",
   });
 
@@ -153,6 +157,10 @@ export default function DevicesPage() {
       installedAt: form.installedAt || undefined,
       enabledAt: form.enabledAt || undefined,
       usageLocation: form.usageLocation.trim() || undefined,
+      reagentBrand: form.reagentBrand.trim() || undefined,
+      monthlySampleVolume: form.monthlySampleVolume.trim() || undefined,
+      deptHead: form.deptHead.trim() || undefined,
+      channelCsa: form.channelCsa.trim() || undefined,
       remark: form.remark.trim() || undefined,
     });
     setSaving(false);
@@ -171,6 +179,10 @@ export default function DevicesPage() {
       installedAt: "",
       enabledAt: "",
       usageLocation: "",
+      reagentBrand: "",
+      monthlySampleVolume: "",
+      deptHead: "",
+      channelCsa: "",
       remark: "",
     });
     await load();
@@ -356,6 +368,47 @@ export default function DevicesPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>试剂品牌</Label>
+                  <Input
+                    value={form.reagentBrand}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, reagentBrand: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>月样本量</Label>
+                  <Input
+                    value={form.monthlySampleVolume}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        monthlySampleVolume: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>科室负责人</Label>
+                  <Input
+                    value={form.deptHead}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, deptHead: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>渠道CSA</Label>
+                  <Input
+                    value={form.channelCsa}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, channelCsa: e.target.value }))
+                    }
+                  />
                 </div>
               </div>
               <div className="space-y-2">

@@ -1005,6 +1005,26 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 			anyToString(row["usageLocation"]),
 			anyToString(row["usage_location"]),
 		)
+		reagentBrand := firstNonEmpty(
+			anyToString(row["reagentBrand"]),
+			anyToString(row["reagent_brand"]),
+			anyToString(row["试剂品牌"]),
+		)
+		monthlyVol := firstNonEmpty(
+			anyToString(row["monthlySampleVolume"]),
+			anyToString(row["monthly_sample_volume"]),
+			anyToString(row["月样本量"]),
+		)
+		deptHead := firstNonEmpty(
+			anyToString(row["deptHead"]),
+			anyToString(row["dept_head"]),
+			anyToString(row["科室负责人"]),
+		)
+		channelCsa := firstNonEmpty(
+			anyToString(row["channelCsa"]),
+			anyToString(row["channel_csa"]),
+			anyToString(row["渠道CSA"]),
+		)
 		remarkParts := []string{}
 		if vol := anyToString(row["mindraySampleVolume"]); vol != "" {
 			remarkParts = append(remarkParts, "迈瑞标本量:"+vol)
@@ -1041,7 +1061,10 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 				Model: modelName, SerialNo: serial,
 				Status: "active", InstalledAt: installedAt, EnabledAt: enabledAt,
 				UsageLocation: usageLoc, Remark: remark,
-				ServiceEvaluation: serviceEval, ItemCodes: itemCodes,
+				ServiceEvaluation: serviceEval,
+				ReagentBrand: reagentBrand, MonthlySampleVolume: monthlyVol,
+				DeptHead: deptHead, ChannelCsa: channelCsa,
+				ItemCodes: itemCodes,
 				CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
 			})
 			if err != nil {
@@ -1068,6 +1091,18 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 		}
 		if usageLoc != "" {
 			existing.UsageLocation = usageLoc
+		}
+		if reagentBrand != "" {
+			existing.ReagentBrand = reagentBrand
+		}
+		if monthlyVol != "" {
+			existing.MonthlySampleVolume = monthlyVol
+		}
+		if deptHead != "" {
+			existing.DeptHead = deptHead
+		}
+		if channelCsa != "" {
+			existing.ChannelCsa = channelCsa
 		}
 		if remark != "" {
 			existing.Remark = remark
