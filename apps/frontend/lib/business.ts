@@ -19,11 +19,14 @@ export interface Device {
   hospitalName?: string;
   brand?: string;
   category: string;
+  assayLineCode?: string;
   model: string;
   serialNo?: string;
   status: string;
   installedAt?: string;
   remark?: string;
+  serviceEvaluation?: string;
+  itemCodes?: string[];
 }
 
 async function apiFetch<T>(
@@ -97,11 +100,14 @@ function mapDevice(raw: any): Device {
     hospitalName: raw.hospitalName || undefined,
     brand: raw.brand || "迈瑞",
     category: raw.category,
+    assayLineCode: raw.assayLineCode || undefined,
     model: raw.model,
     serialNo: raw.serialNo || undefined,
     status: raw.status,
     installedAt: raw.installedAt || undefined,
     remark: raw.remark || undefined,
+    serviceEvaluation: raw.serviceEvaluation || undefined,
+    itemCodes: Array.isArray(raw.itemCodes) ? raw.itemCodes.map(String) : [],
   };
 }
 
@@ -158,6 +164,7 @@ export async function listHospitals(params: {
   keyword?: string;
   province?: string;
   status?: string;
+  sort?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -177,7 +184,23 @@ export async function getHospital(id: string) {
   return { hospital: mapHospital(data!.hospital) };
 }
 
-export async function createHospital(payload: Record<string, string>) {
+export type HospitalUpsertPayload = {
+  name: string;
+  province: string;
+  city: string;
+  district?: string;
+  level: string;
+  type: string;
+  status?: string;
+  address?: string;
+  remark?: string;
+  customerCode?: string;
+  region?: string;
+  branchOffice?: string;
+  attributes?: Record<string, string>;
+};
+
+export async function createHospital(payload: HospitalUpsertPayload) {
   const { data, error } = await apiFetch<{ hospital: any }>("/hospitals", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -186,7 +209,7 @@ export async function createHospital(payload: Record<string, string>) {
   return { hospital: mapHospital(data!.hospital) };
 }
 
-export async function updateHospital(id: string, payload: Record<string, string>) {
+export async function updateHospital(id: string, payload: HospitalUpsertPayload) {
   const { data, error } = await apiFetch<{ hospital: any }>(`/hospitals/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload),
@@ -253,11 +276,14 @@ export async function createDeviceGlobal(payload: {
   hospitalId: number;
   brand?: string;
   category: string;
+  assayLineCode?: string;
   model: string;
   serialNo?: string;
   status?: string;
   installedAt?: string;
   remark?: string;
+  serviceEvaluation?: string;
+  itemCodes?: string[];
 }) {
   const { data, error } = await apiFetch<{ device: any }>("/devices", {
     method: "POST",
@@ -273,11 +299,14 @@ export async function updateDevice(
     hospitalId?: number;
     brand?: string;
     category: string;
+    assayLineCode?: string;
     model: string;
     serialNo?: string;
     status?: string;
     installedAt?: string;
     remark?: string;
+    serviceEvaluation?: string;
+    itemCodes?: string[];
   },
 ) {
   const { data, error } = await apiFetch<{ device: any }>(`/devices/${id}`, {
@@ -396,6 +425,8 @@ export interface SurveyCampaign {
   status: string;
   defaults?: Record<string, string>;
   lockedKeys?: string[];
+  /** hospital = pin hospitals; collector_open = assignee picks hospital, multi-fill */
+  distributionMode?: "hospital" | "collector_open" | string;
   assignmentCount: number;
   createdAt?: string;
   assignments?: {
@@ -418,6 +449,8 @@ export interface SurveyAssignment {
   status: string;
   hospitalId?: string;
   hospitalName?: string;
+  /** True when assignment does not pin a hospital (collector picks via typeahead). */
+  hospitalOpen?: boolean;
   templateId: string;
   templateCode?: string;
   templateTitle?: string;
@@ -488,6 +521,7 @@ function mapCampaign(raw: any): SurveyCampaign {
     status: raw.status,
     defaults: raw.defaults || undefined,
     lockedKeys: Array.isArray(raw.lockedKeys) ? raw.lockedKeys : undefined,
+    distributionMode: raw.distributionMode || "hospital",
     assignmentCount: raw.assignmentCount ?? 0,
     createdAt: raw.createdAt || undefined,
     assignments: (raw.assignments || []).map((a: any) => ({
@@ -503,6 +537,13 @@ function mapCampaign(raw: any): SurveyCampaign {
 }
 
 function mapAssignment(raw: any): SurveyAssignment {
+  const hospitalId =
+    raw.hospitalId != null ? String(raw.hospitalId) : undefined;
+  const hospitalOpen =
+    raw.hospitalOpen === true ||
+    hospitalId == null ||
+    hospitalId === "" ||
+    hospitalId === "0";
   return {
     id: String(raw.id),
     campaignId: String(raw.campaignId),
@@ -510,8 +551,9 @@ function mapAssignment(raw: any): SurveyAssignment {
     campaignStatus: raw.campaignStatus || undefined,
     dueAt: raw.dueAt || undefined,
     status: raw.status,
-    hospitalId: raw.hospitalId != null ? String(raw.hospitalId) : undefined,
+    hospitalId,
     hospitalName: raw.hospitalName || undefined,
+    hospitalOpen,
     templateId: String(raw.templateId),
     templateCode: raw.templateCode || undefined,
     templateTitle: raw.templateTitle || undefined,
@@ -581,6 +623,32 @@ export async function updateSurveyTemplate(
   return { template: mapTemplate(data!.template) };
 }
 
+/** Soft-delete (archive). If active campaigns reference the template, returns needsForce. */
+export async function deleteSurveyTemplate(id: string, force = false) {
+  const token = getAuthToken();
+  if (!token) return { error: "未登录", needsForce: false as const };
+  const q = force ? "?force=1" : "";
+  try {
+    const resp = await fetch(`${API_BASE}/surveys/templates/${id}${q}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (resp.status === 409) {
+      return { error: await readError(resp), needsForce: true as const };
+    }
+    if (!resp.ok) {
+      return { error: await readError(resp), needsForce: false as const };
+    }
+    const data = (await resp.json()) as { template: any };
+    return { template: mapTemplate(data.template), needsForce: false as const };
+  } catch {
+    return { error: "网络错误，请检查服务是否启动", needsForce: false as const };
+  }
+}
+
 export async function listSurveyCampaigns(params?: { status?: string }) {
   const { data, error } = await apiFetch<{ total: number; items: any[] }>(
     `/surveys/campaigns${qs({ status: params?.status, page: 1, pageSize: 100 })}`,
@@ -605,15 +673,24 @@ export async function createSurveyCampaign(payload: {
   dueAt?: string;
   defaults?: Record<string, string>;
   lockedKeys?: string[];
-  assigneeId: number;
-  hospitalIds: number[];
+  distributionMode?: "hospital" | "collector_open";
+  assigneeId?: number;
+  assigneeIds?: number[];
+  hospitalIds?: number[];
 }) {
+  const mode = payload.distributionMode || "hospital";
   const body: Record<string, unknown> = {
     templateId: payload.templateId,
     title: payload.title,
-    assigneeId: payload.assigneeId,
-    hospitalIds: payload.hospitalIds,
+    distributionMode: mode,
   };
+  if (payload.assigneeId) body.assigneeId = payload.assigneeId;
+  if (payload.assigneeIds && payload.assigneeIds.length > 0) {
+    body.assigneeIds = payload.assigneeIds;
+  }
+  if (mode === "hospital") {
+    body.hospitalIds = payload.hospitalIds || [];
+  }
   if (payload.description) body.description = payload.description;
   if (payload.dueAt) body.dueAt = payload.dueAt;
   if (payload.defaults && Object.keys(payload.defaults).length > 0) {
@@ -674,12 +751,19 @@ export async function submitSurveyAssignment(
   id: string,
   payload: { answers: Record<string, any>; hospitalId?: number },
 ) {
-  const { data, error } = await apiFetch<{ submission: any }>(
-    `/me/survey-assignments/${id}/submit`,
-    { method: "POST", body: JSON.stringify(payload) },
-  );
+  const { data, error } = await apiFetch<{
+    submission: any;
+    nextAssignmentId?: number;
+  }>(`/me/survey-assignments/${id}/submit`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
   if (error) return { error };
-  return { submission: mapSubmission(data!.submission) };
+  return {
+    submission: mapSubmission(data!.submission),
+    nextAssignmentId:
+      data?.nextAssignmentId != null ? String(data.nextAssignmentId) : undefined,
+  };
 }
 
 export async function listSurveySubmissions(params?: { status?: string }) {
@@ -872,12 +956,57 @@ export async function fetchAssayTree() {
   return { items: (data?.items || []) as AssayTreeNode[] };
 }
 
+export type HospitalAssayItem = { code: string; name: string };
+export type HospitalAssayCategory = {
+  code: string;
+  name: string;
+  lineCode?: string;
+  lineName?: string;
+  itemCount: number;
+  items: HospitalAssayItem[];
+};
+
+export type HospitalAssayCompetitorDevice = {
+  deviceId: number;
+  brand: string;
+  model: string;
+  itemCodes?: string[];
+  itemNames?: string[];
+};
+
+export type HospitalAssayCompetitorCategory = {
+  code: string;
+  name: string;
+  lineCode?: string;
+  lineName?: string;
+  devices: HospitalAssayCompetitorDevice[];
+};
+
 export async function fetchHospitalAssays(hospitalId: string) {
-  const { data, error } = await apiFetch<{ codes: string[]; names?: string[] }>(
-    `/hospitals/${hospitalId}/assays`,
-  );
-  if (error) return { error, codes: [] as string[], names: [] as string[] };
-  return { codes: data?.codes || [], names: data?.names || [] };
+  const { data, error } = await apiFetch<{
+    codes: string[];
+    names?: string[];
+    categories?: HospitalAssayCategory[];
+    competitors?: HospitalAssayCompetitorCategory[];
+    mindrayLines?: string[];
+  }>(`/hospitals/${hospitalId}/assays`);
+  if (error) {
+    return {
+      error,
+      codes: [] as string[],
+      names: [] as string[],
+      categories: [] as HospitalAssayCategory[],
+      competitors: [] as HospitalAssayCompetitorCategory[],
+      mindrayLines: [] as string[],
+    };
+  }
+  return {
+    codes: data?.codes || [],
+    names: data?.names || [],
+    categories: (data?.categories || []) as HospitalAssayCategory[],
+    competitors: (data?.competitors || []) as HospitalAssayCompetitorCategory[],
+    mindrayLines: (data?.mindrayLines || []) as string[],
+  };
 }
 
 export async function replaceHospitalAssays(
@@ -907,7 +1036,7 @@ export type HospitalSearchOption = {
 };
 
 /** Collector-safe hospital name typeahead (JWT shared route). */
-export async function searchHospitalsForSurvey(keyword: string, limit = 20) {
+export async function searchHospitalsForSurvey(keyword: string, limit = 40) {
   const { data, error } = await apiFetch<{ items: any[] }>(
     `/hospitals/search${qs({ keyword: keyword.trim() || undefined, limit })}`,
   );

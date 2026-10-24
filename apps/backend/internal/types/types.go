@@ -87,18 +87,19 @@ type (
 		CreatedAt    string            `json:"createdAt,omitempty"`
 	}
 	HospitalUpsertRequest struct {
-		Name         string `json:"name"`
-		Province     string `json:"province"`
-		City         string `json:"city"`
-		District     string `json:"district,omitempty"`
-		Level        string `json:"level"`
-		Type         string `json:"type"`
-		Status       string `json:"status,omitempty"`
-		Address      string `json:"address,omitempty"`
-		Remark       string `json:"remark,omitempty"`
-		CustomerCode string `json:"customerCode,optional"`
-		Region       string `json:"region,optional"`
-		BranchOffice string `json:"branchOffice,optional"`
+		Name         string            `json:"name"`
+		Province     string            `json:"province"`
+		City         string            `json:"city"`
+		District     string            `json:"district,omitempty"`
+		Level        string            `json:"level"`
+		Type         string            `json:"type"`
+		Status       string            `json:"status,omitempty"`
+		Address      string            `json:"address,omitempty"`
+		Remark       string            `json:"remark,omitempty"`
+		CustomerCode string            `json:"customerCode,optional"`
+		Region       string            `json:"region,optional"`
+		BranchOffice string            `json:"branchOffice,optional"`
+		Attributes   map[string]string `json:"attributes,optional"`
 	}
 	IdPathRequest struct {
 		Id int64 `path:"id"`
@@ -114,6 +115,7 @@ type (
 		DeviceCategory string `form:"deviceCategory,optional"`
 		DeviceModel    string `form:"deviceModel,optional"`
 		Keyword        string `form:"keyword,optional"`
+		Sort           string `form:"sort,optional"`
 		Page           int    `form:"page,optional"`
 		PageSize       int    `form:"pageSize,optional"`
 	}
@@ -164,26 +166,32 @@ type (
 	}
 
 	DeviceInfo struct {
-		Id           int64  `json:"id"`
-		HospitalId   int64  `json:"hospitalId"`
-		HospitalName string `json:"hospitalName,omitempty"`
-		Brand        string `json:"brand,omitempty"`
-		Category     string `json:"category"`
-		Model        string `json:"model"`
-		SerialNo     string `json:"serialNo,omitempty"`
-		Status       string `json:"status"`
-		InstalledAt  string `json:"installedAt,omitempty"`
-		Remark       string `json:"remark,omitempty"`
+		Id                 int64    `json:"id"`
+		HospitalId         int64    `json:"hospitalId"`
+		HospitalName       string   `json:"hospitalName,omitempty"`
+		Brand              string   `json:"brand,omitempty"`
+		Category           string   `json:"category"`
+		AssayLineCode      string   `json:"assayLineCode,omitempty"`
+		Model              string   `json:"model"`
+		SerialNo           string   `json:"serialNo,omitempty"`
+		Status             string   `json:"status"`
+		InstalledAt        string   `json:"installedAt,omitempty"`
+		Remark             string   `json:"remark,omitempty"`
+		ServiceEvaluation  string   `json:"serviceEvaluation,omitempty"`
+		ItemCodes          []string `json:"itemCodes,omitempty"`
 	}
 	DeviceUpsertRequest struct {
-		HospitalId  int64  `json:"hospitalId,optional"`
-		Brand       string `json:"brand,optional"`
-		Category    string `json:"category"`
-		Model       string `json:"model"`
-		SerialNo    string `json:"serialNo,optional"`
-		Status      string `json:"status,optional"`
-		InstalledAt string `json:"installedAt,optional"`
-		Remark      string `json:"remark,optional"`
+		HospitalId         int64    `json:"hospitalId,optional"`
+		Brand              string   `json:"brand,optional"`
+		Category           string   `json:"category,optional"`
+		AssayLineCode      string   `json:"assayLineCode,optional"`
+		Model              string   `json:"model"`
+		SerialNo           string   `json:"serialNo,optional"`
+		Status             string   `json:"status,optional"`
+		InstalledAt        string   `json:"installedAt,optional"`
+		Remark             string   `json:"remark,optional"`
+		ServiceEvaluation  string   `json:"serviceEvaluation,optional"`
+		ItemCodes          []string `json:"itemCodes,optional"`
 	}
 	ListDevicesRequest struct {
 		HospitalId int64  `form:"hospitalId,optional"`
@@ -277,19 +285,20 @@ type (
 		SubmissionStatus string `json:"submissionStatus,omitempty"`
 	}
 	SurveyCampaignInfo struct {
-		Id              int64                   `json:"id"`
-		TemplateId      int64                   `json:"templateId"`
-		TemplateCode    string                  `json:"templateCode,omitempty"`
-		TemplateTitle   string                  `json:"templateTitle,omitempty"`
-		Title           string                  `json:"title"`
-		Description     string                  `json:"description,omitempty"`
-		DueAt           string                  `json:"dueAt,omitempty"`
-		Status          string                  `json:"status"`
-		Defaults        map[string]string       `json:"defaults,omitempty"`
-		LockedKeys      []string                `json:"lockedKeys,omitempty"`
-		AssignmentCount int                     `json:"assignmentCount"`
-		CreatedAt       string                  `json:"createdAt,omitempty"`
-		Assignments     []SurveyAssignmentBrief `json:"assignments,omitempty"`
+		Id               int64                   `json:"id"`
+		TemplateId       int64                   `json:"templateId"`
+		TemplateCode     string                  `json:"templateCode,omitempty"`
+		TemplateTitle    string                  `json:"templateTitle,omitempty"`
+		Title            string                  `json:"title"`
+		Description      string                  `json:"description,omitempty"`
+		DueAt            string                  `json:"dueAt,omitempty"`
+		Status           string                  `json:"status"`
+		Defaults         map[string]string       `json:"defaults,omitempty"`
+		LockedKeys       []string                `json:"lockedKeys,omitempty"`
+		DistributionMode string                  `json:"distributionMode,omitempty"`
+		AssignmentCount  int                     `json:"assignmentCount"`
+		CreatedAt        string                  `json:"createdAt,omitempty"`
+		Assignments      []SurveyAssignmentBrief `json:"assignments,omitempty"`
 	}
 	CreateSurveyCampaignRequest struct {
 		TemplateId  int64             `json:"templateId"`
@@ -298,11 +307,12 @@ type (
 		DueAt       string            `json:"dueAt,optional"`
 		Defaults    map[string]string `json:"defaults,optional"`
 		LockedKeys  []string          `json:"lockedKeys,optional"`
-		// V1: one collector + many hospitals → one task per hospital.
-		AssigneeId  int64   `json:"assigneeId,optional"`
-		HospitalIds []int64 `json:"hospitalIds,optional"`
-		// Legacy fallback (no hospital binding).
-		AssigneeIds []int64 `json:"assigneeIds,optional"`
+		// hospital (default): one collector + many hospitals → locked hospital per task.
+		// collector_open: collectors only → open hospital picker; multi-fill after submit.
+		DistributionMode string  `json:"distributionMode,optional"`
+		AssigneeId       int64   `json:"assigneeId,optional"`
+		HospitalIds      []int64 `json:"hospitalIds,optional"`
+		AssigneeIds      []int64 `json:"assigneeIds,optional"`
 	}
 	ListSurveyCampaignsRequest struct {
 		Status   string `form:"status,optional"`
@@ -326,6 +336,7 @@ type (
 		Status           string          `json:"status"`
 		HospitalId       *int64          `json:"hospitalId,omitempty"`
 		HospitalName     string          `json:"hospitalName,omitempty"`
+		HospitalOpen     bool            `json:"hospitalOpen,omitempty"`
 		TemplateId       int64           `json:"templateId"`
 		TemplateCode     string          `json:"templateCode,omitempty"`
 		TemplateTitle    string          `json:"templateTitle,omitempty"`
@@ -379,7 +390,8 @@ type (
 		Items []SurveySubmissionInfo `json:"items"`
 	}
 	SurveySubmissionResponse struct {
-		Submission SurveySubmissionInfo `json:"submission"`
+		Submission       SurveySubmissionInfo `json:"submission"`
+		NextAssignmentId *int64               `json:"nextAssignmentId,omitempty"`
 	}
 	ReviewSurveySubmissionRequest struct {
 		Note string `json:"note,optional"`
@@ -452,9 +464,38 @@ type (
 	ListAssayProjectOptionsResponse struct {
 		Items []AssayProjectOption `json:"items"`
 	}
+	HospitalAssayItem struct {
+		Code string `json:"code"`
+		Name string `json:"name"`
+	}
+	HospitalAssayCategory struct {
+		Code      string              `json:"code"`
+		Name      string              `json:"name"`
+		LineCode  string              `json:"lineCode,omitempty"`
+		LineName  string              `json:"lineName,omitempty"`
+		ItemCount int                 `json:"itemCount"`
+		Items     []HospitalAssayItem `json:"items"`
+	}
+	HospitalAssayCompetitorDevice struct {
+		DeviceId   int64    `json:"deviceId"`
+		Brand      string   `json:"brand"`
+		Model      string   `json:"model"`
+		ItemCodes  []string `json:"itemCodes,omitempty"`
+		ItemNames  []string `json:"itemNames,omitempty"`
+	}
+	HospitalAssayCompetitorCategory struct {
+		Code      string                           `json:"code"`
+		Name      string                           `json:"name"`
+		LineCode  string                           `json:"lineCode,omitempty"`
+		LineName  string                           `json:"lineName,omitempty"`
+		Devices   []HospitalAssayCompetitorDevice  `json:"devices"`
+	}
 	HospitalAssaysResponse struct {
-		Codes []string `json:"codes"`
-		Names []string `json:"names,omitempty"`
+		Codes        []string                            `json:"codes"`
+		Names        []string                            `json:"names,omitempty"`
+		Categories   []HospitalAssayCategory             `json:"categories,omitempty"`
+		Competitors  []HospitalAssayCompetitorCategory   `json:"competitors,omitempty"`
+		MindrayLines []string                            `json:"mindrayLines,omitempty"`
 	}
 	ReplaceHospitalAssaysRequest struct {
 		Codes  []string `json:"codes"`

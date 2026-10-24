@@ -30,7 +30,7 @@ func (l *SurveyLogic) ListTemplates() (*types.ListSurveyTemplatesResponse, error
 	if err := requireAdminCtx(l.ctx); err != nil {
 		return nil, err
 	}
-	items, err := l.svcCtx.SurveyModel.ListTemplates(l.ctx, false)
+	items, err := l.svcCtx.SurveyModel.ListTemplates(l.ctx, true) // active only — archived stay for existing campaigns
 	if err != nil {
 		l.Errorf("list templates: %v", err)
 		return nil, ErrInternal
@@ -171,6 +171,44 @@ func (l *SurveyLogic) UpdateTemplate(id int64, req *types.UpdateSurveyTemplateRe
 	return &types.SurveyTemplateResponse{Template: toSurveyTemplateInfo(updated)}, nil
 }
 
+func (l *SurveyLogic) ArchiveTemplate(id int64, force bool) (*types.SurveyTemplateResponse, error) {
+	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
+		return nil, err
+	}
+	existing, err := l.svcCtx.SurveyModel.FindTemplateById(l.ctx, id)
+	if err != nil {
+		return nil, ErrInternal
+	}
+	if existing == nil {
+		return nil, NewCodeError(404, "模板不存在")
+	}
+	if existing.Status == "archived" {
+		return &types.SurveyTemplateResponse{Template: toSurveyTemplateInfo(existing)}, nil
+	}
+
+	activeN, err := l.svcCtx.SurveyModel.CountCampaignsByTemplate(l.ctx, id, []string{"draft", "active"})
+	if err != nil {
+		l.Errorf("count campaigns by template: %v", err)
+		return nil, ErrInternal
+	}
+	if activeN > 0 && !force {
+		return nil, NewCodeError(409, fmt.Sprintf(
+			"仍有 %d 个进行中的发放引用此模板。归档后无法再新建发放，已有任务不受影响。确认后可强制归档。",
+			activeN,
+		))
+	}
+
+	updated, err := l.svcCtx.SurveyModel.ArchiveTemplate(l.ctx, id)
+	if err != nil {
+		l.Errorf("archive template: %v", err)
+		return nil, ErrInternal
+	}
+	if updated == nil {
+		return nil, NewCodeError(404, "模板不存在")
+	}
+	return &types.SurveyTemplateResponse{Template: toSurveyTemplateInfo(updated)}, nil
+}
+
 func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*types.SurveyCampaignResponse, error) {
 	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
 		return nil, err
@@ -184,16 +222,12 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 		return nil, NewCodeError(400, "请填写标题并选择模板")
 	}
 
-	assigneeID := req.AssigneeId
-	hospitalIDs := uniqueInt64(req.HospitalIds)
-	if assigneeID <= 0 && len(req.AssigneeIds) == 1 {
-		assigneeID = req.AssigneeIds[0]
+	mode := strings.TrimSpace(req.DistributionMode)
+	if mode == "" {
+		mode = "hospital"
 	}
-	if assigneeID <= 0 {
-		return nil, NewCodeError(400, "请选择一名采集员")
-	}
-	if len(hospitalIDs) == 0 {
-		return nil, NewCodeError(400, "请至少选择一家医院")
+	if mode != "hospital" && mode != "collector_open" {
+		return nil, NewCodeError(400, "发放方式无效")
 	}
 
 	tpl, err := l.svcCtx.SurveyModel.FindTemplateById(l.ctx, req.TemplateId)
@@ -207,14 +241,6 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 		return nil, NewCodeError(400, "模板没有字段，请先在模板中添加字段再发放")
 	}
 
-	u, err := l.svcCtx.UserModel.FindById(l.ctx, assigneeID)
-	if err != nil {
-		return nil, ErrInternal
-	}
-	if u == nil || u.Status != model.StatusApproved {
-		return nil, NewCodeError(400, "采集员不存在或未通过审核")
-	}
-
 	var dueAt *time.Time
 	if strings.TrimSpace(req.DueAt) != "" {
 		t, err := parseDueAt(strings.TrimSpace(req.DueAt))
@@ -225,35 +251,80 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 	}
 
 	c := &model.SurveyCampaign{
-		TemplateId:  req.TemplateId,
-		Title:       title,
-		Description: strings.TrimSpace(req.Description),
-		DueAt:       dueAt,
-		Status:      "active",
-		CreatedBy:   ptrInt64(uid),
-		Defaults:    normalizeStringMap(req.Defaults),
-		LockedKeys:  uniqueStrings(req.LockedKeys),
+		TemplateId:       req.TemplateId,
+		Title:            title,
+		Description:      strings.TrimSpace(req.Description),
+		DueAt:            dueAt,
+		Status:           "active",
+		CreatedBy:        ptrInt64(uid),
+		Defaults:         normalizeStringMap(req.Defaults),
+		LockedKeys:       uniqueStrings(req.LockedKeys),
+		DistributionMode: mode,
 	}
 	c.Defaults = mergeTemplateDefaults(tpl.Schema, c.Defaults)
 	c.LockedKeys = mergeTemplateLocked(tpl.Schema, c.LockedKeys)
 
-	// Bound hospital ⇒ lock customer/hospital name fields so collectors cannot retarget.
-	c.LockedKeys = uniqueStrings(append(c.LockedKeys, hospitalNameFieldKeys(tpl.Schema)...))
+	var specs []model.SurveyAssignmentSpec
 
-	specs := make([]model.SurveyAssignmentSpec, 0, len(hospitalIDs))
-	for _, hid := range hospitalIDs {
-		h, err := l.svcCtx.HospitalModel.FindById(l.ctx, hid)
+	if mode == "collector_open" {
+		assigneeIDs := uniqueInt64(req.AssigneeIds)
+		if req.AssigneeId > 0 {
+			assigneeIDs = uniqueInt64(append(assigneeIDs, req.AssigneeId))
+		}
+		if len(assigneeIDs) == 0 {
+			return nil, NewCodeError(400, "请至少选择一名采集员")
+		}
+		// Do NOT lock hospital name — collector picks via typeahead.
+		for _, aid := range assigneeIDs {
+			u, err := l.svcCtx.UserModel.FindById(l.ctx, aid)
+			if err != nil {
+				return nil, ErrInternal
+			}
+			if u == nil || u.Status != model.StatusApproved {
+				return nil, NewCodeError(400, fmt.Sprintf("采集员不存在或未通过审核: %d", aid))
+			}
+			specs = append(specs, model.SurveyAssignmentSpec{
+				AssigneeID: aid,
+				HospitalID: 0,
+				Prefill:    map[string]any{},
+			})
+		}
+	} else {
+		assigneeID := req.AssigneeId
+		hospitalIDs := uniqueInt64(req.HospitalIds)
+		if assigneeID <= 0 && len(req.AssigneeIds) == 1 {
+			assigneeID = req.AssigneeIds[0]
+		}
+		if assigneeID <= 0 {
+			return nil, NewCodeError(400, "请选择一名采集员")
+		}
+		if len(hospitalIDs) == 0 {
+			return nil, NewCodeError(400, "请至少选择一家医院")
+		}
+		u, err := l.svcCtx.UserModel.FindById(l.ctx, assigneeID)
 		if err != nil {
 			return nil, ErrInternal
 		}
-		if h == nil {
-			return nil, NewCodeError(400, fmt.Sprintf("医院不存在: %d", hid))
+		if u == nil || u.Status != model.StatusApproved {
+			return nil, NewCodeError(400, "采集员不存在或未通过审核")
 		}
-		specs = append(specs, model.SurveyAssignmentSpec{
-			AssigneeID: assigneeID,
-			HospitalID: hid,
-			Prefill:    mapHospitalToSchemaAnswers(tpl.Schema, h),
-		})
+		// Bound hospital ⇒ lock customer/hospital name fields so collectors cannot retarget.
+		c.LockedKeys = uniqueStrings(append(c.LockedKeys, hospitalNameFieldKeys(tpl.Schema)...))
+		specs = make([]model.SurveyAssignmentSpec, 0, len(hospitalIDs))
+		for _, hid := range hospitalIDs {
+			h, err := l.svcCtx.HospitalModel.FindById(l.ctx, hid)
+			if err != nil {
+				return nil, ErrInternal
+			}
+			if h == nil {
+				return nil, NewCodeError(400, fmt.Sprintf("医院不存在: %d", hid))
+			}
+			specs = append(specs, model.SurveyAssignmentSpec{
+				AssigneeID: assigneeID,
+				HospitalID: hid,
+				Prefill:    mapHospitalToSchemaAnswers(tpl.Schema, h),
+			})
+		}
 	}
 
 	id, err := l.svcCtx.SurveyModel.CreateCampaignWithAssignments(l.ctx, c, specs)
@@ -438,6 +509,19 @@ func (l *SurveyLogic) Submit(id int64, req *types.SaveSurveyAnswersRequest) (*ty
 	if hid == nil {
 		hid = req.HospitalId
 	}
+	openHospital := a.HospitalId == nil || (a.HospitalId != nil && *a.HospitalId <= 0)
+	if openHospital {
+		if hid == nil || *hid <= 0 {
+			return nil, NewCodeError(400, "请从联想列表中选择一家已有医院")
+		}
+		h, err := l.svcCtx.HospitalModel.FindById(l.ctx, *hid)
+		if err != nil {
+			return nil, ErrInternal
+		}
+		if h == nil {
+			return nil, NewCodeError(400, "所选医院不存在")
+		}
+	}
 	sub, err := l.svcCtx.SurveyModel.Submit(l.ctx, id, uid, answers, hid)
 	if err != nil {
 		if strings.Contains(err.Error(), "locked") {
@@ -446,7 +530,23 @@ func (l *SurveyLogic) Submit(id int64, req *types.SaveSurveyAnswersRequest) (*ty
 		l.Errorf("submit: %v", err)
 		return nil, ErrInternal
 	}
-	return &types.SurveySubmissionResponse{Submission: toSurveySubmissionInfo(sub)}, nil
+
+	resp := &types.SurveySubmissionResponse{Submission: toSurveySubmissionInfo(sub)}
+	// collector_open: after each submit, open a fresh blank task so collector can fill again.
+	if openHospital && a.CampaignStatus == "active" {
+		camp, err := l.svcCtx.SurveyModel.FindCampaignById(l.ctx, a.CampaignId)
+		if err != nil {
+			l.Errorf("find campaign after submit: %v", err)
+		} else if camp != nil && camp.DistributionMode == "collector_open" && camp.Status == "active" {
+			nextID, err := l.svcCtx.SurveyModel.CreateOpenAssignment(l.ctx, a.CampaignId, a.AssigneeId)
+			if err != nil {
+				l.Errorf("spawn next open assignment: %v", err)
+			} else {
+				resp.NextAssignmentId = &nextID
+			}
+		}
+	}
+	return resp, nil
 }
 
 func (l *SurveyLogic) ListSubmissions(req *types.ListSurveySubmissionsRequest) (*types.ListSurveySubmissionsResponse, error) {
@@ -640,7 +740,7 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	if len(schema.Fields) > 0 {
 		for _, f := range schema.Fields {
-			if strings.EqualFold(f.Type, "repeat") || strings.EqualFold(f.Type, "eqa_block") || strings.EqualFold(f.Type, "assay_block") {
+			if strings.EqualFold(f.Type, "repeat") || strings.EqualFold(f.Type, "eqa_block") || strings.EqualFold(f.Type, "assay_block") || strings.EqualFold(f.Type, "device_block") {
 				continue
 			}
 			applyTarget(f.Target, f.Key, answerString(answers, f.Key))
@@ -717,8 +817,8 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		mergedArchive[k] = v
 	}
 
-	// Merge device-level otherAnalyzers into hospital archive (assays go via assay_block only).
-	deviceRows := extractDeviceAnswers(answers["devices"])
+	// Merge device-level otherAnalyzers into hospital archive (assays go via assay_block / device_block).
+	deviceRows := extractAllDeviceRows(answers)
 	otherAnalyzers := []string{}
 	if s := archiveString(mergedArchive, "otherAnalyzers"); s != "" {
 		otherAnalyzers = append(otherAnalyzers, s)
@@ -816,6 +916,9 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 func (l *SurveyLogic) dualWriteMasterData(hospitalID int64, archive map[string]any, attributes, metrics map[string]string) error {
 	md := l.svcCtx.MasterDataModel
+		if stage, ok := attributes["customer_stage"]; ok && !model.IsAllowedEnum(stage, model.CustomerStageEnum) {
+		return NewCodeError(400, "客户所在阶段不在可选范围内："+stage)
+	}
 	if err := md.UpsertAttributes(l.ctx, hospitalID, attributes); err != nil {
 		return err
 	}
@@ -862,12 +965,37 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 	for _, row := range rows {
 		modelName := anyToString(row["model"])
 		serial := anyToString(row["serialNo"])
-		if modelName == "" && serial == "" {
+		if modelName == "" && serial == "" && anyToString(row["assayLineCode"]) == "" {
 			continue
 		}
 		if modelName == "" {
 			modelName = "未知机型"
 		}
+		brand := firstNonEmpty(anyToString(row["brand"]), anyToString(row["company"]), "迈瑞")
+		line := strings.TrimSpace(anyToString(row["assayLineCode"]))
+		if line == "" {
+			line = strings.TrimSpace(anyToString(row["lineCode"]))
+		}
+		cat := strings.TrimSpace(anyToString(row["category"]))
+		if cat == "" {
+			cat = model.CategoryFromAssayLine(line)
+		}
+		if cat == "" {
+			cat = "immuno"
+		}
+		itemCodes := anyToStringSlice(row["itemCodes"])
+		if len(itemCodes) == 0 {
+			itemCodes = anyToStringSlice(row["codes"])
+		}
+		serviceEval := firstNonEmpty(
+			anyToString(row["serviceEvaluation"]),
+			anyToString(row["service_evaluation"]),
+			anyToString(row["客户服务评价"]),
+		)
+		if !model.IsAllowedEnum(serviceEval, model.DeviceServiceEvaluationEnum) {
+			return NewCodeError(400, "设备「客户服务评价」不在可选范围内："+serviceEval)
+		}
+
 		remarkParts := []string{}
 		if loc := anyToString(row["usageLocation"]); loc != "" {
 			remarkParts = append(remarkParts, "位置:"+loc)
@@ -897,8 +1025,10 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 		}
 		if existing == nil {
 			_, err = l.svcCtx.DeviceModel.Insert(l.ctx, &model.Device{
-				HospitalId: hospitalID, Brand: "迈瑞", Category: "immuno", Model: modelName, SerialNo: serial,
+				HospitalId: hospitalID, Brand: brand, Category: cat, AssayLineCode: line,
+				Model: modelName, SerialNo: serial,
 				Status: "active", InstalledAt: installedAt, Remark: remark,
+				ServiceEvaluation: serviceEval, ItemCodes: itemCodes,
 				CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
 			})
 			if err != nil {
@@ -907,7 +1037,16 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 			}
 			continue
 		}
+		existing.Brand = brand
+		existing.Category = cat
+		if line != "" {
+			existing.AssayLineCode = line
+		}
 		existing.Model = modelName
+		existing.ItemCodes = itemCodes
+		if serviceEval != "" {
+			existing.ServiceEvaluation = serviceEval
+		}
 		if installedAt != nil {
 			existing.InstalledAt = installedAt
 		}
@@ -921,7 +1060,32 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 			return NewCodeError(400, "更新设备失败："+modelName)
 		}
 	}
+	if err := l.svcCtx.DeviceModel.SyncHospitalAssaysFromDevices(l.ctx, hospitalID); err != nil {
+		l.Errorf("sync assays from devices: %v", err)
+		return NewCodeError(400, "同步设备检测项目失败")
+	}
 	return nil
+}
+
+// extractAllDeviceRows collects device rows from legacy key "devices" and any device_block answer.
+func extractAllDeviceRows(answers map[string]any) []map[string]any {
+	if answers == nil {
+		return nil
+	}
+	out := extractDeviceAnswers(answers["devices"])
+	for k, v := range answers {
+		if k == "devices" {
+			continue
+		}
+		m, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, has := m["devices"]; has {
+			out = append(out, extractDeviceAnswers(m)...)
+		}
+	}
+	return out
 }
 
 type surveySchemaField struct {
@@ -958,10 +1122,14 @@ func toSurveyTemplateInfo(t *model.SurveyTemplate) types.SurveyTemplateInfo {
 }
 
 func toSurveyCampaignInfo(c *model.SurveyCampaign, assigns []types.SurveyAssignmentBrief) types.SurveyCampaignInfo {
+	mode := c.DistributionMode
+	if mode == "" {
+		mode = "hospital"
+	}
 	info := types.SurveyCampaignInfo{
 		Id: c.Id, TemplateId: c.TemplateId, TemplateCode: c.TemplateCode, TemplateTitle: c.TemplateTitle,
 		Title: c.Title, Description: c.Description, Status: c.Status,
-		Defaults: c.Defaults, LockedKeys: c.LockedKeys,
+		Defaults: c.Defaults, LockedKeys: c.LockedKeys, DistributionMode: mode,
 		AssignmentCount: c.AssignmentCount, CreatedAt: formatTime(c.CreatedAt),
 		Assignments: assigns,
 	}
@@ -976,9 +1144,10 @@ func toSurveyAssignmentInfo(a *model.SurveyAssignment, answers map[string]any, n
 	if len(schema) == 0 {
 		schema = json.RawMessage(`{"fields":[]}`)
 	}
+	hospitalOpen := a.HospitalId == nil || (a.HospitalId != nil && *a.HospitalId <= 0)
 	info := types.SurveyAssignmentInfo{
 		Id: a.Id, CampaignId: a.CampaignId, CampaignTitle: a.CampaignTitle, CampaignStatus: a.CampaignStatus,
-		Status: a.Status, HospitalId: a.HospitalId, HospitalName: a.HospitalName,
+		Status: a.Status, HospitalId: a.HospitalId, HospitalName: a.HospitalName, HospitalOpen: hospitalOpen,
 		TemplateId: a.TemplateId, TemplateCode: a.TemplateCode, TemplateTitle: a.TemplateTitle,
 		Schema: schema, SubmissionId: a.SubmissionId, SubmissionStatus: a.SubmissionStatus,
 		Answers: answers, ReviewNote: note,
@@ -1045,11 +1214,12 @@ func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
 	}
 	var parsed struct {
 		Fields []struct {
-			Key    string `json:"key"`
-			Label  string `json:"label"`
-			Type   string `json:"type"`
-			Target string `json:"target"`
-			Fields []struct {
+			Key           string `json:"key"`
+			Label         string `json:"label"`
+			Type          string `json:"type"`
+			Target        string `json:"target"`
+			OptionsSource string `json:"optionsSource"`
+			Fields        []struct {
 				Key    string `json:"key"`
 				Label  string `json:"label"`
 				Type   string `json:"type"`
@@ -1077,11 +1247,12 @@ func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
 		}
 		seen[key] = struct{}{}
 		if key == "devices" && !strings.EqualFold(strings.TrimSpace(typ), "repeat") &&
-			!strings.EqualFold(strings.TrimSpace(typ), "string_array") {
-			return NewCodeError(400, "字段 key「devices」仅可用于「可重复组(repeat)」或「多选数组(string_array)」")
+			!strings.EqualFold(strings.TrimSpace(typ), "string_array") &&
+			!strings.EqualFold(strings.TrimSpace(typ), "device_block") {
+			return NewCodeError(400, "字段 key「devices」仅可用于设备列表块、可重复组或多选数组")
 		}
 		typNorm := strings.ToLower(strings.TrimSpace(typ))
-		if typNorm == "repeat" || typNorm == "eqa_block" || typNorm == "assay_block" {
+		if typNorm == "repeat" || typNorm == "eqa_block" || typNorm == "assay_block" || typNorm == "device_block" {
 			return nil
 		}
 		target = strings.TrimSpace(target)
@@ -1093,9 +1264,23 @@ func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
 		}
 		return nil
 	}
+	hasIdentity := false
+	hasDependentBlock := false
 	for _, f := range parsed.Fields {
 		if err := check(f.Key, f.Label, f.Type, f.Target); err != nil {
 			return err
+		}
+		typNorm := strings.ToLower(strings.TrimSpace(f.Type))
+		if typNorm == "eqa_block" || typNorm == "assay_block" || typNorm == "device_block" {
+			hasDependentBlock = true
+		} else if isHospitalNameSchemaField(schemaFieldMeta{
+			Key:           f.Key,
+			Label:         f.Label,
+			Type:          f.Type,
+			Target:        f.Target,
+			OptionsSource: f.OptionsSource,
+		}) {
+			hasIdentity = true
 		}
 		if strings.EqualFold(strings.TrimSpace(f.Type), "repeat") {
 			if len(f.Fields) == 0 {
@@ -1107,6 +1292,9 @@ func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte) error {
 				}
 			}
 		}
+	}
+	if hasDependentBlock && !hasIdentity {
+		return NewCodeError(400, "设备列表 / 检测项目 / 室间质评属于客户（医院）属性，请先添加「医院名称」字段（绑定 hospital.name）再保存")
 	}
 	return nil
 }
@@ -1141,7 +1329,7 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any)
 			// EQA block: neither/both/one scope is valid; no required scalar.
 			continue
 		}
-		if strings.EqualFold(f.Type, "assay_block") {
+		if strings.EqualFold(f.Type, "assay_block") || strings.EqualFold(f.Type, "device_block") {
 			continue
 		}
 		if strings.EqualFold(f.Type, "repeat") {
@@ -1349,6 +1537,17 @@ func pruneAnswersToSchema(schemaJSON json.RawMessage, answers map[string]any) ma
 func extractDeviceAnswers(raw any) []map[string]any {
 	out := []map[string]any{}
 	if raw == nil {
+		return out
+	}
+	// device_block answer shape: { devices: [ {...}, ... ] }
+	if m, ok := raw.(map[string]any); ok {
+		if inner, has := m["devices"]; has {
+			return extractDeviceAnswers(inner)
+		}
+		// single device row object
+		if _, hasModel := m["model"]; hasModel {
+			return []map[string]any{m}
+		}
 		return out
 	}
 	switch t := raw.(type) {
