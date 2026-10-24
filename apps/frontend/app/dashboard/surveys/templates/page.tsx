@@ -75,7 +75,10 @@ import {
   PageToolbar,
 } from "@/components/mobile-data-list";
 import { AssayTreeField } from "@/components/assay-tree-field";
-import { DeviceBlockField } from "@/components/device-block-field";
+import {
+  DeviceBlockField,
+  normalizeDeviceSubFieldOrder,
+} from "@/components/device-block-field";
 import { EqaParticipationField } from "@/components/eqa-participation-field";
 import { fetchEqaFields, type EqaFieldNode } from "@/lib/eqa";
 
@@ -358,21 +361,25 @@ const DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS: {
 function orderDeviceCollectFields(
   field: SurveyField,
 ): typeof DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS {
-  const byKey = new Map(
-    DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS.map((f) => [f.key, f]),
+  const byShort = new Map(
+    DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS.map((f) => [
+      f.key.replace(/^devices\[\]\./, ""),
+      f,
+    ]),
   );
-  const order = Array.isArray(field.subFieldOrder) ? field.subFieldOrder : [];
+  const shortOrder = normalizeDeviceSubFieldOrder(field.subFieldOrder);
   const seen = new Set<string>();
   const out: typeof DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS = [];
-  for (const k of order) {
-    const hit = byKey.get(k);
+  for (const k of shortOrder) {
+    const hit = byShort.get(k);
     if (hit && !seen.has(k)) {
       out.push(hit);
       seen.add(k);
     }
   }
   for (const f of DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS) {
-    if (!seen.has(f.key)) out.push(f);
+    const short = f.key.replace(/^devices\[\]\./, "");
+    if (!seen.has(short)) out.push(f);
   }
   return out;
 }
@@ -962,22 +969,45 @@ export default function SurveyTemplatesPage() {
     if ((specialBlockField.type || "").toLowerCase() !== "device_block") return;
     const template = items.find((t) => t.id === specialBlockTemplateId);
     if (!template) return;
+    const prevField = specialBlockField;
     const ordered = orderDeviceCollectFields(specialBlockField);
     const idx = ordered.findIndex((f) => f.key === key);
     const nextIdx = idx + dir;
     if (idx < 0 || nextIdx < 0 || nextIdx >= ordered.length) return;
     const keys = ordered.map((f) => f.key);
     const tmp = keys[idx];
-    keys[idx] = keys[nextIdx];
-    keys[nextIdx] = tmp;
+    keys[idx] = keys[nextIdx]!;
+    keys[nextIdx] = tmp!;
+    // Persist short keys so fill UI / preview share one canonical order.
+    const shortKeys = normalizeDeviceSubFieldOrder(keys);
     const schema = normalizeSchema(template.schema);
     const fields = (schema.fields || []).map((f) =>
-      f.key === specialBlockField.key ? { ...f, subFieldOrder: keys } : f,
+      f.key === specialBlockField.key
+        ? { ...f, subFieldOrder: shortKeys }
+        : f,
+    );
+    // Optimistic: list + preview update immediately.
+    setSpecialBlockField({ ...specialBlockField, subFieldOrder: shortKeys });
+    setItems((prev) =>
+      prev.map((t) =>
+        t.id !== template.id
+          ? t
+          : {
+              ...t,
+              schema: { fields, sections: schema.sections },
+            },
+      ),
     );
     setError(null);
-    const ok = await persistSchema(template, { fields, sections: schema.sections });
-    if (ok) {
-      setSpecialBlockField({ ...specialBlockField, subFieldOrder: keys });
+    const ok = await persistSchema(
+      { ...template, schema: { fields, sections: schema.sections } },
+      { fields, sections: schema.sections },
+    );
+    if (!ok) {
+      setSpecialBlockField(prevField);
+      setItems((prev) =>
+        prev.map((t) => (t.id === template.id ? template : t)),
+      );
     }
   };
 
@@ -2234,6 +2264,7 @@ export default function SurveyTemplatesPage() {
                         }}
                         onChange={() => {}}
                         disabled
+                        subFieldOrder={specialBlockField.subFieldOrder}
                       />
                     ) : (specialBlockField.type || "").toLowerCase() ===
                       "assay_block" ? (

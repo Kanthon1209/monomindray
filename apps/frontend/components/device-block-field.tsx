@@ -136,18 +136,69 @@ function categoriesUnderLine(tree: AssayTreeNode[], lineCode: string): AssayTree
   return (line?.children || []).filter((c) => c.kind === "category");
 }
 
+/** Canonical short keys for device_block sub-fields (fill UI order). */
+export const DEFAULT_DEVICE_SUB_FIELD_ORDER = [
+  "brand",
+  "model",
+  "serialNo",
+  "installedAt",
+  "enabledAt",
+  "usageLocation",
+  "assayLineCode",
+  "itemCodes",
+  "reagentBrand",
+  "monthlySampleVolume",
+  "deptHead",
+  "channelCsa",
+  "serviceEvaluation",
+] as const;
+
+export type DeviceSubFieldKey = (typeof DEFAULT_DEVICE_SUB_FIELD_ORDER)[number];
+
+/** Accept either short keys (`brand`) or template keys (`devices[].brand`). */
+export function normalizeDeviceSubFieldOrder(
+  order?: string[] | null,
+): DeviceSubFieldKey[] {
+  const allowed = new Set<string>(DEFAULT_DEVICE_SUB_FIELD_ORDER);
+  const seen = new Set<string>();
+  const out: DeviceSubFieldKey[] = [];
+  for (const raw of order || []) {
+    const k = String(raw || "")
+      .trim()
+      .replace(/^devices\[\]\./, "");
+    if (!k || !allowed.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k as DeviceSubFieldKey);
+  }
+  for (const k of DEFAULT_DEVICE_SUB_FIELD_ORDER) {
+    if (!seen.has(k)) out.push(k);
+  }
+  return out;
+}
+
 type Props = {
   value: any;
   onChange: (next: DeviceBlockAnswer) => void;
   disabled?: boolean;
+  /** Template-configured display order; short or `devices[].*` keys. */
+  subFieldOrder?: string[];
 };
 
-export function DeviceBlockField({ value, onChange, disabled }: Props) {
+export function DeviceBlockField({
+  value,
+  onChange,
+  disabled,
+  subFieldOrder,
+}: Props) {
   const [tree, setTree] = useState<AssayTreeNode[]>([]);
   const [brandOptions, setBrandOptions] = useState<string[]>(SEED_BRANDS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const answer = useMemo(() => normalizeDeviceBlockAnswer(value), [value]);
+  const orderedKeys = useMemo(
+    () => normalizeDeviceSubFieldOrder(subFieldOrder),
+    [subFieldOrder],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -260,332 +311,405 @@ export function DeviceBlockField({ value, onChange, disabled }: Props) {
               ) : null}
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>所属公司</Label>
-                <ComboboxInput
-                  value={row.brand}
-                  disabled={disabled}
-                  placeholder="输入或选择公司（可自定义）"
-                  options={brandOptions}
-                  onChange={(v) => updateRow(index, { brand: v })}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  可自由输入；审核写入后下次联想会带出自定义公司名
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label>所属检测线</Label>
-                <Select
-                  value={row.assayLineCode || undefined}
-                  disabled={disabled}
-                  onValueChange={(v) =>
-                    updateRow(index, { assayLineCode: v })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择检测线" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {lines.map((line) => (
-                      <SelectItem key={line.code} value={line.code}>
-                        {line.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>机型</Label>
-                <Input
-                  value={row.model}
-                  disabled={disabled}
-                  placeholder="如 BS-2000M / CL-8000（必填）"
-                  onChange={(e) => updateRow(index, { model: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>序列号</Label>
-                <Input
-                  value={row.serialNo || ""}
-                  disabled={disabled}
-                  onChange={(e) =>
-                    updateRow(index, { serialNo: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>安装日期</Label>
-                <Input
-                  type="date"
-                  value={row.installedAt || ""}
-                  disabled={disabled}
-                  onChange={(e) =>
-                    updateRow(index, { installedAt: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>启用日期</Label>
-                <Input
-                  type="date"
-                  value={row.enabledAt || ""}
-                  disabled={disabled}
-                  onChange={(e) =>
-                    updateRow(index, { enabledAt: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>使用位置</Label>
-                <Select
-                  value={
-                    (() => {
-                      const v = (row.usageLocation || "").trim();
-                      if (!v) return undefined;
-                      if (
-                        (DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]).includes(
-                          v,
-                        )
-                      )
-                        return v;
-                      return "其他";
-                    })()
-                  }
-                  disabled={disabled}
-                  onValueChange={(v) => {
-                    if (v === "其他") {
-                      const cur = (row.usageLocation || "").trim();
-                      const isPreset = (
-                        DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]
-                      ).includes(cur);
-                      updateRow(index, {
-                        usageLocation:
-                          !cur || isPreset ? "其他" : cur,
-                      });
-                    } else {
-                      updateRow(index, { usageLocation: v });
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择使用位置" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DEVICE_USAGE_LOCATION_OPTIONS.map((opt) => (
-                      <SelectItem key={opt} value={opt}>
-                        {opt}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {(() => {
-                  const v = (row.usageLocation || "").trim();
-                  const isOther =
-                    v === "其他" ||
-                    (v !== "" &&
-                      !(DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]).includes(
-                        v,
-                      ));
-                  if (!isOther) return null;
+              {orderedKeys.map((fieldKey) => {
+                if (fieldKey === "brand") {
                   return (
-                    <Input
-                      className="mt-1.5"
-                      value={v === "其他" ? "" : v}
-                      disabled={disabled}
-                      placeholder="请填写具体位置"
-                      onChange={(e) =>
-                        updateRow(index, {
-                          usageLocation: e.target.value.trim()
-                            ? e.target.value
-                            : "其他",
-                        })
-                      }
-                    />
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>所属公司</Label>
+                      <ComboboxInput
+                        value={row.brand}
+                        disabled={disabled}
+                        placeholder="输入或选择公司（可自定义）"
+                        options={brandOptions}
+                        onChange={(v) => updateRow(index, { brand: v })}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        可自由输入；审核写入后下次联想会带出自定义公司名
+                      </p>
+                    </div>
                   );
-                })()}
-              </div>
-              <div className="space-y-1.5">
-                <Label>试剂品牌</Label>
-                <Input
-                  value={row.reagentBrand || ""}
-                  disabled={disabled}
-                  placeholder="如 迈瑞 / 罗氏"
-                  onChange={(e) =>
-                    updateRow(index, { reagentBrand: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>月样本量</Label>
-                <Input
-                  value={row.monthlySampleVolume || ""}
-                  disabled={disabled}
-                  placeholder="如 1200"
-                  onChange={(e) =>
-                    updateRow(index, { monthlySampleVolume: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>科室负责人</Label>
-                <Input
-                  value={row.deptHead || ""}
-                  disabled={disabled}
-                  placeholder="姓名"
-                  onChange={(e) =>
-                    updateRow(index, { deptHead: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>渠道CSA</Label>
-                <Input
-                  value={row.channelCsa || ""}
-                  disabled={disabled}
-                  placeholder="渠道 CSA"
-                  onChange={(e) =>
-                    updateRow(index, { channelCsa: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label>客户服务评价</Label>
-                <Select
-                  value={row.serviceEvaluation || undefined}
-                  disabled={disabled}
-                  onValueChange={(v) =>
-                    updateRow(index, { serviceEvaluation: v })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择服务评价（系统预设）" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DEVICE_SERVICE_EVALUATION_OPTIONS.map((opt) => (
-                      <SelectItem key={opt} value={opt}>
-                        {opt}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {row.assayLineCode ? (
-              <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs text-muted-foreground">
-                    该检测线下细项（已选 {row.itemCodes.length}）
-                  </Label>
-                  {!disabled && cats.length > 0 ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        const all = leafItemsUnderLine(tree, row.assayLineCode).map(
-                          (i) => i.code,
+                }
+                if (fieldKey === "model") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>机型</Label>
+                      <Input
+                        value={row.model}
+                        disabled={disabled}
+                        placeholder="如 BS-2000M / CL-8000（必填）"
+                        onChange={(e) =>
+                          updateRow(index, { model: e.target.value })
+                        }
+                      />
+                    </div>
+                  );
+                }
+                if (fieldKey === "serialNo") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>序列号</Label>
+                      <Input
+                        value={row.serialNo || ""}
+                        disabled={disabled}
+                        onChange={(e) =>
+                          updateRow(index, { serialNo: e.target.value })
+                        }
+                      />
+                    </div>
+                  );
+                }
+                if (fieldKey === "installedAt") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>安装日期</Label>
+                      <Input
+                        type="date"
+                        value={row.installedAt || ""}
+                        disabled={disabled}
+                        onChange={(e) =>
+                          updateRow(index, { installedAt: e.target.value })
+                        }
+                      />
+                    </div>
+                  );
+                }
+                if (fieldKey === "enabledAt") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>启用日期</Label>
+                      <Input
+                        type="date"
+                        value={row.enabledAt || ""}
+                        disabled={disabled}
+                        onChange={(e) =>
+                          updateRow(index, { enabledAt: e.target.value })
+                        }
+                      />
+                    </div>
+                  );
+                }
+                if (fieldKey === "usageLocation") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>使用位置</Label>
+                      <Select
+                        value={
+                          (() => {
+                            const v = (row.usageLocation || "").trim();
+                            if (!v) return undefined;
+                            if (
+                              (
+                                DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]
+                              ).includes(v)
+                            )
+                              return v;
+                            return "其他";
+                          })()
+                        }
+                        disabled={disabled}
+                        onValueChange={(v) => {
+                          if (v === "其他") {
+                            const cur = (row.usageLocation || "").trim();
+                            const isPreset = (
+                              DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]
+                            ).includes(cur);
+                            updateRow(index, {
+                              usageLocation: !cur || isPreset ? "其他" : cur,
+                            });
+                          } else {
+                            updateRow(index, { usageLocation: v });
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择使用位置" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DEVICE_USAGE_LOCATION_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {(() => {
+                        const v = (row.usageLocation || "").trim();
+                        const isOther =
+                          v === "其他" ||
+                          (v !== "" &&
+                            !(
+                              DEVICE_USAGE_LOCATION_OPTIONS as readonly string[]
+                            ).includes(v));
+                        if (!isOther) return null;
+                        return (
+                          <Input
+                            className="mt-1.5"
+                            value={v === "其他" ? "" : v}
+                            disabled={disabled}
+                            placeholder="请填写具体位置"
+                            onChange={(e) =>
+                              updateRow(index, {
+                                usageLocation: e.target.value.trim()
+                                  ? e.target.value
+                                  : "其他",
+                              })
+                            }
+                          />
                         );
-                        const allSelected = all.every((c) => selected.has(c));
-                        updateRow(index, {
-                          itemCodes: allSelected ? [] : all,
-                        });
-                      }}
-                    >
-                      {leafItemsUnderLine(tree, row.assayLineCode).every((i) =>
-                        selected.has(i.code),
-                      )
-                        ? "清空"
-                        : "全选"}
-                    </Button>
-                  ) : null}
-                </div>
-                {cats.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    该检测线下暂无细项目录
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {cats.map((cat) => {
-                      const items = (cat.children || []).filter(
-                        (c) => c.kind === "item",
-                      );
-                      if (items.length === 0) return null;
-                      const catCodes = items.map((i) => i.code);
-                      const catSelected = catCodes.filter((c) =>
-                        selected.has(c),
-                      ).length;
-                      const catAllOn =
-                        catSelected === catCodes.length && catCodes.length > 0;
-                      return (
-                        <div key={cat.code} className="space-y-1.5">
-                          <div className="flex min-h-7 items-center gap-2">
-                            <span
-                              className="text-xs font-medium leading-7 text-muted-foreground"
-                              title={cat.name}
-                            >
-                              {cat.name}
-                            </span>
-                            <span className="text-xs leading-7 text-muted-foreground">
-                              {catSelected}/{catCodes.length}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
-                            <label className="inline-flex items-center gap-1.5 text-sm font-medium">
-                              <input
-                                type="checkbox"
-                                className="h-3.5 w-3.5"
-                                disabled={disabled}
-                                checked={catAllOn}
-                                ref={(el) => {
-                                  if (el) {
-                                    el.indeterminate =
-                                      catSelected > 0 && !catAllOn;
-                                  }
-                                }}
-                                onChange={() => {
-                                  const set = new Set(row.itemCodes);
-                                  if (catAllOn) {
-                                    catCodes.forEach((c) => set.delete(c));
-                                  } else {
-                                    catCodes.forEach((c) => set.add(c));
-                                  }
+                      })()}
+                    </div>
+                  );
+                }
+                if (fieldKey === "assayLineCode") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>所属检测线</Label>
+                      <Select
+                        value={row.assayLineCode || undefined}
+                        disabled={disabled}
+                        onValueChange={(v) =>
+                          updateRow(index, { assayLineCode: v })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择检测线" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {lines.map((line) => (
+                            <SelectItem key={line.code} value={line.code}>
+                              {line.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                }
+                if (fieldKey === "reagentBrand") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>试剂品牌</Label>
+                      <Input
+                        value={row.reagentBrand || ""}
+                        disabled={disabled}
+                        placeholder="如 迈瑞 / 罗氏"
+                        onChange={(e) =>
+                          updateRow(index, { reagentBrand: e.target.value })
+                        }
+                      />
+                    </div>
+                  );
+                }
+                if (fieldKey === "monthlySampleVolume") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>月样本量</Label>
+                      <Input
+                        value={row.monthlySampleVolume || ""}
+                        disabled={disabled}
+                        placeholder="如 1200"
+                        onChange={(e) =>
+                          updateRow(index, {
+                            monthlySampleVolume: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  );
+                }
+                if (fieldKey === "deptHead") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>科室负责人</Label>
+                      <Input
+                        value={row.deptHead || ""}
+                        disabled={disabled}
+                        placeholder="姓名"
+                        onChange={(e) =>
+                          updateRow(index, { deptHead: e.target.value })
+                        }
+                      />
+                    </div>
+                  );
+                }
+                if (fieldKey === "channelCsa") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5">
+                      <Label>渠道CSA</Label>
+                      <Input
+                        value={row.channelCsa || ""}
+                        disabled={disabled}
+                        placeholder="渠道 CSA"
+                        onChange={(e) =>
+                          updateRow(index, { channelCsa: e.target.value })
+                        }
+                      />
+                    </div>
+                  );
+                }
+                if (fieldKey === "serviceEvaluation") {
+                  return (
+                    <div key={fieldKey} className="space-y-1.5 md:col-span-2">
+                      <Label>客户服务评价</Label>
+                      <Select
+                        value={row.serviceEvaluation || undefined}
+                        disabled={disabled}
+                        onValueChange={(v) =>
+                          updateRow(index, { serviceEvaluation: v })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择服务评价（系统预设）" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DEVICE_SERVICE_EVALUATION_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                }
+                if (fieldKey === "itemCodes") {
+                  return (
+                    <div key={fieldKey} className="md:col-span-2">
+                      {row.assayLineCode ? (
+                        <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <Label className="text-xs text-muted-foreground">
+                              该检测线下细项（已选 {row.itemCodes.length}）
+                            </Label>
+                            {!disabled && cats.length > 0 ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs"
+                                onClick={() => {
+                                  const all = leafItemsUnderLine(
+                                    tree,
+                                    row.assayLineCode,
+                                  ).map((i) => i.code);
+                                  const allSelected = all.every((c) =>
+                                    selected.has(c),
+                                  );
                                   updateRow(index, {
-                                    itemCodes: Array.from(set),
+                                    itemCodes: allSelected ? [] : all,
                                   });
                                 }}
-                              />
-                              全选
-                            </label>
-                            {items.map((it) => (
-                              <label
-                                key={it.code}
-                                className="inline-flex items-center gap-1.5 text-sm"
                               >
-                                <input
-                                  type="checkbox"
-                                  className="h-3.5 w-3.5"
-                                  disabled={disabled}
-                                  checked={selected.has(it.code)}
-                                  onChange={(e) =>
-                                    toggleItem(index, it.code, e.target.checked)
-                                  }
-                                />
-                                {it.name}
-                              </label>
-                            ))}
+                                {leafItemsUnderLine(
+                                  tree,
+                                  row.assayLineCode,
+                                ).every((i) => selected.has(i.code))
+                                  ? "清空"
+                                  : "全选"}
+                              </Button>
+                            ) : null}
                           </div>
+                          {cats.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              该检测线下暂无细项目录
+                            </p>
+                          ) : (
+                            <div className="space-y-3">
+                              {cats.map((cat) => {
+                                const items = (cat.children || []).filter(
+                                  (c) => c.kind === "item",
+                                );
+                                if (items.length === 0) return null;
+                                const catCodes = items.map((i) => i.code);
+                                const catSelected = catCodes.filter((c) =>
+                                  selected.has(c),
+                                ).length;
+                                const catAllOn =
+                                  catSelected === catCodes.length &&
+                                  catCodes.length > 0;
+                                return (
+                                  <div key={cat.code} className="space-y-1.5">
+                                    <div className="flex min-h-7 items-center gap-2">
+                                      <span
+                                        className="text-xs font-medium leading-7 text-muted-foreground"
+                                        title={cat.name}
+                                      >
+                                        {cat.name}
+                                      </span>
+                                      <span className="text-xs leading-7 text-muted-foreground">
+                                        {catSelected}/{catCodes.length}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                                      <label className="inline-flex items-center gap-1.5 text-sm font-medium">
+                                        <input
+                                          type="checkbox"
+                                          className="h-3.5 w-3.5"
+                                          disabled={disabled}
+                                          checked={catAllOn}
+                                          ref={(el) => {
+                                            if (el) {
+                                              el.indeterminate =
+                                                catSelected > 0 && !catAllOn;
+                                            }
+                                          }}
+                                          onChange={() => {
+                                            const set = new Set(row.itemCodes);
+                                            if (catAllOn) {
+                                              catCodes.forEach((c) =>
+                                                set.delete(c),
+                                              );
+                                            } else {
+                                              catCodes.forEach((c) =>
+                                                set.add(c),
+                                              );
+                                            }
+                                            updateRow(index, {
+                                              itemCodes: Array.from(set),
+                                            });
+                                          }}
+                                        />
+                                        全选
+                                      </label>
+                                      {items.map((it) => (
+                                        <label
+                                          key={it.code}
+                                          className="inline-flex items-center gap-1.5 text-sm"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            className="h-3.5 w-3.5"
+                                            disabled={disabled}
+                                            checked={selected.has(it.code)}
+                                            onChange={(e) =>
+                                              toggleItem(
+                                                index,
+                                                it.code,
+                                                e.target.checked,
+                                              )
+                                            }
+                                          />
+                                          {it.name}
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                请先选择所属检测线，再勾选细项。
-              </p>
-            )}
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          请先选择所属检测线，再勾选细项。
+                        </p>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
           </div>
         );
       })}

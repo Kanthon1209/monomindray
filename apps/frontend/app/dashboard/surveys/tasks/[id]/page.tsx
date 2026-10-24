@@ -655,6 +655,7 @@ export default function SurveyTaskFillPage() {
                       value={answers[field.key]}
                       disabled={readOnly || lockedSet.has(field.key)}
                       onChange={(v) => setField(field.key, v)}
+                      subFieldOrder={field.subFieldOrder}
                     />
                   </div>
                 ))}

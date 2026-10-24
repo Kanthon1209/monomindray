@@ -174,6 +174,7 @@ export function SurveyAnswersView({ answers, fields, className }: Props) {
                 value={v}
                 onChange={() => {}}
                 disabled
+                subFieldOrder={meta.field?.subFieldOrder}
               />
             </div>
           );
