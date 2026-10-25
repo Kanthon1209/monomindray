@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="${MINDRAY_REMOTE_DIR:-/home/kanthon/mindray}"
 DEPLOY="$ROOT/deploy"
 ENV_FILE="$DEPLOY/.env"
-XLSX_SRC="${1:-$ROOT/scripts/data/eqa-customers.xlsx}"
+XLSX_SRC="${1:-$ROOT/scripts/data/EQA_v1.xlsx}"
 MODE="${2:-commit}"  # commit | dry-run
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -32,9 +32,9 @@ cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
 cp -f "$ROOT/scripts/eqa_xlsx_import.py" "$WORK/"
-cp -f "$XLSX_SRC" "$WORK/eqa-customers.xlsx"
+cp -f "$XLSX_SRC" "$WORK/EQA_v1.xlsx"
 
-ARGS=(python /work/eqa_xlsx_import.py --xlsx /work/eqa-customers.xlsx --dsn "postgres://${DB_USER}:${DB_PASSWORD}@mindray-db:5432/${DB_NAME}?sslmode=disable")
+ARGS=(python /work/eqa_xlsx_import.py --xlsx /work/EQA_v1.xlsx --dsn "postgres://${DB_USER}:${DB_PASSWORD}@mindray-db:5432/${DB_NAME}?sslmode=disable")
 if [[ "$MODE" == "dry-run" ]]; then
   ARGS+=(--dry-run)
 else

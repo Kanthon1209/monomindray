@@ -42,8 +42,14 @@ npm-debug.log*
 # Go
 apps/backend/vendor/
 
-# Data
+# Data (keep scripts/data canonical EQA xlsx tracked)
 data/
+!scripts/data/
+scripts/data/*
+!scripts/data/EQA_v1.xlsx
+!scripts/data/eqa-customers.xlsx
+!scripts/data/eqa_dual_major.sql
+!scripts/data/README.md
 
 # Scratch / one-off scripts (use repo-root tmp/, not commit)
 /tmp/

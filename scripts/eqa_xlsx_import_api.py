@@ -214,20 +214,20 @@ def load_xlsx(path: Path):
     hospitals = {}
     for row in info_rows:
         hospitals[norm_code(row["code"]) or f"name:{row['name']}"] = row
+    # 国考/省考 only overlay tags onto sheet1 hospitals; never expand universe.
     guo_by = {}
     for row in guo_rows:
         k = norm_code(row["code"]) or f"name:{row['name']}"
         guo_by[k] = row
         if k not in hospitals:
-            hospitals[k] = {**row, "subjects": {}}
-        else:
-            if not hospitals[k].get("tag") and row.get("tag"):
-                hospitals[k]["tag"] = row["tag"]
+            continue
+        if not hospitals[k].get("tag") and row.get("tag"):
+            hospitals[k]["tag"] = row["tag"]
     for row in sheng_rows:
         k = norm_code(row["code"]) or f"name:{row['name']}"
         if k not in hospitals:
-            hospitals[k] = {**row, "subjects": {}}
-        elif not hospitals[k].get("tag") and row.get("tag"):
+            continue
+        if not hospitals[k].get("tag") and row.get("tag"):
             hospitals[k]["tag"] = row["tag"]
     return hospitals, guo_by, guo_subj
 
@@ -257,7 +257,7 @@ def match(row, by_code, by_name):
 def main():
     ap = argparse.ArgumentParser()
     root = Path(__file__).resolve().parents[1]
-    ap.add_argument("--xlsx", type=Path, default=root / "scripts/data/eqa-customers.xlsx")
+    ap.add_argument("--xlsx", type=Path, default=root / "scripts/data/EQA_v1.xlsx")
     ap.add_argument("--base", default=os.environ.get("MINDRAY_API", "https://www.mindcollect.xyz"))
     ap.add_argument("--email", default=os.environ.get("MINDRAY_ADMIN_EMAIL", "admin@mindray.com"))
     ap.add_argument("--password", default=os.environ.get("MINDRAY_ADMIN_PASSWORD", "admin123"))

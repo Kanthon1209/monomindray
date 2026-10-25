@@ -5,6 +5,7 @@ Usage:
   DATABASE_URL=postgres://... python3 scripts/eqa_xlsx_import.py [--xlsx PATH] [--dry-run] [--commit]
 
 Rules (mandatory):
+  - Hospital universe = sheet 「EQA信息表」 only (国考/省考 never add hospitals).
   - Match by normalized customer_code (strip, leading-zero-insensitive); store padded form.
   - Name fallback only if code empty on BOTH sides.
   - INSERT new hospitals only; on match UPDATE empty columns only; never overwrite
@@ -210,29 +211,27 @@ def load_xlsx(path: Path):
         key = norm_code(row["code"]) or f"name:{row['name']}"
         hospitals[key] = row
 
-    # Overlay tags/dual from info already; national facts from guo
+    # Overlay tags/owner from 国考/省考 onto sheet1 hospitals ONLY.
+    # Never insert hospitals that are not on 「EQA信息表」 (canonical universe).
     guo_by_key = {}
     for row in guo_rows:
         key = norm_code(row["code"]) or f"name:{row['name']}"
         guo_by_key[key] = row
         if key not in hospitals:
-            hospitals[key] = {**row, "subjects": {}}
-        else:
-            # fill empty meta from guo
-            h = hospitals[key]
-            if not h.get("tag") and row.get("tag"):
-                h["tag"] = row["tag"]
-            if not h.get("owner") and row.get("owner"):
-                h["owner"] = row["owner"]
+            continue
+        h = hospitals[key]
+        if not h.get("tag") and row.get("tag"):
+            h["tag"] = row["tag"]
+        if not h.get("owner") and row.get("owner"):
+            h["owner"] = row["owner"]
 
     for row in sheng_rows:
         key = norm_code(row["code"]) or f"name:{row['name']}"
         if key not in hospitals:
-            hospitals[key] = {**row, "subjects": {}}
-        else:
-            h = hospitals[key]
-            if not h.get("tag") and row.get("tag"):
-                h["tag"] = row["tag"]
+            continue
+        h = hospitals[key]
+        if not h.get("tag") and row.get("tag"):
+            h["tag"] = row["tag"]
 
     return {
         "hospitals": hospitals,
@@ -585,7 +584,7 @@ def run(xlsx: Path, dsn: str, dry: bool, commit: bool) -> Stats:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     root = Path(__file__).resolve().parents[1]
-    ap.add_argument("--xlsx", type=Path, default=root / "scripts/data/eqa-customers.xlsx")
+    ap.add_argument("--xlsx", type=Path, default=root / "scripts/data/EQA_v1.xlsx")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--commit", action="store_true", help="Actually commit (default rolls back unless set)")
     ap.add_argument("--dsn", default=os.environ.get("DATABASE_URL", ""))
