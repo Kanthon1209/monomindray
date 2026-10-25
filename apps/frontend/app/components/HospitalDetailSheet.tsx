@@ -36,11 +36,103 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 interface HospitalDetailSheetProps {
   hospitalId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+/** Canonical short assay-line keys used for tags + filters. */
+const ASSAY_LINE_FILTERS = ["全部", "生化", "免疫", "凝血", "血球"] as const;
+type AssayLineShort = (typeof ASSAY_LINE_FILTERS)[number];
+type AssayLineKey = Exclude<AssayLineShort, "全部">;
+
+const LINE_TAG_CLASS: Record<AssayLineKey, string> = {
+  生化:
+    "border-transparent bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-200",
+  免疫:
+    "border-transparent bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-200",
+  凝血:
+    "border-transparent bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
+  血球:
+    "border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200",
+};
+
+const FILTER_IDLE_CLASS =
+  "border bg-background text-muted-foreground hover:bg-muted/50";
+
+function shortenAssayLine(raw: string | undefined | null): AssayLineKey | "" {
+  const s = (raw || "").trim();
+  if (!s) return "";
+  const lower = s.toLowerCase();
+  if (
+    lower === "biochem" ||
+    lower.includes("biochem") ||
+    s.includes("生化")
+  ) {
+    return "生化";
+  }
+  if (
+    lower === "immuno" ||
+    lower.includes("immuno") ||
+    s.includes("免疫")
+  ) {
+    return "免疫";
+  }
+  if (
+    lower === "coag" ||
+    lower.includes("coag") ||
+    s.includes("凝血")
+  ) {
+    return "凝血";
+  }
+  if (
+    lower === "heme" ||
+    lower.includes("heme") ||
+    lower.includes("hematol") ||
+    s.includes("血球") ||
+    s.includes("血常规")
+  ) {
+    return "血球";
+  }
+  // Fallback: strip trailing 「项目」
+  const stripped = s.replace(/项目$/u, "").trim();
+  if (
+    stripped === "生化" ||
+    stripped === "免疫" ||
+    stripped === "凝血" ||
+    stripped === "血球"
+  ) {
+    return stripped;
+  }
+  return "";
+}
+
+function AssayLineTag({
+  label,
+  className,
+}: {
+  label: AssayLineKey | string;
+  className?: string;
+}) {
+  const short = shortenAssayLine(label) || label;
+  const color =
+    short === "生化" ||
+    short === "免疫" ||
+    short === "凝血" ||
+    short === "血球"
+      ? LINE_TAG_CLASS[short]
+      : "border-transparent bg-secondary text-secondary-foreground";
+  return (
+    <Badge
+      variant="secondary"
+      className={cn("font-normal", color, className)}
+    >
+      {short}
+    </Badge>
+  );
 }
 
 function buildAssayLookups(tree: AssayTreeNode[]) {
@@ -72,13 +164,25 @@ function buildAssayLookups(tree: AssayTreeNode[]) {
   return { lineNameByCode, itemToCategory };
 }
 
-function resolveLineName(
+function resolveLineRaw(
   device: Device,
   lineNameByCode: Map<string, string>,
 ): string {
   const code = (device.assayLineCode || device.category || "").trim();
   if (!code) return "";
   return lineNameByCode.get(code) || code;
+}
+
+function resolveLineShort(
+  device: Device,
+  lineNameByCode: Map<string, string>,
+): AssayLineKey | "" {
+  const code = (device.assayLineCode || device.category || "").trim();
+  return (
+    shortenAssayLine(code) ||
+    shortenAssayLine(lineNameByCode.get(code) || "") ||
+    shortenAssayLine(resolveLineRaw(device, lineNameByCode))
+  );
 }
 
 function resolvePackages(
@@ -98,12 +202,12 @@ function resolvePackages(
 
 function DeviceCard({
   device,
-  lineName,
+  lineShort,
   packages,
   variant,
 }: {
   device: Device;
-  lineName: string;
+  lineShort: AssayLineKey | "";
   packages: string[];
   variant: "own" | "competitor";
 }) {
@@ -122,9 +226,7 @@ function DeviceCard({
         <div className="min-w-0 font-medium leading-snug">
           {device.brand || "迈瑞"} {device.model}
         </div>
-        {lineName ? (
-          <div className="shrink-0 text-xs text-muted-foreground">{lineName}</div>
-        ) : null}
+        {lineShort ? <AssayLineTag label={lineShort} className="shrink-0" /> : null}
       </div>
       {device.serialNo ? (
         <div className="mt-0.5 text-xs text-muted-foreground">
@@ -203,6 +305,8 @@ function DeviceCard({
   );
 }
 
+const SECTION_TITLE =
+  "text-base font-semibold tracking-tight text-foreground";
 
 export function HospitalDetailSheet({
   hospitalId,
@@ -218,6 +322,7 @@ export function HospitalDetailSheet({
   const [eqaItems, setEqaItems] = useState<Record<number, EqaParticipationItem[]>>({});
   const [eqaDetailLoading, setEqaDetailLoading] = useState(false);
   const [selectedEqaYear, setSelectedEqaYear] = useState<number | null>(null);
+  const [lineFilter, setLineFilter] = useState<AssayLineShort>("全部");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -227,6 +332,7 @@ export function HospitalDetailSheet({
     const load = async () => {
       setLoading(true);
       setError(null);
+      setLineFilter("全部");
       const [hRes, dRes, aRes, eRes, fRes, tRes] = await Promise.all([
         getHospital(hospitalId),
         listDevices(hospitalId),
@@ -271,6 +377,18 @@ export function HospitalDetailSheet({
     [assayTree],
   );
 
+  const mindrayCoverageShort = useMemo(() => {
+    const out: AssayLineKey[] = [];
+    const seen = new Set<string>();
+    for (const raw of mindrayLines) {
+      const short = shortenAssayLine(raw);
+      if (!short || seen.has(short)) continue;
+      seen.add(short);
+      out.push(short);
+    }
+    return out;
+  }, [mindrayLines]);
+
   /** Split hospital devices: 迈瑞 = 自有, others = 竞品. */
   const { ownDevices, competitorDevices } = useMemo(() => {
     const own: Device[] = [];
@@ -282,6 +400,24 @@ export function HospitalDetailSheet({
     }
     return { ownDevices: own, competitorDevices: comps };
   }, [devices]);
+
+  const filterByLine = (list: Device[]) => {
+    if (lineFilter === "全部") return list;
+    return list.filter(
+      (d) => resolveLineShort(d, lineNameByCode) === lineFilter,
+    );
+  };
+
+  const filteredOwn = useMemo(
+    () => filterByLine(ownDevices),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ownDevices, lineFilter, lineNameByCode],
+  );
+  const filteredCompetitors = useMemo(
+    () => filterByLine(competitorDevices),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [competitorDevices, lineFilter, lineNameByCode],
+  );
 
   /** Group participation rows by year (desc); derive per-year EQA label from scopes. */
   const eqaYears = useMemo(() => {
@@ -381,7 +517,7 @@ export function HospitalDetailSheet({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 md:px-5">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4 text-sm md:px-5">
           {loading ? (
             <div className="flex h-40 items-center justify-center text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -390,10 +526,8 @@ export function HospitalDetailSheet({
             <p className="text-sm text-destructive">{error}</p>
           ) : (
             <>
-            <section className="space-y-2">
-              <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
-                客户基础
-              </h3>
+            <section className="space-y-3">
+              <h3 className={SECTION_TITLE}>客户基础</h3>
               <div className="grid divide-y rounded-lg border bg-background md:grid-cols-2 md:divide-x md:divide-y-0">
                 {[
                   { label: "客户名称", value: hospital?.name || "" },
@@ -428,43 +562,76 @@ export function HospitalDetailSheet({
                   </div>
                 ))}
               </div>
+
+              <div className="rounded-lg border bg-background px-3 py-3 md:px-4">
+                <div className="mb-2 text-xs text-muted-foreground">
+                  迈瑞覆盖检测线
+                </div>
+                {mindrayCoverageShort.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">暂无覆盖记录</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {mindrayCoverageShort.map((n) => (
+                      <AssayLineTag key={n} label={n} />
+                    ))}
+                  </div>
+                )}
+              </div>
             </section>
 
             <section className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
-                  设备与竞品
-                </h3>
-                {mindrayLines.length > 0 ? (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">迈瑞覆盖检测线</span>
-                    {mindrayLines.map((n) => (
-                      <Badge key={n} variant="secondary" className="font-normal">
-                        {n}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
+                <h3 className={SECTION_TITLE}>设备与竞品</h3>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {ASSAY_LINE_FILTERS.map((f) => {
+                    const active = lineFilter === f;
+                    const color =
+                      f === "全部"
+                        ? active
+                          ? "border-transparent bg-foreground text-background"
+                          : FILTER_IDLE_CLASS
+                        : active
+                          ? LINE_TAG_CLASS[f]
+                          : FILTER_IDLE_CLASS;
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setLineFilter(f)}
+                        className={cn(
+                          "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                          color,
+                          active && f !== "全部" ? "ring-1 ring-offset-1 ring-offset-background" : "",
+                        )}
+                      >
+                        {f}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-medium">自有设备</h4>
+                  <h4 className="text-sm font-medium text-foreground">自有设备</h4>
                   <Badge variant="outline" className="font-normal">
-                    {ownDevices.length}
+                    {filteredOwn.length}
+                    {lineFilter !== "全部" ? ` / ${ownDevices.length}` : ""}
                   </Badge>
                 </div>
-                {ownDevices.length === 0 ? (
+                {filteredOwn.length === 0 ? (
                   <div className="rounded-lg border border-dashed bg-muted/10 px-3 py-4 text-sm text-muted-foreground">
-                    暂无自有设备记录
+                    {ownDevices.length === 0
+                      ? "暂无自有设备记录"
+                      : `当前筛选「${lineFilter}」下暂无自有设备`}
                   </div>
                 ) : (
                   <ul className="grid gap-3 sm:grid-cols-2">
-                    {ownDevices.map((d) => (
+                    {filteredOwn.map((d) => (
                       <DeviceCard
                         key={d.id}
                         device={d}
-                        lineName={resolveLineName(d, lineNameByCode)}
+                        lineShort={resolveLineShort(d, lineNameByCode)}
                         packages={resolvePackages(d.itemCodes, itemToCategory)}
                         variant="own"
                       />
@@ -475,22 +642,27 @@ export function HospitalDetailSheet({
 
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-medium">竞品设备</h4>
+                  <h4 className="text-sm font-medium text-foreground">竞品设备</h4>
                   <Badge variant="outline" className="font-normal">
-                    {competitorDevices.length}
+                    {filteredCompetitors.length}
+                    {lineFilter !== "全部"
+                      ? ` / ${competitorDevices.length}`
+                      : ""}
                   </Badge>
                 </div>
-                {competitorDevices.length === 0 ? (
+                {filteredCompetitors.length === 0 ? (
                   <div className="rounded-lg border border-dashed bg-muted/10 px-3 py-4 text-sm text-muted-foreground">
-                    暂无同检测线竞品设备
+                    {competitorDevices.length === 0
+                      ? "暂无同检测线竞品设备"
+                      : `当前筛选「${lineFilter}」下暂无竞品设备`}
                   </div>
                 ) : (
                   <ul className="grid gap-3 sm:grid-cols-2">
-                    {competitorDevices.map((d) => (
+                    {filteredCompetitors.map((d) => (
                       <DeviceCard
                         key={d.id}
                         device={d}
-                        lineName={resolveLineName(d, lineNameByCode)}
+                        lineShort={resolveLineShort(d, lineNameByCode)}
                         packages={resolvePackages(d.itemCodes, itemToCategory)}
                         variant="competitor"
                       />
@@ -500,10 +672,8 @@ export function HospitalDetailSheet({
               </div>
             </section>
 
-            <section className="space-y-2">
-              <h3 className="text-xs font-semibold tracking-wide text-muted-foreground">
-                室间质评
-              </h3>
+            <section className="space-y-3">
+              <h3 className={SECTION_TITLE}>室间质评</h3>
               <div className="rounded-lg border bg-background text-sm">
                 {eqaYears.length === 0 ? (
                   <div className="px-3 py-3 text-muted-foreground md:px-4">
@@ -568,7 +738,7 @@ export function HospitalDetailSheet({
                               <div className="space-y-2">
                                 {items == null ? (
                                   <span className="text-xs text-muted-foreground">
-                                    加载中…
+                                    {eqaDetailLoading ? "加载中…" : "加载中…"}
                                   </span>
                                 ) : !items.length ? (
                                   <span className="text-xs text-muted-foreground">
