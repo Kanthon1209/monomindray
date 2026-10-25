@@ -198,10 +198,15 @@ export async function ensureEqaSurveyTemplate() {
 
 /** Derive display label from national/provincial presence for a year. */
 export function deriveEqaLabel(hasNational: boolean, hasProvincial: boolean): string {
-  if (hasNational && hasProvincial) return "EQA（国）+EQA（省、市）";
-  if (hasNational) return "EQA（国）";
-  if (hasProvincial) return "EQA（省、市）";
-  return "";
+  return deriveEqaTags(hasNational, hasProvincial).join("+");
+}
+
+/** Separate EQA tags for UI (never combine into one badge). */
+export function deriveEqaTags(hasNational: boolean, hasProvincial: boolean): string[] {
+  const tags: string[] = [];
+  if (hasNational) tags.push("EQA（国）");
+  if (hasProvincial) tags.push("EQA（省、市）");
+  return tags;
 }
 
 export function scopeLabel(scope?: string) {

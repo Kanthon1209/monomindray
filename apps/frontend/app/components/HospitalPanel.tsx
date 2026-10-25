@@ -121,19 +121,34 @@ export function HospitalPanel({
     return displayValue(raw);
   };
 
-  /** List column: category names only (derived from hospital_assays leaves). */
-  const renderAssayCategories = (h: Hospital, compact = false) => {
+  /** List column: fixed-height chip row; overflow scrolls horizontally on hover. */
+  const renderAssayCategories = (h: Hospital) => {
     const names = (h.assayNames || []).filter(Boolean);
     if (!names.length) {
       return <span className="text-muted-foreground">—</span>;
     }
     return (
-      <div className={cn("flex flex-wrap gap-1", compact && "line-clamp-2 overflow-hidden")}>
+      <div
+        className={cn(
+          "flex h-7 max-w-full flex-nowrap items-center gap-1 overflow-x-hidden overflow-y-hidden",
+          "hover:overflow-x-auto",
+          "[scrollbar-width:thin]",
+        )}
+        title={names.join("、")}
+        onClick={(e) => e.stopPropagation()}
+        onWheel={(e) => {
+          const el = e.currentTarget;
+          if (el.scrollWidth <= el.clientWidth) return;
+          el.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
         {names.map((n) => (
           <Badge
             key={n}
             variant="secondary"
-            className="max-w-[9rem] truncate font-normal"
+            className="h-6 max-w-[9rem] shrink-0 truncate font-normal"
             title={n}
           >
             {n}
@@ -250,7 +265,7 @@ export function HospitalPanel({
                         {branch !== "—" ? <span>{branch}</span> : null}
                       </div>
                       {(hospital.assayNames || []).length ? (
-                        <div className="pt-0.5">{renderAssayCategories(hospital, true)}</div>
+                        <div className="pt-0.5">{renderAssayCategories(hospital)}</div>
                       ) : null}
                     </div>
                     <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
