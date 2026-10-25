@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
@@ -165,6 +165,7 @@ export default function SurveyTaskFillPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const actionFeedbackRef = useRef<HTMLDivElement | null>(null);
   const [linkedHospitalId, setLinkedHospitalId] = useState<number | undefined>(
     undefined,
   );
@@ -183,6 +184,18 @@ export default function SurveyTaskFillPage() {
       cancelled = true;
     };
   }, []);
+
+  const showActionFeedback = (kind: "error" | "message", value: string) => {
+    if (kind === "error") setError(value);
+    else setMessage(value);
+    // Wait for React to paint the footer banner before scrolling to it.
+    window.setTimeout(() => {
+      actionFeedbackRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 50);
+  };
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -346,9 +359,9 @@ export default function SurveyTaskFillPage() {
         (assignment?.hospitalId ? Number(assignment.hospitalId) : undefined),
     });
     setSaving(false);
-    if (res.error) setError(res.error);
+    if (res.error) showActionFeedback("error", res.error);
     else {
-      setMessage("草稿已保存");
+      showActionFeedback("message", "草稿已保存");
       await load();
     }
   };
@@ -363,7 +376,10 @@ export default function SurveyTaskFillPage() {
       (assignment?.hospitalOpen || !hospitalBound) &&
       (!resolvedHospitalId || resolvedHospitalId <= 0)
     ) {
-      setError("请从医院名称联想列表中选择一家已有医院后再提交");
+      showActionFeedback(
+        "error",
+        "请从医院名称联想列表中选择一家已有医院后再提交",
+      );
       return;
     }
     setSaving(true);
@@ -372,12 +388,12 @@ export default function SurveyTaskFillPage() {
       hospitalId: resolvedHospitalId,
     });
     setSaving(false);
-    if (res.error) setError(res.error);
+    if (res.error) showActionFeedback("error", res.error);
     else if (res.nextAssignmentId) {
-      setMessage("已提交审核。正在打开下一份空白填报…");
+      showActionFeedback("message", "已提交审核。正在打开下一份空白填报…");
       router.push(`/dashboard/surveys/tasks/${res.nextAssignmentId}`);
     } else {
-      setMessage("已提交审核");
+      showActionFeedback("message", "已提交审核");
       await load();
     }
   };
@@ -753,9 +769,6 @@ export default function SurveyTaskFillPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5 px-0 pb-6">
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          {message ? <p className="text-sm text-green-700">{message}</p> : null}
-
           {sections.map(([section, fields]) => {
             const eqaFields = fields.filter((f) => f.type === "eqa_block");
             const assayFields = fields.filter((f) => f.type === "assay_block");
@@ -974,34 +987,52 @@ export default function SurveyTaskFillPage() {
           ) : null}
 
           {!readOnly ? (
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-11 w-full sm:w-auto"
-                disabled={saving}
-                onClick={onSaveDraft}
+            <div className="space-y-3">
+              <div
+                ref={actionFeedbackRef}
+                className="space-y-1"
+                aria-live="polite"
               >
-                {saving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                保存草稿
-              </Button>
-              <Button
-                type="button"
-                className="min-h-11 w-full sm:w-auto"
-                disabled={saving || assignment.campaignStatus === "closed"}
-                onClick={onSubmit}
-              >
-                {saving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 h-4 w-4" />
-                )}
-                提交审核
-              </Button>
+                {error ? (
+                  <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {error}
+                  </p>
+                ) : null}
+                {message ? (
+                  <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                    {message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 w-full sm:w-auto"
+                  disabled={saving}
+                  onClick={onSaveDraft}
+                >
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  保存草稿
+                </Button>
+                <Button
+                  type="button"
+                  className="min-h-11 w-full sm:w-auto"
+                  disabled={saving || assignment.campaignStatus === "closed"}
+                  onClick={onSubmit}
+                >
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="mr-2 h-4 w-4" />
+                  )}
+                  提交审核
+                </Button>
+              </div>
             </div>
           ) : (
             <Button
