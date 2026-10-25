@@ -103,7 +103,7 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
           },
           text: ["多", "少"],
           calculable: true,
-          textStyle: { fontSize: 11 },
+          textStyle: { fontSize: 12, fontWeight: 600, color: "#0f172a" },
         },
         series: [
           {
@@ -115,14 +115,22 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
             layoutSize: "92%",
             label: {
               show: true,
-              fontSize: 10,
-              color: "#334155",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#0f172a",
+              textBorderColor: "#ffffff",
+              textBorderWidth: 2.5,
+              textShadowColor: "rgba(255,255,255,0.85)",
+              textShadowBlur: 3,
             },
             emphasis: {
               label: {
                 show: true,
-                fontSize: 11,
-                fontWeight: 600,
+                fontSize: 14,
+                fontWeight: 700,
+                color: "#0f172a",
+                textBorderColor: "#ffffff",
+                textBorderWidth: 2.5,
               },
               itemStyle: {
                 areaColor: "#ff7875",
@@ -141,7 +149,13 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
                   : undefined,
               label:
                 selected && selected === name
-                  ? { color: "#fff", fontWeight: 600 }
+                  ? {
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      textBorderColor: "#7f1d1d",
+                      textBorderWidth: 2,
+                    }
                   : undefined,
             })),
           },
