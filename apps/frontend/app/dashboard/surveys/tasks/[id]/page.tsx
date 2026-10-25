@@ -126,6 +126,38 @@ function isDistrictField(field: SurveyField): boolean {
   );
 }
 
+
+function isMspOrderNoField(field: SurveyField): boolean {
+  const t = (field.target || "").trim();
+  const key = (field.key || "").toLowerCase();
+  const label = field.label || "";
+  return (
+    t === "hospital.archive.mspOrderNo" ||
+    key === "msporderno" ||
+    key === "msp_order_no" ||
+    label === "MSP工单号" ||
+    label.includes("MSP工单") ||
+    label.includes("工单号")
+  );
+}
+
+function assignmentStatusLabel(status: string): string {
+  switch (status) {
+    case "todo":
+      return "待填写";
+    case "in_progress":
+      return "填写中";
+    case "submitted":
+      return "已提交";
+    case "rejected":
+      return "驳回";
+    case "cancelled":
+      return "已取消";
+    default:
+      return status;
+  }
+}
+
 function asStringArray(value: any): string[] {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   return String(value || "")
@@ -302,7 +334,7 @@ export default function SurveyTaskFillPage() {
     [provinceValue, cityValue, pca],
   );
 
-  const readOnly = assignment?.status === "submitted";
+  const readOnly = assignment?.status === "submitted"; // rejected 可继续改
   const hospitalBound = !!(
     assignment?.hospitalId && Number(assignment.hospitalId) > 0
   );
@@ -572,7 +604,8 @@ export default function SurveyTaskFillPage() {
         </Select>
       );
     }
-    if (field.type === "number") {
+    // MSP工单号等可能被错标成 number；工单号需允许字母/短横线，强制文本输入
+    if (field.type === "number" && !isMspOrderNoField(field)) {
       return (
         <Input
           type="number"
@@ -581,6 +614,19 @@ export default function SurveyTaskFillPage() {
           onChange={(e) =>
             onChange(e.target.value === "" ? "" : Number(e.target.value))
           }
+        />
+      );
+    }
+    if (isMspOrderNoField(field)) {
+      return (
+        <Input
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          placeholder="输入 MSP 工单号"
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
         />
       );
     }
@@ -760,7 +806,11 @@ export default function SurveyTaskFillPage() {
             返回
           </Link>
         </Button>
-        <Badge variant="outline">{assignment.status}</Badge>
+        {assignment.status === "rejected" ? (
+          <Badge variant="destructive">{assignmentStatusLabel(assignment.status)}</Badge>
+        ) : (
+          <Badge variant="outline">{assignmentStatusLabel(assignment.status)}</Badge>
+        )}
         {assignment.hospitalName ? (
           <Badge variant="secondary">{assignment.hospitalName}</Badge>
         ) : assignment.hospitalOpen ? (

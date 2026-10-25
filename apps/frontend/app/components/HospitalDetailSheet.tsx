@@ -385,6 +385,16 @@ export function HospitalDetailSheet({
                     label: HOSPITAL_ATTRIBUTE_LABELS.dual_major || "双大客户",
                     value: hospital?.attributes?.dual_major || "",
                   },
+                  {
+                    label: HOSPITAL_ATTRIBUTE_LABELS.customer_stage || "客户所在阶段",
+                    value: hospital?.attributes?.customer_stage || "",
+                  },
+                  {
+                    label:
+                      HOSPITAL_ATTRIBUTE_LABELS.pending_issues ||
+                      "客户端待解决问题及需求",
+                    value: hospital?.attributes?.pending_issues || "",
+                  },
                 ].map((row) => (
                   <div
                     key={row.label}

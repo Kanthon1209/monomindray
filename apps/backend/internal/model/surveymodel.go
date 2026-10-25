@@ -890,13 +890,10 @@ func (m *surveyModel) ReviewSubmission(ctx context.Context, id, reviewerID int64
 	}
 
 	if status == "rejected" {
-		// Allow collector to edit again; keep review_note for feedback.
+		// Keep submission + assignment as rejected so collector UI shows「驳回」.
+		// Draft/save and resubmit still accept status='rejected' (see UpsertDraft/Submit).
 		if _, err := tx.Exec(ctx, `
-			UPDATE survey_submissions SET status='draft' WHERE id=$1`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE survey_assignments SET status='in_progress' WHERE id=$1`, assignmentID); err != nil {
+			UPDATE survey_assignments SET status='rejected' WHERE id=$1`, assignmentID); err != nil {
 			return err
 		}
 	}

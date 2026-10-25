@@ -188,6 +188,8 @@ export const HOSPITAL_COLUMN_TARGETS = HOSPITAL_COLUMNS.map((c) => ({
 export const HOSPITAL_ATTRIBUTE_KEYS = [
   "customer_level",
   "dual_major",
+  "customer_stage",
+  "pending_issues",
 ] as const;
 
 /** 系统预设枚举（与 collectable_fields.enum_values 一致，模板/管理端不可自增选项） */

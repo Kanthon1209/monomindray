@@ -40,6 +40,8 @@ function assignmentStatusBadge(status: string) {
       return <Badge variant="warning">填写中</Badge>;
     case "submitted":
       return <Badge variant="success">已提交</Badge>;
+    case "rejected":
+      return <Badge variant="destructive">驳回</Badge>;
     case "cancelled":
       return <Badge variant="secondary">已取消</Badge>;
     default:
@@ -128,7 +130,7 @@ export default function SurveyTasksPage() {
                       <TableCell className="text-right">
                         <Button asChild size="sm" variant="outline">
                           <Link href={`/dashboard/surveys/tasks/${item.id}`}>
-                            {item.status === "submitted" ? "查看" : "填写"}
+                            {item.status === "submitted" ? "查看" : item.status === "rejected" ? "修改" : "填写"}
                           </Link>
                         </Button>
                       </TableCell>
@@ -166,7 +168,7 @@ export default function SurveyTasksPage() {
                   </div>
                   <Button asChild className="min-h-10 w-full" variant="outline">
                     <Link href={`/dashboard/surveys/tasks/${item.id}`}>
-                      {item.status === "submitted" ? "查看" : "填写"}
+                      {item.status === "submitted" ? "查看" : item.status === "rejected" ? "修改" : "填写"}
                     </Link>
                   </Button>
                 </MobileCardItem>
