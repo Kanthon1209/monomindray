@@ -60,8 +60,8 @@ const LINE_TAG_CLASS: Record<AssayLineKey, string> = {
     "border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200",
 };
 
-const FILTER_IDLE_CLASS =
-  "border bg-background text-muted-foreground hover:bg-muted/50";
+const FILTER_ALL_CLASS =
+  "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
 
 function shortenAssayLine(raw: string | undefined | null): AssayLineKey | "" {
   const s = (raw || "").trim();
@@ -586,13 +586,7 @@ export function HospitalDetailSheet({
                   {ASSAY_LINE_FILTERS.map((f) => {
                     const active = lineFilter === f;
                     const color =
-                      f === "全部"
-                        ? active
-                          ? "border-transparent bg-foreground text-background"
-                          : FILTER_IDLE_CLASS
-                        : active
-                          ? LINE_TAG_CLASS[f]
-                          : FILTER_IDLE_CLASS;
+                      f === "全部" ? FILTER_ALL_CLASS : LINE_TAG_CLASS[f];
                     return (
                       <button
                         key={f}
@@ -601,7 +595,9 @@ export function HospitalDetailSheet({
                         className={cn(
                           "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                           color,
-                          active && f !== "全部" ? "ring-1 ring-offset-1 ring-offset-background" : "",
+                          active
+                            ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                            : "opacity-90 hover:opacity-100",
                         )}
                       >
                         {f}
