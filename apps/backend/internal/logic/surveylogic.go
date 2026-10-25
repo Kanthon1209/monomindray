@@ -493,9 +493,9 @@ func (l *SurveyLogic) SaveDraft(id int64, req *types.SaveSurveyAnswersRequest) (
 	answers := applyLockedAnswers(a.Schema, a.CampaignDefaults, locked, normalizeAnswers(req.Answers))
 	answers = forceAssignedHospitalAnswers(a, answers)
 	answers = pruneAnswersToSchema(a.Schema, answers)
-	hid := a.HospitalId
-	if hid == nil {
-		hid = req.HospitalId
+	hid, err := l.resolveSubmissionHospitalID(a, req.HospitalId, answers)
+	if err != nil {
+		return nil, err
 	}
 	sub, err := l.svcCtx.SurveyModel.UpsertDraft(l.ctx, id, uid, answers, hid)
 	if err != nil {
@@ -527,21 +527,15 @@ func (l *SurveyLogic) Submit(id int64, req *types.SaveSurveyAnswersRequest) (*ty
 	if err := validateRequiredAnswers(a.Schema, answers); err != nil {
 		return nil, err
 	}
-	hid := a.HospitalId
-	if hid == nil {
-		hid = req.HospitalId
-	}
 	openHospital := a.HospitalId == nil || (a.HospitalId != nil && *a.HospitalId <= 0)
+	hid, err := l.resolveSubmissionHospitalID(a, req.HospitalId, answers)
+	if err != nil {
+		return nil, err
+	}
 	if openHospital {
-		if hid == nil || *hid <= 0 {
-			return nil, NewCodeError(400, "请从联想列表中选择一家已有医院")
-		}
-		h, err := l.svcCtx.HospitalModel.FindById(l.ctx, *hid)
-		if err != nil {
-			return nil, ErrInternal
-		}
-		if h == nil {
-			return nil, NewCodeError(400, "所选医院不存在")
+		ansName := extractHospitalNameFromAnswers(a.Schema, answers)
+		if ansName == "" && (hid == nil || *hid <= 0) {
+			return nil, NewCodeError(400, "请填写医院名称")
 		}
 	}
 	sub, err := l.svcCtx.SurveyModel.Submit(l.ctx, id, uid, answers, hid)
@@ -746,7 +740,11 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 			case "name", "province", "city", "district", "level", "type", "address", "remark",
 				"customerCode", "region", "branchOffice":
 				cols[key] = value
-			case "devices", "eqa_year", "eqa_scope", "customer_level", "hospital_name":
+			case "hospital_name", "hospitalName", "customerName", "customer_name":
+				if cols["name"] == "" {
+					cols["name"] = value
+				}
+			case "devices", "eqa_year", "eqa_scope", "customer_level":
 				// devices handled below; EQA / catalog keys ignored without target
 			default:
 				if attrKey, ok := model.KnownAttributeKeys[key]; ok {
@@ -785,8 +783,12 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 	if name == "" {
 		name = archiveString(archive, "customerName")
 	}
+	if name == "" {
+		name = extractHospitalNameFromAnswers(a.Schema, answers)
+	}
 	province := strings.TrimSpace(cols["province"])
 	city := strings.TrimSpace(cols["city"])
+	branchHint := firstNonEmpty(cols["branchOffice"], cols["branch_office"], archiveString(archive, "branchOffice"))
 
 	var existing *model.Hospital
 	var err error
@@ -794,16 +796,34 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *a.HospitalId)
 	} else if sub.HospitalId != nil && *sub.HospitalId > 0 {
 		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *sub.HospitalId)
-	} else if name != "" && province != "" && city != "" {
+		if err == nil && existing != nil && name != "" && !strings.EqualFold(strings.TrimSpace(existing.Name), name) {
+			existing = nil
+		}
+	}
+	if err == nil && existing == nil && name != "" && province != "" && city != "" {
 		existing, err = l.svcCtx.HospitalModel.FindByNameProvinceCity(l.ctx, name, province, city)
+	}
+	if err == nil && existing == nil && name != "" {
+		byName, findErr := l.svcCtx.HospitalModel.FindByName(l.ctx, name)
+		if findErr != nil {
+			err = findErr
+		} else if byName != nil && (province == "" || strings.EqualFold(strings.TrimSpace(byName.Province), province)) {
+			existing = byName
+		}
 	}
 	if err != nil {
 		l.Errorf("find hospital for publish: %v", err)
 		return 0, ErrInternal
 	}
 	if existing == nil {
-		if name == "" || province == "" || city == "" {
-			return 0, NewCodeError(400, "答卷缺少医院名称/省份/城市，且未绑定医院，无法写入看板")
+		if name == "" {
+			return 0, NewCodeError(400, "答卷缺少医院名称，且未绑定医院，无法写入看板")
+		}
+		if province == "" {
+			province = defaultDashboardProvince
+		}
+		if city == "" {
+			city = cityFromBranchOrDefault(branchHint, province)
 		}
 	} else {
 		if name == "" {
@@ -819,15 +839,21 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	level := strings.TrimSpace(cols["level"])
 	typ := strings.TrimSpace(cols["type"])
+	if !isAllowedHospitalLevel(level) {
+		level = ""
+	}
+	if !isAllowedHospitalType(typ) {
+		typ = ""
+	}
 	if level == "" {
-		if existing != nil {
+		if existing != nil && isAllowedHospitalLevel(existing.Level) {
 			level = existing.Level
 		} else {
 			level = "二级甲等"
 		}
 	}
 	if typ == "" {
-		if existing != nil {
+		if existing != nil && isAllowedHospitalType(existing.Type) {
 			typ = existing.Type
 		} else {
 			typ = "综合医院"
@@ -1240,10 +1266,14 @@ func toSurveyAssignmentInfo(a *model.SurveyAssignment, answers map[string]any, n
 }
 
 func toSurveySubmissionInfo(s *model.SurveySubmission) types.SurveySubmissionInfo {
+	hospitalName := strings.TrimSpace(s.HospitalName)
+	if hospitalName == "" {
+		hospitalName = extractHospitalNameFromAnswers(s.Schema, s.Answers)
+	}
 	info := types.SurveySubmissionInfo{
 		Id: s.Id, AssignmentId: s.AssignmentId, CampaignTitle: s.CampaignTitle,
 		AssigneeName: s.AssigneeName, AssigneeEmail: s.AssigneeEmail, CollectorName: s.CollectorName,
-		HospitalId: s.HospitalId, HospitalName: s.HospitalName, Answers: s.Answers, Schema: s.Schema,
+		HospitalId: s.HospitalId, HospitalName: hospitalName, Answers: s.Answers, Schema: s.Schema,
 		Status: s.Status, ReviewNote: s.ReviewNote,
 	}
 	if s.SubmittedAt != nil {
@@ -2026,4 +2056,83 @@ func marshalSchemaMap(schema map[string]any) ([]byte, error) {
 		return nil, nil
 	}
 	return json.Marshal(schema)
+}
+
+func (l *SurveyLogic) resolveSubmissionHospitalID(a *model.SurveyAssignment, reqHospitalID *int64, answers map[string]any) (*int64, error) {
+	if a != nil && a.HospitalId != nil && *a.HospitalId > 0 {
+		return a.HospitalId, nil
+	}
+	ansName := extractHospitalNameFromAnswers(a.Schema, answers)
+	if reqHospitalID != nil && *reqHospitalID > 0 {
+		h, err := l.svcCtx.HospitalModel.FindById(l.ctx, *reqHospitalID)
+		if err != nil {
+			return nil, ErrInternal
+		}
+		if h != nil && (ansName == "" || strings.EqualFold(strings.TrimSpace(h.Name), ansName)) {
+			id := h.Id
+			return &id, nil
+		}
+	}
+	if ansName != "" {
+		h, err := l.svcCtx.HospitalModel.FindByName(l.ctx, ansName)
+		if err != nil {
+			return nil, ErrInternal
+		}
+		if h != nil {
+			id := h.Id
+			return &id, nil
+		}
+	}
+	return nil, nil
+}
+
+func extractHospitalNameFromAnswers(schemaJSON json.RawMessage, answers map[string]any) string {
+	if len(answers) == 0 {
+		return ""
+	}
+	for _, k := range hospitalNameFieldKeys(schemaJSON) {
+		if s := answerString(answers, k); s != "" {
+			return s
+		}
+	}
+	for _, k := range []string{"name", "hospitalName", "hospital_name", "customerName", "customer_name"} {
+		if s := answerString(answers, k); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func cityFromBranchOrDefault(branchOffice, province string) string {
+	b := strings.TrimSpace(branchOffice)
+	b = strings.TrimSuffix(b, "分公司")
+	b = strings.TrimSpace(b)
+	if b != "" {
+		if strings.HasSuffix(b, "市") || strings.HasSuffix(b, "地区") || strings.HasSuffix(b, "州") || strings.HasSuffix(b, "县") {
+			return b
+		}
+		return b + "市"
+	}
+	if strings.TrimSpace(province) == "" || strings.TrimSpace(province) == defaultDashboardProvince {
+		return "合肥市"
+	}
+	return strings.TrimSpace(province)
+}
+
+func isAllowedHospitalLevel(level string) bool {
+	switch strings.TrimSpace(level) {
+	case "三级甲等", "三级乙等", "二级甲等", "二级乙等", "一级":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAllowedHospitalType(typ string) bool {
+	switch strings.TrimSpace(typ) {
+	case "综合医院", "专科医院", "中医医院", "妇幼保健院":
+		return true
+	default:
+		return false
+	}
 }

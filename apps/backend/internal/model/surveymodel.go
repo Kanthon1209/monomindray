@@ -466,11 +466,11 @@ func (m *surveyModel) ListAssignmentsByCampaign(ctx context.Context, campaignID 
 	rows, err := m.conn.Query(ctx, `
 		SELECT a.id, a.campaign_id, a.assignee_id, a.hospital_id, a.status, a.created_at, a.updated_at,
 		       COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(h.name,''),
-		       COALESCE(s.id, 0), COALESCE(s.status, '')
+		       COALESCE(s.id, 0), COALESCE(s.status, ''), COALESCE(s.answers, '{}'::jsonb)
 		FROM survey_assignments a
 		LEFT JOIN users u ON u.id = a.assignee_id
-		LEFT JOIN hospitals h ON h.id = a.hospital_id
 		LEFT JOIN survey_submissions s ON s.assignment_id = a.id
+		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
 		WHERE a.campaign_id=$1
 		ORDER BY a.id`, campaignID)
 	if err != nil {
@@ -482,11 +482,17 @@ func (m *surveyModel) ListAssignmentsByCampaign(ctx context.Context, campaignID 
 		var a SurveyAssignment
 		var subID int64
 		var subStatus string
+		var answersRaw []byte
 		if err := rows.Scan(
 			&a.Id, &a.CampaignId, &a.AssigneeId, &a.HospitalId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
-			&a.AssigneeName, &a.AssigneeEmail, &a.HospitalName, &subID, &subStatus,
+			&a.AssigneeName, &a.AssigneeEmail, &a.HospitalName, &subID, &subStatus, &answersRaw,
 		); err != nil {
 			return nil, err
+		}
+		if strings.TrimSpace(a.HospitalName) == "" && len(answersRaw) > 0 {
+			if ans, err := decodeAnswers(answersRaw); err == nil {
+				a.HospitalName = extractHospitalNameFromAnswerMap(ans)
+			}
 		}
 		if subID > 0 {
 			a.SubmissionId = &subID
@@ -544,13 +550,13 @@ func (m *surveyModel) ListAssignments(ctx context.Context, f SurveyAssignmentFil
 		       COALESCE(c.title,''), COALESCE(c.status,''), c.due_at,
 		       COALESCE(u.name,''), COALESCE(u.email,''), COALESCE(h.name,''),
 		       COALESCE(t.id,0), COALESCE(t.code,''), COALESCE(t.title,''), COALESCE(t.schema, '{}'::jsonb),
-		       s.id, COALESCE(s.status,'')
+		       s.id, COALESCE(s.status,''), COALESCE(s.answers, '{}'::jsonb)
 		FROM survey_assignments a
 		JOIN survey_campaigns c ON c.id = a.campaign_id
 		JOIN survey_templates t ON t.id = c.template_id
 		LEFT JOIN users u ON u.id = a.assignee_id
-		LEFT JOIN hospitals h ON h.id = a.hospital_id
 		LEFT JOIN survey_submissions s ON s.assignment_id = a.id
+		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
 		WHERE %s
 		ORDER BY a.id DESC
 		LIMIT $%d OFFSET $%d`, whereSQL, len(args)-1, len(args)), args...)
@@ -563,17 +569,23 @@ func (m *surveyModel) ListAssignments(ctx context.Context, f SurveyAssignmentFil
 		var a SurveyAssignment
 		var schema []byte
 		var subID *int64
+		var answersRaw []byte
 		if err := rows.Scan(
 			&a.Id, &a.CampaignId, &a.AssigneeId, &a.HospitalId, &a.Status, &a.CreatedAt, &a.UpdatedAt,
 			&a.CampaignTitle, &a.CampaignStatus, &a.DueAt,
 			&a.AssigneeName, &a.AssigneeEmail, &a.HospitalName,
 			&a.TemplateId, &a.TemplateCode, &a.TemplateTitle, &schema,
-			&subID, &a.SubmissionStatus,
+			&subID, &a.SubmissionStatus, &answersRaw,
 		); err != nil {
 			return nil, 0, err
 		}
 		a.Schema = json.RawMessage(schema)
 		a.SubmissionId = subID
+		if strings.TrimSpace(a.HospitalName) == "" && len(answersRaw) > 0 {
+			if ans, err := decodeAnswers(answersRaw); err == nil {
+				a.HospitalName = extractHospitalNameFromAnswerMap(ans)
+			}
+		}
 		items = append(items, a)
 	}
 	return items, total, rows.Err()
@@ -727,10 +739,30 @@ func (m *surveyModel) scanSubmission(row pgx.Row) (*SurveySubmission, error) {
 		return nil, err
 	}
 	s.Answers = answers
+	if strings.TrimSpace(s.HospitalName) == "" {
+		s.HospitalName = extractHospitalNameFromAnswerMap(answers)
+	}
 	return &s, nil
 }
 
+func extractHospitalNameFromAnswerMap(answers map[string]any) string {
+	if len(answers) == 0 {
+		return ""
+	}
+	for _, k := range []string{"name", "hospitalName", "hospital_name", "customerName", "customer_name"} {
+		if v, ok := answers[k]; ok {
+			if s := anyToTrimmedString(v); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
 func (m *surveyModel) UpsertDraft(ctx context.Context, assignmentID, collectorID int64, answers map[string]any, hospitalID *int64) (*SurveySubmission, error) {
+	if hospitalID != nil && *hospitalID <= 0 {
+		hospitalID = nil
+	}
 	raw, err := json.Marshal(answers)
 	if err != nil {
 		return nil, err
@@ -774,6 +806,9 @@ func (m *surveyModel) UpsertDraft(ctx context.Context, assignmentID, collectorID
 }
 
 func (m *surveyModel) Submit(ctx context.Context, assignmentID, collectorID int64, answers map[string]any, hospitalID *int64) (*SurveySubmission, error) {
+	if hospitalID != nil && *hospitalID <= 0 {
+		hospitalID = nil
+	}
 	raw, err := json.Marshal(answers)
 	if err != nil {
 		return nil, err
@@ -867,6 +902,9 @@ func (m *surveyModel) ListSubmissions(ctx context.Context, f SurveySubmissionFil
 		}
 		s.Answers = answers
 		s.Schema = json.RawMessage(schemaRaw)
+		if strings.TrimSpace(s.HospitalName) == "" {
+			s.HospitalName = extractHospitalNameFromAnswerMap(answers)
+		}
 		items = append(items, s)
 	}
 	return items, total, rows.Err()

@@ -433,8 +433,14 @@ export default function SurveyTaskFillPage() {
     setSaving(false);
     if (res.error) showActionFeedback("error", res.error);
     else {
+      const savedHid = res.submission?.hospitalId
+        ? Number(res.submission.hospitalId)
+        : undefined;
       showActionFeedback("message", "草稿已保存");
       await load();
+      if (savedHid && savedHid > 0) {
+        setLinkedHospitalId(savedHid);
+      }
     }
   };
 
@@ -444,14 +450,16 @@ export default function SurveyTaskFillPage() {
     const resolvedHospitalId =
       linkedHospitalId ??
       (assignment?.hospitalId ? Number(assignment.hospitalId) : undefined);
+    const hospitalNameFields = flatFields.filter(isHospitalNameField);
+    const typedHospitalName = hospitalNameFields
+      .map((f) => String(answers[f.key] ?? "").trim())
+      .find((v) => v.length > 0);
     if (
       (assignment?.hospitalOpen || !hospitalBound) &&
+      !typedHospitalName &&
       (!resolvedHospitalId || resolvedHospitalId <= 0)
     ) {
-      showActionFeedback(
-        "error",
-        "请从医院名称联想列表中选择一家已有医院后再提交",
-      );
+      showActionFeedback("error", "请填写客户/医院名称后再提交");
       return;
     }
     // 省市区必须命中系统预置目录（pca / 省市表），不可自由编造
@@ -735,8 +743,11 @@ export default function SurveyTaskFillPage() {
         <HospitalNameTypeahead
           value={value == null ? "" : String(value)}
           disabled={disabled}
-          placeholder="输入并选择医院"
-          onChange={onChange}
+          placeholder="输入或选择医院名称"
+          onChange={(v) => {
+            setLinkedHospitalId(undefined);
+            onChange(v);
+          }}
           onSelectHospital={applyHospitalPick}
         />
       );
@@ -921,7 +932,7 @@ export default function SurveyTaskFillPage() {
             {assignment.hospitalName
               ? ` · 医院：${assignment.hospitalName}`
               : assignment.hospitalOpen
-                ? " · 请输入并选择客户/医院名称（数据库联想）"
+                ? " · 请输入或选择客户/医院名称（可联想已有医院或直接输入新医院）"
                 : ""}
             {assignment.reviewNote
               ? ` · 驳回意见：${assignment.reviewNote}`

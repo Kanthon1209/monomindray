@@ -60,6 +60,7 @@ type HospitalModel interface {
 	// Search ranks name/customer_code matches for typeahead (not city/province).
 	Search(ctx context.Context, keyword string, limit int) ([]Hospital, error)
 	FindById(ctx context.Context, id int64) (*Hospital, error)
+	FindByName(ctx context.Context, name string) (*Hospital, error)
 	FindByNameProvinceCity(ctx context.Context, name, province, city string) (*Hospital, error)
 	Insert(ctx context.Context, h *Hospital) (int64, error)
 	Update(ctx context.Context, h *Hospital) error
@@ -258,6 +259,41 @@ func (m *hospitalModel) FindById(ctx context.Context, id int64) (*Hospital, erro
 			return nil, nil
 		}
 		return nil, fmt.Errorf("find hospital: %w", err)
+	}
+	h.Archive = decodeArchive(archiveRaw)
+	if h.DeviceModels == nil {
+		h.DeviceModels = []string{}
+	}
+	return &h, nil
+}
+
+func (m *hospitalModel) FindByName(ctx context.Context, name string) (*Hospital, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil
+	}
+	var h Hospital
+	var archiveRaw []byte
+	err := m.conn.QueryRow(ctx, `
+		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
+		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
+		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
+		FROM hospitals h
+		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
+		WHERE lower(trim(h.name)) = lower(trim($1))
+		ORDER BY CASE WHEN h.status = 'active' THEN 0 ELSE 1 END, h.id
+		LIMIT 1`, name).Scan(
+		&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
+		&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
+		&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+		&h.DeviceCount, &h.DeviceModels,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find hospital by name only: %w", err)
 	}
 	h.Archive = decodeArchive(archiveRaw)
 	if h.DeviceModels == nil {
