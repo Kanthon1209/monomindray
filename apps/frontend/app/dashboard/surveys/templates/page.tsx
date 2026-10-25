@@ -9,6 +9,7 @@ import {
   GripVertical,
   LayoutTemplate,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Trash2,
@@ -726,6 +727,11 @@ export default function SurveyTemplatesPage() {
   });
   const [creating, setCreating] = useState(false);
 
+  /** 编辑已有模板的名称 / 说明 */
+  const [metaOpen, setMetaOpen] = useState(false);
+  const [metaTemplateId, setMetaTemplateId] = useState<string | null>(null);
+  const [metaDraft, setMetaDraft] = useState({ title: "", description: "" });
+
   /** 特殊块只读说明弹层（替代 window.confirm 删除） */
   const [specialBlockOpen, setSpecialBlockOpen] = useState(false);
   const [specialBlockTemplateId, setSpecialBlockTemplateId] = useState<string | null>(null);
@@ -926,6 +932,33 @@ export default function SurveyTemplatesPage() {
     setCreateOpen(false);
     setItems((prev) => [...prev, res.template!]);
     setExpanded(res.template!.id);
+  };
+
+  const openEditMeta = (item: SurveyTemplate, e?: MouseEvent) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    setMetaTemplateId(item.id);
+    setMetaDraft({
+      title: item.title || "",
+      description: item.description || "",
+    });
+    setMetaOpen(true);
+  };
+
+  const onSaveMeta = async () => {
+    const template = items.find((t) => t.id === metaTemplateId);
+    if (!template) return;
+    const title = metaDraft.title.trim();
+    if (!title) {
+      setError("请填写模板名称");
+      return;
+    }
+    setError(null);
+    const ok = await persistSchema(template, template.schema || { fields: [], sections: [] }, {
+      title,
+      description: metaDraft.description.trim(),
+    });
+    if (ok) setMetaOpen(false);
   };
 
   const openCreateField = (template: SurveyTemplate, section: string) => {
@@ -1398,9 +1431,31 @@ export default function SurveyTemplatesPage() {
     const groups = groupBySection(schema);
     return (
       <>
-        {item.description ? (
-          <p className="mb-3 text-sm text-muted-foreground">{item.description}</p>
-        ) : null}
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-md border bg-background px-3 py-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-muted-foreground">模板名称</div>
+            <div className="truncate text-sm font-medium">{item.title}</div>
+            {item.description ? (
+              <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">暂无说明</p>
+            )}
+            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+              编码 {item.code}（创建后不可改）
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0"
+            disabled={saving}
+            onClick={(e) => openEditMeta(item, e)}
+          >
+            <Pencil className="mr-1 h-3.5 w-3.5" />
+            修改名称
+          </Button>
+        </div>
         <div className="space-y-4">
           {groups.map(({ section, fields }) => (
             <div
@@ -1775,7 +1830,7 @@ export default function SurveyTemplatesPage() {
                   <TableHead>版本</TableHead>
                   <TableHead>字段数</TableHead>
                   <TableHead>状态</TableHead>
-                  <TableHead className="w-20 text-right">操作</TableHead>
+                  <TableHead className="w-36 text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1816,21 +1871,35 @@ export default function SurveyTemplatesPage() {
                           <TableCell>{schema.fields.length}</TableCell>
                           <TableCell>{statusBadge(item.status)}</TableCell>
                           <TableCell className="text-right" onClick={(ev) => ev.stopPropagation()}>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-destructive hover:text-destructive"
-                              disabled={deletingId === item.id || saving}
-                              onClick={(ev) => onDeleteTemplate(item, ev)}
-                            >
-                              {deletingId === item.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                              <span className="ml-1">删除</span>
-                            </Button>
+                            <div className="inline-flex items-center justify-end gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8"
+                                disabled={saving}
+                                onClick={(ev) => openEditMeta(item, ev)}
+                                title="修改模板名称"
+                              >
+                                <Pencil className="h-4 w-4" />
+                                <span className="ml-1">改名</span>
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-destructive hover:text-destructive"
+                                disabled={deletingId === item.id || saving}
+                                onClick={(ev) => onDeleteTemplate(item, ev)}
+                              >
+                                {deletingId === item.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                                <span className="ml-1">删除</span>
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                         {open ? (
@@ -1886,6 +1955,17 @@ export default function SurveyTemplatesPage() {
                           {statusBadge(item.status)}
                         </div>
                       </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        disabled={saving}
+                        onClick={(ev) => openEditMeta(item, ev)}
+                        title="修改模板名称"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                       <Button
                         type="button"
                         variant="ghost"
@@ -2553,6 +2633,60 @@ export default function SurveyTemplatesPage() {
                 关闭
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={metaOpen} onOpenChange={setMetaOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="border-b px-5 py-4">
+            <DialogTitle>修改模板名称</DialogTitle>
+            <DialogDescription className="sr-only">编辑模板标题与说明</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 px-5 py-4">
+            <div className="space-y-2">
+              <Label>模板名称</Label>
+              <Input
+                value={metaDraft.title}
+                onChange={(e) =>
+                  setMetaDraft((d) => ({ ...d, title: e.target.value }))
+                }
+                placeholder="例如：化免客户档案采集"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void onSaveMeta();
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>说明（可选）</Label>
+              <Input
+                value={metaDraft.description}
+                onChange={(e) =>
+                  setMetaDraft((d) => ({ ...d, description: e.target.value }))
+                }
+                placeholder="模板用途简述"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              编码创建后不可修改；仅可改名称与说明。
+            </p>
+          </div>
+          <DialogFooter className="border-t px-5 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setMetaOpen(false)}
+              disabled={saving}
+            >
+              取消
+            </Button>
+            <Button type="button" disabled={saving} onClick={() => void onSaveMeta()}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              保存
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
