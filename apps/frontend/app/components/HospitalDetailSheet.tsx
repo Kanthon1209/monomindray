@@ -306,7 +306,7 @@ function DeviceCard({
 }
 
 const SECTION_TITLE =
-  "text-base font-semibold tracking-tight text-primary";
+  "text-base font-semibold tracking-tight text-foreground";
 
 export function HospitalDetailSheet({
   hospitalId,
@@ -528,7 +528,7 @@ export function HospitalDetailSheet({
             <>
             <section className="space-y-3">
               <h3 className={SECTION_TITLE}>客户基础</h3>
-              <div className="grid divide-y rounded-lg border bg-background md:grid-cols-2 md:divide-x md:divide-y-0">
+              <div className="grid divide-y rounded-lg border-2 border-border bg-background md:grid-cols-2 md:divide-x md:divide-y-0">
                 {[
                   { label: "客户名称", value: hospital?.name || "" },
                   { label: "客户编码", value: hospital?.customerCode || "" },
@@ -563,7 +563,7 @@ export function HospitalDetailSheet({
                 ))}
               </div>
 
-              <div className="rounded-lg border bg-background px-3 py-3 md:px-4">
+              <div className="rounded-lg border-2 border-border bg-background px-3 py-3 md:px-4">
                 <div className="mb-2 text-xs text-muted-foreground">
                   迈瑞覆盖检测线
                 </div>
@@ -670,7 +670,7 @@ export function HospitalDetailSheet({
 
             <section className="space-y-3">
               <h3 className={SECTION_TITLE}>室间质评</h3>
-              <div className="rounded-lg border bg-background text-sm">
+              <div className="rounded-lg border-2 border-border bg-background text-sm">
                 {eqaYears.length === 0 ? (
                   <div className="px-3 py-3 text-muted-foreground md:px-4">
                     暂无 EQA 参评记录（按年采集国家/省级科目）
