@@ -124,6 +124,7 @@ export function archiveFieldLabel(key: ArchiveFieldKey | string) {
   if (key === "usageLocation") return "使用位置";
   if (key === "customerStage") return "客户所在阶段";
   if (key === "pendingIssues") return "客户端待解决问题及需求";
+  if (key === "collectorName") return "采集者姓名";
   if (key === "assays") return "检测类别";
   if (HOSPITAL_ATTRIBUTE_LABELS[key]) return HOSPITAL_ATTRIBUTE_LABELS[key];
   return ARCHIVE_FIELD_DEFS.find((f) => f.key === key)?.label || key;
@@ -340,7 +341,7 @@ export function resolveArchiveField(
     attributes?: Record<string, string>;
     archive?: Record<string, ArchiveValue>;
   },
-  key: ArchiveFieldKey | "customerLevel" | "customerStage" | "pendingIssues",
+  key: ArchiveFieldKey | "customerLevel" | "customerStage" | "pendingIssues" | "collectorName",
 ): string {
   const archive = hospital.archive || {};
   const attrs = hospital.attributes || {};
