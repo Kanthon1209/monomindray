@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import {
+  fetchAssayTree,
   fetchHospitalAssays,
   getHospital,
   listDevices,
+  type AssayTreeNode,
   type Device,
-  type HospitalAssayCompetitorCategory,
 } from "@/lib/business";
 import {
   deriveEqaLabel,
@@ -42,39 +43,94 @@ interface HospitalDetailSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function deviceLineLabel(d: Device): string {
-  return d.assayLineCode || d.category || "";
+function buildAssayLookups(tree: AssayTreeNode[]) {
+  const lineNameByCode = new Map<string, string>();
+  const itemToCategory = new Map<string, string>();
+  const walk = (
+    nodes: AssayTreeNode[],
+    lineCode: string,
+    lineName: string,
+    categoryName: string,
+  ) => {
+    for (const n of nodes) {
+      let lc = lineCode;
+      let ln = lineName;
+      let cn = categoryName;
+      if (n.kind === "line") {
+        lc = n.code;
+        ln = n.name;
+        lineNameByCode.set(n.code, n.name);
+      } else if (n.kind === "category") {
+        cn = n.name;
+      } else if (n.kind === "item" && cn) {
+        itemToCategory.set(n.code, cn);
+      }
+      if (n.children?.length) walk(n.children, lc, ln, cn);
+    }
+  };
+  walk(tree, "", "", "");
+  return { lineNameByCode, itemToCategory };
 }
 
-function DeviceCard({ device }: { device: Device }) {
-  const line = deviceLineLabel(device);
-  const itemCount = device.itemCodes?.length || 0;
+function resolveLineName(
+  device: Device,
+  lineNameByCode: Map<string, string>,
+): string {
+  const code = (device.assayLineCode || device.category || "").trim();
+  if (!code) return "";
+  return lineNameByCode.get(code) || code;
+}
+
+function resolvePackages(
+  itemCodes: string[] | undefined,
+  itemToCategory: Map<string, string>,
+): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const code of itemCodes || []) {
+    const name = itemToCategory.get(code);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
+}
+
+function DeviceCard({
+  device,
+  lineName,
+  packages,
+  variant,
+}: {
+  device: Device;
+  lineName: string;
+  packages: string[];
+  variant: "own" | "competitor";
+}) {
+  const shell =
+    variant === "competitor"
+      ? "rounded-lg border border-amber-200/60 bg-amber-50/40 p-3 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20"
+      : "rounded-lg border bg-background p-3 shadow-sm";
+  const coverBorder =
+    variant === "competitor"
+      ? "mt-2 border-t border-amber-200/50 pt-2 dark:border-amber-900/30"
+      : "mt-2 border-t pt-2";
+
   return (
-    <li className="rounded-lg border bg-background p-3 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-medium leading-snug">
-            {device.brand || "迈瑞"} {device.model}
-          </div>
-          {device.serialNo ? (
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              SN {device.serialNo}
-            </div>
-          ) : null}
+    <li className={shell}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0 font-medium leading-snug">
+          {device.brand || "迈瑞"} {device.model}
         </div>
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {line ? (
-            <Badge variant="outline" className="font-normal">
-              {line}
-            </Badge>
-          ) : null}
-          {itemCount > 0 ? (
-            <Badge variant="secondary" className="font-normal">
-              {itemCount} 细项
-            </Badge>
-          ) : null}
-        </div>
+        {lineName ? (
+          <div className="shrink-0 text-xs text-muted-foreground">{lineName}</div>
+        ) : null}
       </div>
+      {device.serialNo ? (
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          SN {device.serialNo}
+        </div>
+      ) : null}
       <dl className="mt-3 grid gap-1.5 text-xs sm:grid-cols-2">
         {device.usageLocation ? (
           <div>
@@ -131,35 +187,22 @@ function DeviceCard({ device }: { device: Device }) {
           </div>
         ) : null}
       </dl>
-      {itemCount > 0 ? (
-        <div className="mt-2 border-t pt-2 text-xs text-muted-foreground">
-          细项覆盖：已勾选 {itemCount} 项
+      {packages.length > 0 ? (
+        <div className={coverBorder}>
+          <div className="mb-1.5 text-xs text-muted-foreground">覆盖套餐</div>
+          <div className="flex flex-wrap gap-1.5">
+            {packages.map((name) => (
+              <Badge key={name} variant="outline" className="font-normal">
+                {name}
+              </Badge>
+            ))}
+          </div>
         </div>
       ) : null}
     </li>
   );
 }
 
-type FlatCompetitor = {
-  key: string;
-  brand: string;
-  model: string;
-  serialNo: string;
-  usageLocation: string;
-  installedAt: string;
-  enabledAt: string;
-  serviceEvaluation: string;
-  reagentBrand: string;
-  monthlySampleVolume: string;
-  deptHead: string;
-  channelCsa: string;
-  status: string;
-  assayLine: string;
-  lineName: string;
-  categoryName: string;
-  itemNames: string[];
-  itemCount: number;
-};
 
 export function HospitalDetailSheet({
   hospitalId,
@@ -168,7 +211,7 @@ export function HospitalDetailSheet({
 }: HospitalDetailSheetProps) {
   const [hospital, setHospital] = useState<Hospital | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [competitors, setCompetitors] = useState<HospitalAssayCompetitorCategory[]>([]);
+  const [assayTree, setAssayTree] = useState<AssayTreeNode[]>([]);
   const [mindrayLines, setMindrayLines] = useState<string[]>([]);
   const [eqaRows, setEqaRows] = useState<EqaParticipation[]>([]);
   const [eqaFields, setEqaFields] = useState<EqaFieldNode[]>([]);
@@ -184,19 +227,20 @@ export function HospitalDetailSheet({
     const load = async () => {
       setLoading(true);
       setError(null);
-      const [hRes, dRes, aRes, eRes, fRes] = await Promise.all([
+      const [hRes, dRes, aRes, eRes, fRes, tRes] = await Promise.all([
         getHospital(hospitalId),
         listDevices(hospitalId),
         fetchHospitalAssays(hospitalId),
         fetchEqaParticipations({ hospitalId, page: 1, pageSize: 50 }),
         fetchEqaFields(),
+        fetchAssayTree(),
       ]);
       if (cancelled) return;
       if (hRes.error) {
         setError(hRes.error);
         setHospital(null);
         setDevices([]);
-        setCompetitors([]);
+        setAssayTree([]);
         setMindrayLines([]);
         setEqaRows([]);
         setEqaFields([]);
@@ -205,7 +249,7 @@ export function HospitalDetailSheet({
       } else {
         setHospital(hRes.hospital || null);
         setDevices(dRes.items);
-        setCompetitors(aRes.competitors || []);
+        setAssayTree(tRes.items || []);
         setMindrayLines(aRes.mindrayLines || []);
         const rows = eRes.data?.items || [];
         setEqaRows(rows);
@@ -222,7 +266,12 @@ export function HospitalDetailSheet({
     };
   }, [open, hospitalId]);
 
-  /** Split hospital devices: 迈瑞 = 自有, others = 竞品. Enrich 竞品 with assay item names. */
+  const { lineNameByCode, itemToCategory } = useMemo(
+    () => buildAssayLookups(assayTree),
+    [assayTree],
+  );
+
+  /** Split hospital devices: 迈瑞 = 自有, others = 竞品. */
   const { ownDevices, competitorDevices } = useMemo(() => {
     const own: Device[] = [];
     const comps: Device[] = [];
@@ -231,51 +280,8 @@ export function HospitalDetailSheet({
       if (brand === "迈瑞") own.push(d);
       else comps.push(d);
     }
-    // Map deviceId -> item names / line-category labels from assays competitors payload
-    const metaById = new Map<
-      string,
-      { itemNames: string[]; lineName: string; categoryName: string }
-    >();
-    for (const cat of competitors) {
-      for (const dev of cat.devices || []) {
-        const id = String(dev.deviceId);
-        const prev = metaById.get(id);
-        const names = [...(prev?.itemNames || [])];
-        for (const n of dev.itemNames || []) {
-          if (!names.includes(n)) names.push(n);
-        }
-        metaById.set(id, {
-          itemNames: names,
-          lineName: prev?.lineName || cat.lineName || "",
-          categoryName: prev?.categoryName || cat.name || "",
-        });
-      }
-    }
-    const competitorCards: FlatCompetitor[] = comps.map((d) => {
-      const meta = metaById.get(String(d.id));
-      return {
-        key: d.id,
-        brand: d.brand || "",
-        model: d.model || "",
-        serialNo: d.serialNo || "",
-        usageLocation: d.usageLocation || "",
-        installedAt: d.installedAt || "",
-        enabledAt: d.enabledAt || "",
-        serviceEvaluation: d.serviceEvaluation || "",
-        reagentBrand: d.reagentBrand || "",
-        monthlySampleVolume: d.monthlySampleVolume || "",
-        deptHead: d.deptHead || "",
-        channelCsa: d.channelCsa || "",
-        status: d.status || "",
-        assayLine: d.assayLineCode || d.category || "",
-        lineName: meta?.lineName || "",
-        categoryName: meta?.categoryName || "",
-        itemNames: meta?.itemNames || [],
-        itemCount: d.itemCodes?.length || 0,
-      };
-    });
-    return { ownDevices: own, competitorDevices: competitorCards };
-  }, [devices, competitors]);
+    return { ownDevices: own, competitorDevices: comps };
+  }, [devices]);
 
   /** Group participation rows by year (desc); derive per-year EQA label from scopes. */
   const eqaYears = useMemo(() => {
@@ -455,7 +461,13 @@ export function HospitalDetailSheet({
                 ) : (
                   <ul className="grid gap-3 sm:grid-cols-2">
                     {ownDevices.map((d) => (
-                      <DeviceCard key={d.id} device={d} />
+                      <DeviceCard
+                        key={d.id}
+                        device={d}
+                        lineName={resolveLineName(d, lineNameByCode)}
+                        packages={resolvePackages(d.itemCodes, itemToCategory)}
+                        variant="own"
+                      />
                     ))}
                   </ul>
                 )}
@@ -474,128 +486,14 @@ export function HospitalDetailSheet({
                   </div>
                 ) : (
                   <ul className="grid gap-3 sm:grid-cols-2">
-                    {competitorDevices.map((dev) => (
-                      <li
-                        key={dev.key}
-                        className="rounded-lg border border-amber-200/60 bg-amber-50/40 p-3 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="font-medium leading-snug">
-                              {dev.brand} {dev.model}
-                            </div>
-                            {dev.serialNo ? (
-                              <div className="mt-0.5 text-xs text-muted-foreground">
-                                SN {dev.serialNo}
-                              </div>
-                            ) : null}
-                            <div className="mt-0.5 text-xs text-muted-foreground">
-                              {[dev.lineName || dev.assayLine, dev.categoryName]
-                                .filter(Boolean)
-                                .join(" · ") || "竞品"}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap justify-end gap-1.5">
-                            <Badge variant="outline" className="font-normal">
-                              竞品
-                            </Badge>
-                            {dev.itemCount > 0 ? (
-                              <Badge variant="secondary" className="font-normal">
-                                {dev.itemCount} 细项
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </div>
-                        <dl className="mt-3 grid gap-1.5 text-xs sm:grid-cols-2">
-                          {dev.usageLocation ? (
-                            <div>
-                              <dt className="text-muted-foreground">使用位置</dt>
-                              <dd className="mt-0.5 text-sm text-foreground">
-                                {dev.usageLocation}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {dev.installedAt ? (
-                            <div>
-                              <dt className="text-muted-foreground">安装日期</dt>
-                              <dd className="mt-0.5 text-sm text-foreground">
-                                {dev.installedAt}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {dev.enabledAt ? (
-                            <div>
-                              <dt className="text-muted-foreground">到期时间</dt>
-                              <dd className="mt-0.5 text-sm text-foreground">
-                                {dev.enabledAt}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {dev.serviceEvaluation ? (
-                            <div>
-                              <dt className="text-muted-foreground">客户服务评价</dt>
-                              <dd className="mt-0.5 text-sm text-foreground">
-                                {dev.serviceEvaluation}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {dev.reagentBrand ? (
-                            <div>
-                              <dt className="text-muted-foreground">试剂品牌</dt>
-                              <dd className="mt-0.5 text-sm text-foreground">
-                                {dev.reagentBrand}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {dev.monthlySampleVolume ? (
-                            <div>
-                              <dt className="text-muted-foreground">月样本量</dt>
-                              <dd className="mt-0.5 text-sm text-foreground">
-                                {dev.monthlySampleVolume}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {dev.deptHead ? (
-                            <div>
-                              <dt className="text-muted-foreground">科室负责人</dt>
-                              <dd className="mt-0.5 text-sm text-foreground">
-                                {dev.deptHead}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {dev.channelCsa ? (
-                            <div>
-                              <dt className="text-muted-foreground">渠道CSA</dt>
-                              <dd className="mt-0.5 text-sm text-foreground">
-                                {dev.channelCsa}
-                              </dd>
-                            </div>
-                          ) : null}
-                        </dl>
-                        {dev.itemNames.length > 0 ? (
-                          <div className="mt-3 border-t border-amber-200/50 pt-2 dark:border-amber-900/30">
-                            <div className="mb-1.5 text-xs text-muted-foreground">
-                              细项覆盖（{dev.itemNames.length}）
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {dev.itemNames.slice(0, 12).map((name) => (
-                                <Badge
-                                  key={name}
-                                  variant="outline"
-                                  className="font-normal"
-                                >
-                                  {name}
-                                </Badge>
-                              ))}
-                              {dev.itemNames.length > 12 ? (
-                                <span className="text-xs text-muted-foreground">
-                                  +{dev.itemNames.length - 12}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : null}
-                      </li>
+                    {competitorDevices.map((d) => (
+                      <DeviceCard
+                        key={d.id}
+                        device={d}
+                        lineName={resolveLineName(d, lineNameByCode)}
+                        packages={resolvePackages(d.itemCodes, itemToCategory)}
+                        variant="competitor"
+                      />
                     ))}
                   </ul>
                 )}
