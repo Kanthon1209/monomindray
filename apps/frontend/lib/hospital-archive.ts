@@ -93,7 +93,7 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "region", label: "区域", section: "客户基础" },
   { key: "branchOffice", label: "分公司", section: "客户基础" },
   { key: "customerName", label: "客户名称", section: "客户基础" },
-  { key: "customerCode", label: "客户编码", section: "客户基础" },
+  // customerCode soft-removed from UI/catalog (hospitals.customer_code retained)
 ];
 
 /** 看板默认列（关键指标，适配窄侧栏） */
@@ -106,7 +106,6 @@ export const DASHBOARD_PRIMARY_COLUMNS: Array<ArchiveFieldKey | "customerLevel" 
 
 /** 展开后追加列 */
 export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
-  "customerCode",
   "region",
   "branchOffice",
 ];
@@ -118,6 +117,7 @@ export const DASHBOARD_LIST_COLUMNS: Array<ArchiveFieldKey | "customerLevel" | "
 ];
 
 export function archiveFieldLabel(key: ArchiveFieldKey | string) {
+  if (key === "customerCode") return "客户编码";
   if (key === "customerLevel") return "客户等级";
   if (key === "usageLocation") return "使用位置";
   if (key === "customerStage") return "客户所在阶段";
@@ -207,6 +207,7 @@ export const DEVICE_SERVICE_EVALUATION_OPTIONS = [
   "新人 有资质",
   "负责区域一年以上",
   "客户关系良好, 口碑优于竞品",
+  "竞品未知",
 ] as const;
 
 /** 设备使用位置枚举（devices.usage_location；「其他」可自填） */

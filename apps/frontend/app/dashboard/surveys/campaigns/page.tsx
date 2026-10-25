@@ -497,7 +497,7 @@ export default function SurveyCampaignsPage() {
                     医院（已选 {selectedHospitals.length} 家，每家生成一条任务）
                   </Label>
                   <Input
-                    placeholder="输入医院名称搜索（支持客户编码）"
+                    placeholder="输入医院名称搜索"
                     value={hospitalKeyword}
                     onChange={(e) => setHospitalKeyword(e.target.value)}
                   />

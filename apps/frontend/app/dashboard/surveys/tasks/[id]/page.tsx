@@ -39,6 +39,7 @@ import {
   loadChinaPca,
   type ChinaPcaData,
 } from "@/lib/china-regions";
+import { regionLabelFromProvince } from "@/lib/hospital-archive";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -127,6 +128,19 @@ function isDistrictField(field: SurveyField): boolean {
     t === "hospital.district" ||
     label === "区县" ||
     label.includes("区县")
+  );
+}
+
+function isRegionField(field: SurveyField): boolean {
+  const t = (field.target || "").trim();
+  const key = (field.key || "").toLowerCase();
+  const label = field.label || "";
+  return (
+    key === "region" ||
+    t === "hospital.region" ||
+    t === "hospital.archive.region" ||
+    label === "区域" ||
+    label === "大区"
   );
 }
 
@@ -323,6 +337,10 @@ export default function SurveyTaskFillPage() {
   );
   const districtFieldKey = useMemo(
     () => flatFields.find(isDistrictField)?.key,
+    [flatFields],
+  );
+  const regionFieldKey = useMemo(
+    () => flatFields.find(isRegionField)?.key,
     [flatFields],
   );
   const provinceValue = provinceFieldKey
@@ -533,6 +551,11 @@ export default function SurveyTaskFillPage() {
       fillIfPresent(
         ["district", "hospital.district"],
         hospital.district,
+      );
+      // 区域由省份派生（华东/华北…）
+      fillIfPresent(
+        ["region", "hospital.region", "hospital.archive.region"],
+        regionLabelFromProvince(hospital.province),
       );
       // 仅当表单里有医院等级（非客户等级文案）时回填 level
       for (const f of fields) {
@@ -770,6 +793,9 @@ export default function SurveyTaskFillPage() {
           onChange={(province) => {
             const exactKnown = CHINA_PROVINCES.includes(province);
             const cities = citiesForProvince(province);
+            const autoRegion = exactKnown
+              ? regionLabelFromProvince(province)
+              : "";
             setAnswers((prev) => {
               const next = { ...prev, [field.key]: province };
               if (exactKnown && cityFieldKey) {
@@ -778,6 +804,10 @@ export default function SurveyTaskFillPage() {
                   next[cityFieldKey] = "";
                   if (districtFieldKey) next[districtFieldKey] = "";
                 }
+              }
+              // 区域由省份派生（华东/华北…）；选中已知省时始终覆盖
+              if (regionFieldKey && exactKnown) {
+                next[regionFieldKey] = autoRegion;
               }
               return next;
             });

@@ -531,7 +531,6 @@ export function HospitalDetailSheet({
               <div className="grid divide-y rounded-lg border-2 border-border bg-background md:grid-cols-2 md:divide-x md:divide-y-0">
                 {[
                   { label: "客户名称", value: hospital?.name || "" },
-                  { label: "客户编码", value: hospital?.customerCode || "" },
                   { label: "区域", value: hospital?.region || "" },
                   { label: "分公司", value: hospital?.branchOffice || "" },
                   {

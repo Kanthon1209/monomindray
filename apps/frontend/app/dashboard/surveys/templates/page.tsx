@@ -841,7 +841,7 @@ export default function SurveyTemplatesPage() {
     template: SurveyTemplate,
     nextSchema: SurveySchema,
     extras?: { title?: string; description?: string },
-  ) => {
+  ): Promise<false | SurveyTemplate> => {
     const schema = normalizeSchema(nextSchema);
     setSaving(true);
     setError(null);
@@ -856,10 +856,11 @@ export default function SurveyTemplatesPage() {
       setError(res.error);
       return false;
     }
+    const saved = res.template!;
     setItems((prev) =>
-      prev.map((t) => (t.id === template.id ? res.template! : t)),
+      prev.map((t) => (t.id === template.id ? saved : t)),
     );
-    return true;
+    return saved;
   };
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -1058,16 +1059,21 @@ export default function SurveyTemplatesPage() {
       ),
     );
     setError(null);
-    const ok = await persistSchema(
+    const saved = await persistSchema(
       { ...template, schema: { fields, sections: schema.sections } },
       { fields, sections: schema.sections },
     );
-    if (!ok) {
+    if (!saved) {
       setSpecialBlockField(prevField);
       setItems((prev) =>
         prev.map((t) => (t.id === template.id ? template : t)),
       );
+      return;
     }
+    const synced = (saved.schema?.fields || []).find(
+      (f) => f.key === specialBlockField.key,
+    );
+    if (synced) setSpecialBlockField(synced);
   };
 
 
