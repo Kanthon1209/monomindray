@@ -134,15 +134,30 @@ function asStringArray(value: any): string[] {
     .filter(Boolean);
 }
 
-function groupBySection(fields: SurveyField[]) {
+function groupBySection(
+  fields: SurveyField[],
+  sectionOrder?: string[] | null,
+) {
   const map = new Map<string, SurveyField[]>();
   for (const f of fields) {
     if (f.type === "repeat") continue;
-    const section = f.section || "其他";
+    const section = (f.section || "其他").trim() || "其他";
     if (!map.has(section)) map.set(section, []);
     map.get(section)!.push(f);
   }
-  return Array.from(map.entries());
+  const ordered: [string, SurveyField[]][] = [];
+  const seen = new Set<string>();
+  for (const name of sectionOrder || []) {
+    const key = (name || "").trim();
+    if (!key || seen.has(key) || !map.has(key)) continue;
+    ordered.push([key, map.get(key)!]);
+    seen.add(key);
+  }
+  for (const [key, list] of map.entries()) {
+    if (seen.has(key)) continue;
+    ordered.push([key, list]);
+  }
+  return ordered;
 }
 
 function emptyDevice(fields: SurveyField[]): Record<string, any> {
@@ -256,7 +271,10 @@ export default function SurveyTaskFillPage() {
     () => (assignment?.schema?.fields || []).filter((f) => f.type === "repeat"),
     [assignment],
   );
-  const sections = useMemo(() => groupBySection(flatFields), [flatFields]);
+  const sections = useMemo(
+    () => groupBySection(flatFields, assignment?.schema?.sections),
+    [flatFields, assignment?.schema?.sections],
+  );
   const devicesField = repeatFields.find((f) => f.key === "devices") || null;
 
   const provinceFieldKey = useMemo(

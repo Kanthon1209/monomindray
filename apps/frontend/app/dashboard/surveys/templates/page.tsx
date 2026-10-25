@@ -737,6 +737,9 @@ export default function SurveyTemplatesPage() {
   /** 模板内字段拖拽排序 */
   const [dragFieldKey, setDragFieldKey] = useState<string | null>(null);
   const [dragOverFieldKey, setDragOverFieldKey] = useState<string | null>(null);
+  /** 模板内分组拖拽排序 */
+  const [dragSectionName, setDragSectionName] = useState<string | null>(null);
+  const [dragOverSectionName, setDragOverSectionName] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -1042,6 +1045,42 @@ export default function SurveyTemplatesPage() {
     await persistSchema(template, { fields, sections: schema.sections });
   };
 
+  const reorderSections = async (
+    template: SurveyTemplate,
+    fromSection: string,
+    toSection: string,
+  ) => {
+    if (!fromSection || !toSection || fromSection === toSection) return;
+    const schema = normalizeSchema(template.schema);
+    const sections = [...(schema.sections || [])];
+    const fromIdx = sections.indexOf(fromSection);
+    const toIdx = sections.indexOf(toSection);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = sections.splice(fromIdx, 1);
+    // Dragging downward: place after target; upward: place before target
+    if (fromIdx < toIdx) {
+      sections.splice(toIdx, 0, moved);
+    } else {
+      sections.splice(toIdx, 0, moved);
+    }
+    const nextSchema = { fields: schema.fields || [], sections };
+    // Optimistic update so the list jumps immediately
+    const prev = template;
+    setItems((list) =>
+      list.map((t) =>
+        t.id === template.id ? { ...t, schema: nextSchema } : t,
+      ),
+    );
+    setError(null);
+    const ok = await persistSchema(
+      { ...template, schema: nextSchema },
+      nextSchema,
+    );
+    if (!ok) {
+      setItems((list) => list.map((t) => (t.id === template.id ? prev : t)));
+    }
+  };
+
   const openCreateSection = (template: SurveyTemplate) => {
     setSectionTemplateId(template.id);
     setRenamingSection(null);
@@ -1305,8 +1344,63 @@ export default function SurveyTemplatesPage() {
         ) : null}
         <div className="space-y-4">
           {groups.map(({ section, fields }) => (
-            <div key={section}>
+            <div
+              key={section}
+              onDragOver={(e) => {
+                // Accept section drops only (not field cards)
+                if (!Array.from(e.dataTransfer.types).includes("application/x-mindray-section")) {
+                  return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOverSectionName !== section) {
+                  setDragOverSectionName(section);
+                }
+              }}
+              onDragLeave={() => {
+                if (dragOverSectionName === section) setDragOverSectionName(null);
+              }}
+              onDrop={(e) => {
+                if (!Array.from(e.dataTransfer.types).includes("application/x-mindray-section")) {
+                  return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                const from =
+                  e.dataTransfer.getData("application/x-mindray-section") ||
+                  dragSectionName;
+                setDragOverSectionName(null);
+                setDragSectionName(null);
+                if (from) void reorderSections(item, from, section);
+              }}
+              className={`rounded-md transition ${
+                dragOverSectionName === section && dragSectionName !== section
+                  ? "ring-2 ring-primary/40"
+                  : ""
+              } ${dragSectionName === section ? "opacity-60" : ""}`}
+            >
               <div className="mb-2 flex items-center gap-2">
+                <span
+                  draggable
+                  title="拖动调整分组顺序"
+                  className="inline-flex cursor-grab items-center text-muted-foreground active:cursor-grabbing"
+                  onDragStart={(e) => {
+                    e.stopPropagation();
+                    setDragSectionName(section);
+                    setDragFieldKey(null);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("application/x-mindray-section", section);
+                    // Some browsers require text/plain for DnD to work
+                    e.dataTransfer.setData("text/plain", `section:${section}`);
+                  }}
+                  onDragEnd={() => {
+                    setDragSectionName(null);
+                    setDragOverSectionName(null);
+                  }}
+                >
+                  <GripVertical className="h-4 w-4" aria-hidden />
+                </span>
                 <button
                   type="button"
                   className="text-sm font-medium hover:underline"
@@ -1340,7 +1434,9 @@ export default function SurveyTemplatesPage() {
                     onDragStart={(e) => {
                       e.stopPropagation();
                       setDragFieldKey(f.key);
+                      setDragSectionName(null);
                       e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("application/x-mindray-field", f.key);
                       e.dataTransfer.setData("text/plain", f.key);
                     }}
                     onDragEnd={() => {
@@ -1348,6 +1444,14 @@ export default function SurveyTemplatesPage() {
                       setDragOverFieldKey(null);
                     }}
                     onDragOver={(e) => {
+                      // Let section drops bubble to the group container
+                      if (
+                        Array.from(e.dataTransfer.types).includes(
+                          "application/x-mindray-section",
+                        )
+                      ) {
+                        return;
+                      }
                       e.preventDefault();
                       e.stopPropagation();
                       e.dataTransfer.dropEffect = "move";
@@ -1357,13 +1461,25 @@ export default function SurveyTemplatesPage() {
                       if (dragOverFieldKey === f.key) setDragOverFieldKey(null);
                     }}
                     onDrop={(e) => {
+                      // Let section drops bubble to the group container
+                      if (
+                        Array.from(e.dataTransfer.types).includes(
+                          "application/x-mindray-section",
+                        )
+                      ) {
+                        return;
+                      }
                       e.preventDefault();
                       e.stopPropagation();
                       const from =
-                        e.dataTransfer.getData("text/plain") || dragFieldKey;
+                        e.dataTransfer.getData("application/x-mindray-field") ||
+                        e.dataTransfer.getData("text/plain") ||
+                        dragFieldKey;
                       setDragOverFieldKey(null);
                       setDragFieldKey(null);
-                      if (from) void reorderFields(item, from, f.key);
+                      if (from && !from.startsWith("section:")) {
+                        void reorderFields(item, from, f.key);
+                      }
                     }}
                     className={`rounded-md border bg-background text-left text-sm transition hover:border-primary/40 hover:bg-accent/40 ${
                       dragOverFieldKey === f.key && dragFieldKey !== f.key
