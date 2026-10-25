@@ -271,7 +271,7 @@ export function DeviceBlockField({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          每台设备需填写机型 / 序列号 / 安装与启用日期，再选检测线并勾选细项覆盖；所属公司可联想或自定义（迈瑞 / 竞品）。
+          每台设备需填写机型 / 序列号 / 安装日期与到期时间，再选检测线并勾选细项覆盖；所属公司可联想或自定义（迈瑞 / 竞品）。
         </p>
         {!disabled ? (
           <Button
@@ -385,7 +385,7 @@ export function DeviceBlockField({
                 if (fieldKey === "enabledAt") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>启用日期</Label>
+                      <Label>到期时间</Label>
                       <Input
                         type="date"
                         value={row.enabledAt || ""}

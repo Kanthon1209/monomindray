@@ -206,6 +206,7 @@ export default function SurveyReviewPage() {
                             <SurveyAnswersView
                               answers={item.answers || {}}
                               fields={item.schema?.fields}
+                              sections={item.schema?.sections}
                             />
                             <div className="mt-3 flex flex-wrap items-center gap-2">
                               <Input
@@ -305,6 +306,7 @@ export default function SurveyReviewPage() {
                         <SurveyAnswersView
                           answers={item.answers || {}}
                           fields={item.schema?.fields}
+                          sections={item.schema?.sections}
                           className="grid gap-2 text-sm"
                         />
                         <Input

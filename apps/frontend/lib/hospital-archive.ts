@@ -190,6 +190,7 @@ export const HOSPITAL_ATTRIBUTE_KEYS = [
   "dual_major",
   "customer_stage",
   "pending_issues",
+  "collector_name",
 ] as const;
 
 /** 系统预设枚举（与 collectable_fields.enum_values 一致，模板/管理端不可自增选项） */
@@ -222,6 +223,7 @@ export const HOSPITAL_ATTRIBUTE_LABELS: Record<string, string> = {
   usage_location: "使用位置（已迁至设备）",
   customer_stage: "客户所在阶段",
   pending_issues: "客户端待解决问题及需求",
+  collector_name: "采集者姓名",
   // deprecated / soft-archived from catalog — keep label for legacy attribute rows
   svip_level: "SVIP级别（已停用）",
   dual_major: "双大客户",
@@ -381,6 +383,8 @@ export function resolveArchiveField(
       return attrs.customer_stage || "";
     case "pendingIssues":
       return attrs.pending_issues || "";
+    case "collectorName":
+      return attrs.collector_name || "";
     case "model":
       // Prefer devices aggregation; archive.model is legacy only.
       return (

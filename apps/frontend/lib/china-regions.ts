@@ -561,3 +561,29 @@ export function districtsForCity(
   if (!ck) return [];
   return cities[ck] || [];
 }
+
+/** Exact catalog match helpers for survey submit validation. */
+export function isCatalogProvince(province: string): boolean {
+  const p = province.trim();
+  if (!p) return false;
+  return CHINA_PROVINCES.includes(p);
+}
+
+export function isCatalogCity(province: string, city: string): boolean {
+  const c = city.trim();
+  if (!c) return false;
+  const cities = citiesForProvince(province.trim());
+  return cities.includes(c);
+}
+
+export function isCatalogDistrict(
+  province: string,
+  city: string,
+  district: string,
+  pca: ChinaPcaData | null | undefined,
+): boolean {
+  const d = district.trim();
+  if (!d) return false;
+  const list = districtsForCity(province.trim(), city.trim(), pca);
+  return list.includes(d);
+}

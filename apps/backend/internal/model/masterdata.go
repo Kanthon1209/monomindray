@@ -362,6 +362,8 @@ var KnownAttributeKeys = map[string]string{
 	"customer_stage":    "customer_stage",
 	"pendingIssues":     "pending_issues",
 	"pending_issues":    "pending_issues",
+	"collectorName":     "collector_name",
+	"collector_name":    "collector_name",
 	"svipLevel":         "svip_level",
 	"dualMajorCustomer": "dual_major",
 	"groupName":         "sales_group",

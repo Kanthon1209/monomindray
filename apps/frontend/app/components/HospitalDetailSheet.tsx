@@ -89,7 +89,7 @@ function DeviceCard({ device }: { device: Device }) {
         ) : null}
         {device.enabledAt ? (
           <div>
-            <dt className="text-muted-foreground">启用日期</dt>
+            <dt className="text-muted-foreground">到期时间</dt>
             <dd className="mt-0.5 text-sm text-foreground">{device.enabledAt}</dd>
           </div>
         ) : null}
@@ -395,6 +395,11 @@ export function HospitalDetailSheet({
                       "客户端待解决问题及需求",
                     value: hospital?.attributes?.pending_issues || "",
                   },
+                  {
+                    label:
+                      HOSPITAL_ATTRIBUTE_LABELS.collector_name || "采集者姓名",
+                    value: hospital?.attributes?.collector_name || "",
+                  },
                 ].map((row) => (
                   <div
                     key={row.label}
@@ -512,7 +517,7 @@ export function HospitalDetailSheet({
                           ) : null}
                           {dev.enabledAt ? (
                             <div>
-                              <dt className="text-muted-foreground">启用日期</dt>
+                              <dt className="text-muted-foreground">到期时间</dt>
                               <dd className="mt-0.5 text-sm text-foreground">
                                 {dev.enabledAt}
                               </dd>

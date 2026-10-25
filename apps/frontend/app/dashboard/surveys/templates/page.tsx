@@ -304,7 +304,7 @@ const DEFAULT_DEVICE_BLOCK_COLLECT_FIELDS: {
     hint: "日历选择",
   },
   {
-    label: "启用日期",
+    label: "到期时间",
     key: "devices[].enabledAt",
     type: "date",
     hint: "日历选择",

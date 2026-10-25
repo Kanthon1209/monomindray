@@ -347,7 +347,7 @@ export default function DevicesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>启用日期</Label>
+                  <Label>到期时间</Label>
                   <Input
                     type="date"
                     value={form.enabledAt}
@@ -443,7 +443,7 @@ export default function DevicesPage() {
                   <TableHead>序列号</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>安装日期</TableHead>
-                  <TableHead>启用日期</TableHead>
+                  <TableHead>到期时间</TableHead>
                   <TableHead>使用位置</TableHead>
                   <TableHead className="w-[80px]">操作</TableHead>
                 </TableRow>

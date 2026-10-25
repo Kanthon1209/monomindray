@@ -32,6 +32,9 @@ import {
   CHINA_PROVINCES,
   citiesForProvince,
   districtsForCity,
+  isCatalogCity,
+  isCatalogDistrict,
+  isCatalogProvince,
   loadChinaPca,
   type ChinaPcaData,
 } from "@/lib/china-regions";
@@ -432,6 +435,52 @@ export default function SurveyTaskFillPage() {
       );
       return;
     }
+    // 省市区必须命中系统预置目录（pca / 省市表），不可自由编造
+    {
+      const prov = provinceFieldKey
+        ? String(answers[provinceFieldKey] || "").trim()
+        : "";
+      const city = cityFieldKey
+        ? String(answers[cityFieldKey] || "").trim()
+        : "";
+      const district = districtFieldKey
+        ? String(answers[districtFieldKey] || "").trim()
+        : "";
+      if (provinceFieldKey && prov && !isCatalogProvince(prov)) {
+        showActionFeedback(
+          "error",
+          "省份必须从系统预置列表中选择，当前值不在目录中",
+        );
+        return;
+      }
+      if (cityFieldKey && city) {
+        if (!prov || !isCatalogCity(prov, city)) {
+          showActionFeedback(
+            "error",
+            "城市必须属于所选省份，且从系统预置列表中选择",
+          );
+          return;
+        }
+      }
+      if (districtFieldKey && district) {
+        let pcaData = pca;
+        if (!pcaData) {
+          try {
+            pcaData = await loadChinaPca();
+          } catch {
+            showActionFeedback("error", "区县目录加载失败，请稍后重试");
+            return;
+          }
+        }
+        if (!prov || !city || !isCatalogDistrict(prov, city, district, pcaData)) {
+          showActionFeedback(
+            "error",
+            "区县必须属于所选城市，且从系统预置列表中选择",
+          );
+          return;
+        }
+      }
+    }
     setSaving(true);
     const res = await submitSurveyAssignment(id, {
       answers,
@@ -703,7 +752,7 @@ export default function SurveyTaskFillPage() {
         <ComboboxInput
           value={value == null ? "" : String(value)}
           disabled={disabled}
-          placeholder="选择或输入省份"
+          placeholder="请从列表选择省份"
           options={CHINA_PROVINCES}
           onChange={(province) => {
             const exactKnown = CHINA_PROVINCES.includes(province);
@@ -728,7 +777,7 @@ export default function SurveyTaskFillPage() {
         <ComboboxInput
           value={value == null ? "" : String(value)}
           disabled={disabled}
-          placeholder={provinceValue ? "选择或输入城市" : "请先选择省份"}
+          placeholder={provinceValue ? "请从列表选择城市" : "请先选择省份"}
           options={cityOptions}
           onChange={(city) => {
             const exactKnown = cityOptions.includes(city);
@@ -759,8 +808,8 @@ export default function SurveyTaskFillPage() {
           placeholder={
             cityValue
               ? districtOptions.length
-                ? "选择或输入区县"
-                : "输入区县"
+                ? "请从列表选择区县"
+                : "请先选择有区县目录的城市"
               : "请先选择城市"
           }
           options={districtOptions}
