@@ -875,7 +875,11 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		remark = archiveString(mergedArchive, "archiveRemark")
 	}
 	customerCode := firstNonEmpty(cols["customerCode"], cols["customer_code"], archiveString(mergedArchive, "customerCode"))
-	region := firstNonEmpty(cols["region"], archiveString(mergedArchive, "region"))
+	// 区域（大区）以问卷省份为准服务端派生，不信任客户端单独填写值。
+	region := resolveRegionFromProvince(province, firstNonEmpty(cols["region"], archiveString(mergedArchive, "region")))
+	if region != "" {
+		mergedArchive["region"] = region
+	}
 	branchOffice := firstNonEmpty(cols["branchOffice"], cols["branch_office"], archiveString(mergedArchive, "branchOffice"))
 
 	// Attributes/metrics come only from explicit hospital.attributes.* / hospital.metrics.* targets.

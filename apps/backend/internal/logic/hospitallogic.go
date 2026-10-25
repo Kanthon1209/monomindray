@@ -166,12 +166,14 @@ func (l *HospitalLogic) Create(req *types.HospitalUpsertRequest) (*types.Hospita
 		return nil, err
 	}
 	status := normalizeStatus(req.Status, "pending")
+	province := strings.TrimSpace(req.Province)
+	region := resolveRegionFromProvince(province, req.Region)
 	h := &model.Hospital{
-		Name: strings.TrimSpace(req.Name), Province: strings.TrimSpace(req.Province),
+		Name: strings.TrimSpace(req.Name), Province: province,
 		City: strings.TrimSpace(req.City), District: strings.TrimSpace(req.District),
 		Level: req.Level, Type: req.Type, Status: status,
 		Address: strings.TrimSpace(req.Address), Remark: strings.TrimSpace(req.Remark),
-		CustomerCode: strings.TrimSpace(req.CustomerCode), Region: strings.TrimSpace(req.Region),
+		CustomerCode: strings.TrimSpace(req.CustomerCode), Region: region,
 		BranchOffice: strings.TrimSpace(req.BranchOffice),
 		CreatedBy: ptrInt64(uid), UpdatedBy: ptrInt64(uid),
 	}
@@ -206,12 +208,14 @@ func (l *HospitalLogic) Update(id int64, req *types.HospitalUpsertRequest) (*typ
 		return nil, NewCodeError(404, "医院不存在")
 	}
 	status := normalizeStatus(req.Status, existing.Status)
+	province := strings.TrimSpace(req.Province)
+	region := resolveRegionFromProvince(province, req.Region)
 	h := &model.Hospital{
-		Id: id, Name: strings.TrimSpace(req.Name), Province: strings.TrimSpace(req.Province),
+		Id: id, Name: strings.TrimSpace(req.Name), Province: province,
 		City: strings.TrimSpace(req.City), District: strings.TrimSpace(req.District),
 		Level: req.Level, Type: req.Type, Status: status,
 		Address: strings.TrimSpace(req.Address), Remark: strings.TrimSpace(req.Remark),
-		CustomerCode: strings.TrimSpace(req.CustomerCode), Region: strings.TrimSpace(req.Region),
+		CustomerCode: strings.TrimSpace(req.CustomerCode), Region: region,
 		BranchOffice: strings.TrimSpace(req.BranchOffice),
 		Archive: existing.Archive, UpdatedBy: ptrInt64(uid),
 	}
