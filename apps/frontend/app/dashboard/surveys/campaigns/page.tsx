@@ -20,6 +20,7 @@ import { formatTime } from "@/lib/users-admin";
 import { API_BASE, getAuthToken, mapUser, type User } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Card,
   CardContent,
@@ -70,6 +71,7 @@ function campaignStatusBadge(status: string) {
 }
 
 export default function SurveyCampaignsPage() {
+  const confirmDlg = useConfirmDialog();
   const { user } = useAuth();
   const router = useRouter();
   const [items, setItems] = useState<SurveyCampaign[]>([]);
@@ -281,7 +283,12 @@ export default function SurveyCampaignsPage() {
       `确定删除发放「${c.title}」？\n` +
       `将同时删除其全部任务与答卷（任务 ${c.assignmentCount} · 待审核 ${pending} · 已审核 ${approved}）。\n` +
       `注意：已审核并写入客户/设备的数据不会回滚。`;
-    if (!window.confirm(tip)) return;
+    const ok = await confirmDlg.ask({
+      title: "删除发放",
+      description: tip,
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     setSaving(true);
     setError(null);
     const res = await deleteSurveyCampaign(c.id);
@@ -671,6 +678,7 @@ export default function SurveyCampaignsPage() {
           </MobileCardList>
         </CardContent>
       </Card>
+      {confirmDlg.dialog}
     </div>
   );
 }

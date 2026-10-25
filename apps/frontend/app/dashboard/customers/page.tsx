@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ComboboxInput } from "@/components/ui/combobox-input";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -69,6 +70,9 @@ import {
   CHINA_PROVINCES,
   allCities,
   citiesForProvince,
+  districtsForCity,
+  loadChinaPca,
+  type ChinaPcaData,
 } from "@/lib/china-regions";
 import {
   CUSTOMER_STAGE_OPTIONS,
@@ -163,6 +167,22 @@ function deviceLabel(d: Device) {
 }
 
 export default function CustomersPage() {
+  const confirmDlg = useConfirmDialog();
+  const [pca, setPca] = useState<ChinaPcaData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadChinaPca()
+      .then((d) => {
+        if (!cancelled) setPca(d);
+      })
+      .catch(() => {
+        if (!cancelled) setPca(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [items, setItems] = useState<Hospital[]>([]);
   const [total, setTotal] = useState(0);
   const [keyword, setKeyword] = useState("");
@@ -255,6 +275,19 @@ export default function CustomersPage() {
     const base = fromProvince.length > 0 ? fromProvince : allCities();
     return Array.from(new Set([...base, ...fromData]));
   }, [form.province, items]);
+
+  const districtOptions = useMemo(() => {
+    const fromPca = districtsForCity(form.province, form.city, pca);
+    const fromData = items
+      .filter(
+        (h) =>
+          (!form.province || h.province === form.province) &&
+          (!form.city || h.city === form.city),
+      )
+      .map((h) => h.district || "")
+      .filter(Boolean);
+    return Array.from(new Set([...fromPca, ...fromData]));
+  }, [form.province, form.city, pca, items]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -361,7 +394,12 @@ export default function CustomersPage() {
 
   const onDelete = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!confirm("确认删除该客户？关联设备会一并删除。")) return;
+    const ok = await confirmDlg.ask({
+      title: "删除客户",
+      description: "确认删除该客户？关联设备会一并删除。",
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     const res = await deleteHospital(id);
     if (res.error) {
       setError(res.error);
@@ -388,13 +426,13 @@ export default function CustomersPage() {
       return;
     }
     const from = picked.hospitalName || "其他客户";
-    if (
-      !confirm(
-        `将设备「${picked.brand} ${picked.model}${picked.serialNo ? " / " + picked.serialNo : ""}」从「${from}」改挂到当前客户？`,
-      )
-    ) {
-      return;
-    }
+    const okMove = await confirmDlg.ask({
+      title: "改挂设备",
+      description: `将设备「${picked.brand} ${picked.model}${picked.serialNo ? " / " + picked.serialNo : ""}」从「${from}」改挂到当前客户？`,
+      confirmLabel: "确认改挂",
+      destructive: false,
+    });
+    if (!okMove) return;
     setSaving(true);
     setError(null);
     const res = await updateDevice(picked.id, {
@@ -446,7 +484,12 @@ export default function CustomersPage() {
   };
 
   const onDeleteDevice = async (id: string) => {
-    if (!confirm("确认从该客户移除并删除此设备实例？")) return;
+    const ok = await confirmDlg.ask({
+      title: "删除设备",
+      description: "确认从该客户移除并删除此设备实例？",
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     const res = await deleteDevice(id);
     if (res.error) {
       setError(res.error);
@@ -702,16 +745,16 @@ export default function CustomersPage() {
                       const cities = citiesForProvince(province);
                       // 仅在选中完整已知省时，清掉不兼容的城市；输入过程中保留
                       const exactKnown = CHINA_PROVINCES.includes(province);
+                      const cityCleared =
+                        exactKnown &&
+                        cities.length > 0 &&
+                        prev.city &&
+                        !cities.includes(prev.city);
                       return {
                         ...prev,
                         province,
-                        city:
-                          exactKnown &&
-                          cities.length > 0 &&
-                          prev.city &&
-                          !cities.includes(prev.city)
-                            ? ""
-                            : prev.city,
+                        city: cityCleared ? "" : prev.city,
+                        district: cityCleared ? "" : prev.district,
                       };
                     })
                   }
@@ -724,15 +767,43 @@ export default function CustomersPage() {
                   placeholder="选择或输入城市"
                   value={form.city}
                   options={cityOptions}
-                  onChange={(city) => setForm({ ...form, city })}
+                  onChange={(city) =>
+                    setForm((prev) => {
+                      if (city === prev.city) return prev;
+                      const districts = districtsForCity(
+                        prev.province,
+                        city,
+                        pca,
+                      );
+                      const exactKnown = districts.length > 0 && cityOptions.includes(city);
+                      const districtCleared =
+                        exactKnown &&
+                        prev.district &&
+                        districts.length > 0 &&
+                        !districts.includes(prev.district);
+                      return {
+                        ...prev,
+                        city,
+                        district: districtCleared ? "" : prev.district,
+                      };
+                    })
+                  }
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>区县</Label>
-                <Input
+                <ComboboxInput
+                  placeholder={
+                    form.city
+                      ? districtOptions.length
+                        ? "选择或输入区县"
+                        : "输入区县"
+                      : "请先选择城市"
+                  }
                   value={form.district}
-                  onChange={(e) =>
-                    setForm({ ...form, district: e.target.value })
+                  options={districtOptions}
+                  onChange={(district) =>
+                    setForm({ ...form, district })
                   }
                 />
               </div>
@@ -1093,6 +1164,7 @@ export default function CustomersPage() {
           </div>
         </DialogContent>
       </Dialog>
+      {confirmDlg.dialog}
     </div>
   );
 }

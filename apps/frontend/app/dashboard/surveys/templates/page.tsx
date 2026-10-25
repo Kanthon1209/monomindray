@@ -34,6 +34,7 @@ import {
 } from "@/lib/hospital-archive";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Card,
   CardContent,
@@ -693,6 +694,7 @@ function applyCatalogField(
 }
 
 export default function SurveyTemplatesPage() {
+  const confirmDlg = useConfirmDialog();
   const { user } = useAuth();
   const router = useRouter();
   const [items, setItems] = useState<SurveyTemplate[]>([]);
@@ -859,20 +861,21 @@ export default function SurveyTemplatesPage() {
   const onDeleteTemplate = async (item: SurveyTemplate, e?: MouseEvent) => {
     e?.stopPropagation();
     e?.preventDefault();
-    if (
-      !window.confirm(
-        `确定删除模板「${item.title}」？\n（软删除：从列表隐藏，已有发放任务不受影响）`,
-      )
-    ) {
-      return;
-    }
+    const okDel = await confirmDlg.ask({
+      title: "删除模板",
+      description: `确定删除模板「${item.title}」？\n（软删除：从列表隐藏，已有发放任务不受影响）`,
+      confirmLabel: "删除",
+    });
+    if (!okDel) return;
     setDeletingId(item.id);
     setError(null);
     let res = await deleteSurveyTemplate(item.id, false);
     if (res.needsForce) {
-      const ok = window.confirm(
-        `${res.error || "仍有发放引用此模板。"}\n\n仍要强制归档？`,
-      );
+      const ok = await confirmDlg.ask({
+        title: "强制归档模板",
+        description: `${res.error || "仍有发放引用此模板。"}\n\n仍要强制归档？`,
+        confirmLabel: "强制归档",
+      });
       if (!ok) {
         setDeletingId(null);
         return;
@@ -1150,9 +1153,12 @@ export default function SurveyTemplatesPage() {
     if (fieldMode !== "edit" || !editingOriginalKey) return;
     const template = items.find((t) => t.id === editingTemplateId);
     if (!template) return;
-    if (!window.confirm(`确定删除字段「${fieldDraft.label || editingOriginalKey}」？`)) {
-      return;
-    }
+    const okDelField = await confirmDlg.ask({
+      title: "删除字段",
+      description: `确定删除字段「${fieldDraft.label || editingOriginalKey}」？`,
+      confirmLabel: "删除",
+    });
+    if (!okDelField) return;
     const schema = normalizeSchema(template.schema);
     const fields = (schema.fields || []).filter((f) => f.key !== editingOriginalKey);
     if (
@@ -1265,7 +1271,12 @@ export default function SurveyTemplatesPage() {
       count > 0
         ? `确定删除分组「${section}」及其 ${count} 个字段？`
         : `确定删除空分组「${section}」？`;
-    if (!window.confirm(msg)) return;
+    const okDelSec = await confirmDlg.ask({
+      title: "删除分组",
+      description: msg,
+      confirmLabel: "删除",
+    });
+    if (!okDelSec) return;
     const fields = (schema.fields || []).filter(
       (f) => (f.section || "未分组") !== section,
     );
@@ -2343,6 +2354,7 @@ export default function SurveyTemplatesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {confirmDlg.dialog}
     </div>
   );
 }

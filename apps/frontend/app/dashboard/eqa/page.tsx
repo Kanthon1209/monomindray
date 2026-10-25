@@ -32,6 +32,7 @@ import {
 } from "@/lib/eqa";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Card,
   CardContent,
@@ -85,6 +86,7 @@ const emptyForm = (
 });
 
 export default function EqaDashboardPage() {
+  const confirmDlg = useConfirmDialog();
   const { user } = useAuth();
   const router = useRouter();
   const yearNow = new Date().getFullYear();
@@ -268,7 +270,12 @@ export default function EqaDashboardPage() {
       setFieldError(tip);
       return;
     }
-    if (!window.confirm(tip)) return;
+    const ok = await confirmDlg.ask({
+      title: "删除 EQA 科目",
+      description: tip,
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     const res = await deleteEqaField(code);
     if (res.error) {
       setFieldError(res.error);
@@ -710,6 +717,7 @@ export default function EqaDashboardPage() {
           </form>
         </DialogContent>
       </Dialog>
+      {confirmDlg.dialog}
     </div>
   );
 }

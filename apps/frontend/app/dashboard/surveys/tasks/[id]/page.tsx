@@ -26,6 +26,15 @@ import {
   normalizeDeviceBlockAnswer,
 } from "@/components/device-block-field";
 import { HospitalNameTypeahead } from "@/components/hospital-name-typeahead";
+import { ComboboxInput } from "@/components/ui/combobox-input";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  CHINA_PROVINCES,
+  citiesForProvince,
+  districtsForCity,
+  loadChinaPca,
+  type ChinaPcaData,
+} from "@/lib/china-regions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -81,6 +90,42 @@ function isHospitalTypeField(field: SurveyField): boolean {
   return field.key === "type" || t === "hospital.type" || (field.label || "").includes("医院类型");
 }
 
+function isProvinceField(field: SurveyField): boolean {
+  const t = (field.target || "").trim();
+  const key = (field.key || "").toLowerCase();
+  const label = field.label || "";
+  return (
+    key === "province" ||
+    t === "hospital.province" ||
+    label === "省份" ||
+    label.includes("省份")
+  );
+}
+
+function isCityField(field: SurveyField): boolean {
+  const t = (field.target || "").trim();
+  const key = (field.key || "").toLowerCase();
+  const label = field.label || "";
+  return (
+    key === "city" ||
+    t === "hospital.city" ||
+    label === "城市" ||
+    (label.includes("城市") && !label.includes("区"))
+  );
+}
+
+function isDistrictField(field: SurveyField): boolean {
+  const t = (field.target || "").trim();
+  const key = (field.key || "").toLowerCase();
+  const label = field.label || "";
+  return (
+    key === "district" ||
+    t === "hospital.district" ||
+    label === "区县" ||
+    label.includes("区县")
+  );
+}
+
 function asStringArray(value: any): string[] {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   return String(value || "")
@@ -110,6 +155,7 @@ function emptyDevice(fields: SurveyField[]): Record<string, any> {
 }
 
 export default function SurveyTaskFillPage() {
+  const confirmDlg = useConfirmDialog();
   const params = useParams();
   const id = String(params.id || "");
   const router = useRouter();
@@ -122,6 +168,21 @@ export default function SurveyTaskFillPage() {
   const [linkedHospitalId, setLinkedHospitalId] = useState<number | undefined>(
     undefined,
   );
+  const [pca, setPca] = useState<ChinaPcaData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadChinaPca()
+      .then((data) => {
+        if (!cancelled) setPca(data);
+      })
+      .catch(() => {
+        if (!cancelled) setPca(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -185,6 +246,31 @@ export default function SurveyTaskFillPage() {
   const sections = useMemo(() => groupBySection(flatFields), [flatFields]);
   const devicesField = repeatFields.find((f) => f.key === "devices") || null;
 
+  const provinceFieldKey = useMemo(
+    () => flatFields.find(isProvinceField)?.key,
+    [flatFields],
+  );
+  const cityFieldKey = useMemo(
+    () => flatFields.find(isCityField)?.key,
+    [flatFields],
+  );
+  const districtFieldKey = useMemo(
+    () => flatFields.find(isDistrictField)?.key,
+    [flatFields],
+  );
+  const provinceValue = provinceFieldKey
+    ? String(answers[provinceFieldKey] || "")
+    : "";
+  const cityValue = cityFieldKey ? String(answers[cityFieldKey] || "") : "";
+  const cityOptions = useMemo(() => {
+    const fromProvince = citiesForProvince(provinceValue);
+    return fromProvince.length > 0 ? fromProvince : [];
+  }, [provinceValue]);
+  const districtOptions = useMemo(
+    () => districtsForCity(provinceValue, cityValue, pca),
+    [provinceValue, cityValue, pca],
+  );
+
   const readOnly = assignment?.status === "submitted";
   const hospitalBound = !!(
     assignment?.hospitalId && Number(assignment.hospitalId) > 0
@@ -235,7 +321,13 @@ export default function SurveyTaskFillPage() {
     });
   };
 
-  const removeDevice = (index: number) => {
+  const removeDevice = async (index: number) => {
+    const ok = await confirmDlg.ask({
+      title: "删除设备",
+      description: `确认删除设备 #${index + 1}？`,
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     setAnswers((prev) => {
       const list = Array.isArray(prev.devices) ? [...prev.devices] : [];
       list.splice(index, 1);
@@ -525,6 +617,78 @@ export default function SurveyTaskFillPage() {
         </Select>
       );
     }
+
+    if (isProvinceField(field)) {
+      return (
+        <ComboboxInput
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
+          placeholder="选择或输入省份"
+          options={CHINA_PROVINCES}
+          onChange={(province) => {
+            const exactKnown = CHINA_PROVINCES.includes(province);
+            const cities = citiesForProvince(province);
+            setAnswers((prev) => {
+              const next = { ...prev, [field.key]: province };
+              if (exactKnown && cityFieldKey) {
+                const curCity = String(prev[cityFieldKey] || "");
+                if (curCity && cities.length > 0 && !cities.includes(curCity)) {
+                  next[cityFieldKey] = "";
+                  if (districtFieldKey) next[districtFieldKey] = "";
+                }
+              }
+              return next;
+            });
+          }}
+        />
+      );
+    }
+    if (isCityField(field)) {
+      return (
+        <ComboboxInput
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
+          placeholder={provinceValue ? "选择或输入城市" : "请先选择省份"}
+          options={cityOptions}
+          onChange={(city) => {
+            const exactKnown = cityOptions.includes(city);
+            setAnswers((prev) => {
+              const next = { ...prev, [field.key]: city };
+              if (exactKnown && districtFieldKey) {
+                const cur = String(prev[districtFieldKey] || "");
+                const districts = districtsForCity(
+                  String(prev[provinceFieldKey || ""] || provinceValue),
+                  city,
+                  pca,
+                );
+                if (cur && districts.length > 0 && !districts.includes(cur)) {
+                  next[districtFieldKey] = "";
+                }
+              }
+              return next;
+            });
+          }}
+        />
+      );
+    }
+    if (isDistrictField(field)) {
+      return (
+        <ComboboxInput
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
+          placeholder={
+            cityValue
+              ? districtOptions.length
+                ? "选择或输入区县"
+                : "输入区县"
+              : "请先选择城市"
+          }
+          options={districtOptions}
+          onChange={onChange}
+        />
+      );
+    }
+
     return (
       <Input
         value={value == null ? "" : String(value)}
@@ -849,6 +1013,7 @@ export default function SurveyTaskFillPage() {
           )}
         </CardContent>
       </Card>
+      {confirmDlg.dialog}
     </div>
   );
 }

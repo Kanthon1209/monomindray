@@ -46,6 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DesktopTable,
   MobileCardItem,
@@ -70,6 +71,7 @@ function statusBadge(status: string) {
 }
 
 export default function DevicesPage() {
+  const confirm = useConfirmDialog();
   const [items, setItems] = useState<Device[]>([]);
   const [total, setTotal] = useState(0);
   const [keyword, setKeyword] = useState("");
@@ -189,7 +191,12 @@ export default function DevicesPage() {
   };
 
   const onDelete = async (id: string) => {
-    if (!confirm("确认删除该设备？")) return;
+    const ok = await confirm.ask({
+      title: "删除设备",
+      description: "确认删除该设备？此操作不可撤销。",
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     const res = await deleteDevice(id);
     if (res.error) setError(res.error);
     else await load();
@@ -539,6 +546,7 @@ export default function DevicesPage() {
           </MobileCardList>
         </CardContent>
       </Card>
+      {confirm.dialog}
     </div>
   );
 }

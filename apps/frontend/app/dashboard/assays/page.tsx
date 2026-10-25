@@ -17,6 +17,7 @@ import {
 } from "@/lib/business";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Card,
   CardContent,
@@ -67,6 +68,7 @@ function kindLabel(kind: string) {
 }
 
 export default function AssayProjectsPage() {
+  const confirmDlg = useConfirmDialog();
   const { user } = useAuth();
   const router = useRouter();
   const [tree, setTree] = useState<AssayTreeNode[]>([]);
@@ -200,7 +202,12 @@ export default function AssayProjectsPage() {
       p.usageCount > 0
         ? `「${p.name}」已被 ${p.usageCount} 家医院引用，将标记为停用。继续？`
         : `确定删除「${p.name}」？`;
-    if (!window.confirm(tip)) return;
+    const ok = await confirmDlg.ask({
+      title: "删除检测项目",
+      description: tip,
+      confirmLabel: "删除",
+    });
+    if (!ok) return;
     const res = await deleteAssayProject(p.id);
     if (res.error) {
       setError(res.error);
@@ -538,6 +545,7 @@ export default function AssayProjectsPage() {
           </form>
         </DialogContent>
       </Dialog>
+      {confirmDlg.dialog}
     </div>
   );
 }

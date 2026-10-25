@@ -465,3 +465,99 @@ export function allCities(): string[] {
   }
   return Array.from(set);
 }
+
+/** 省 → 市 → 区县（来自 public/pca.json，客户端懒加载） */
+export type ChinaPcaData = Record<string, Record<string, string[]>>;
+
+let pcaCache: ChinaPcaData | null = null;
+let pcaPromise: Promise<ChinaPcaData> | null = null;
+
+const MUNICIPALITIES = new Set([
+  "北京市",
+  "天津市",
+  "上海市",
+  "重庆市",
+]);
+
+function normalizePca(raw: ChinaPcaData): ChinaPcaData {
+  const out: ChinaPcaData = {};
+  for (const [province, cities] of Object.entries(raw || {})) {
+    const next: Record<string, string[]> = { ...cities };
+    // 直辖市：表单城市名用「北京市」等，pca 里是「市辖区」（重庆还有「县」）
+    if (MUNICIPALITIES.has(province)) {
+      const merged = [
+        ...(next["市辖区"] || []),
+        ...(next["县"] || []),
+      ];
+      if (merged.length && !next[province]) next[province] = merged;
+    }
+    out[province] = next;
+  }
+  return out;
+}
+
+export async function loadChinaPca(): Promise<ChinaPcaData> {
+  if (pcaCache) return pcaCache;
+  if (!pcaPromise) {
+    pcaPromise = fetch("/pca.json")
+      .then((r) => {
+        if (!r.ok) throw new Error(`pca.json ${r.status}`);
+        return r.json();
+      })
+      .then((raw: ChinaPcaData) => {
+        pcaCache = normalizePca(raw);
+        return pcaCache;
+      })
+      .catch((err) => {
+        pcaPromise = null;
+        throw err;
+      });
+  }
+  return pcaPromise;
+}
+
+function resolveProvinceKey(
+  pca: ChinaPcaData,
+  province: string,
+): string | null {
+  if (!province) return null;
+  if (pca[province]) return province;
+  const hit = Object.keys(pca).find(
+    (p) =>
+      p.includes(province) ||
+      province.includes(p.replace(/(省|市|自治区|特别行政区)$/, "")),
+  );
+  return hit || null;
+}
+
+function resolveCityKey(
+  cities: Record<string, string[]>,
+  city: string,
+  province: string,
+): string | null {
+  if (!city) return null;
+  if (cities[city]) return city;
+  if (MUNICIPALITIES.has(province) && cities[province]) return province;
+  if (cities["市辖区"] && (city === province || city === "市辖区")) {
+    return cities[province] ? province : "市辖区";
+  }
+  const hit = Object.keys(cities).find(
+    (c) => c.includes(city) || city.includes(c.replace(/(市|地区|自治州|盟)$/, "")),
+  );
+  return hit || null;
+}
+
+/** 根据已选省、市返回区县列表；pca 未加载时返回空数组 */
+export function districtsForCity(
+  province: string,
+  city: string,
+  pca: ChinaPcaData | null | undefined,
+): string[] {
+  if (!pca || !province || !city) return [];
+  const pk = resolveProvinceKey(pca, province);
+  if (!pk) return [];
+  const cities = pca[pk];
+  const ck = resolveCityKey(cities, city, pk);
+  if (!ck) return [];
+  return cities[ck] || [];
+}

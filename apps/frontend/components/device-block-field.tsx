@@ -10,6 +10,7 @@ import {
 } from "@/lib/business";
 import { Button } from "@/components/ui/button";
 import { ComboboxInput } from "@/components/ui/combobox-input";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -190,6 +191,7 @@ export function DeviceBlockField({
   disabled,
   subFieldOrder,
 }: Props) {
+  const confirmDlg = useConfirmDialog();
   const [tree, setTree] = useState<AssayTreeNode[]>([]);
   const [brandOptions, setBrandOptions] = useState<string[]>(SEED_BRANDS);
   const [loading, setLoading] = useState(true);
@@ -265,6 +267,7 @@ export function DeviceBlockField({
   }
 
   return (
+    <>
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
@@ -302,9 +305,15 @@ export function DeviceBlockField({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={() =>
-                    setDevices(answer.devices.filter((_, i) => i !== index))
-                  }
+                  onClick={async () => {
+                    const ok = await confirmDlg.ask({
+                      title: "删除设备",
+                      description: `确认删除设备 #${index + 1}？`,
+                      confirmLabel: "删除",
+                    });
+                    if (!ok) return;
+                    setDevices(answer.devices.filter((_, i) => i !== index));
+                  }}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -714,5 +723,7 @@ export function DeviceBlockField({
         );
       })}
     </div>
+    {confirmDlg.dialog}
+    </>
   );
 }
