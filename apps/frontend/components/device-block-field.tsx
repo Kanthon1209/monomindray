@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 
 import {
   fetchAssayTree,
@@ -116,6 +116,35 @@ function emptyRow(): DeviceBlockRow {
     deptHead: "",
     channelCsa: "",
   };
+}
+
+
+function rowHasBasicInfo(row: DeviceBlockRow): boolean {
+  return Boolean(
+    (row.model || "").trim() ||
+      (row.serialNo || "").trim() ||
+      (row.assayLineCode || "").trim() ||
+      (row.usageLocation || "").trim() ||
+      (row.reagentBrand || "").trim() ||
+      (row.deptHead || "").trim() ||
+      (row.channelCsa || "").trim() ||
+      (row.monthlySampleVolume || "").trim() ||
+      (row.serviceEvaluation || "").trim() ||
+      (row.itemCodes && row.itemCodes.length > 0),
+  );
+}
+
+function deviceSummaryLine(row: DeviceBlockRow, lines: AssayTreeNode[]): string {
+  const brand = (row.brand || "迈瑞").trim() || "迈瑞";
+  const model = (row.model || "").trim() || "未填机型";
+  const line = lines.find((n) => n.code === row.assayLineCode);
+  const lineName = line?.name?.replace(/项目$/u, "") || "";
+  const sn = (row.serialNo || "").trim();
+  const parts = [`${brand} ${model}`];
+  if (sn) parts.push(`SN ${sn}`);
+  if (lineName) parts.push(lineName);
+  if ((row.usageLocation || "").trim()) parts.push(row.usageLocation!.trim());
+  return parts.join(" · ");
 }
 
 function leafItemsUnderLine(tree: AssayTreeNode[], lineCode: string): AssayTreeNode[] {
@@ -320,6 +349,44 @@ export function DeviceBlockField({
     () => new Set(normalizeDeviceSubFieldRequired(subFieldRequired)),
     [subFieldRequired],
   );
+  /** Indices currently expanded. Audit (disabled) defaults collapsed. */
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const [hydratedExpand, setHydratedExpand] = useState(false);
+
+  // Initial expand: editable empty rows open; filled / audit stay collapsed.
+  useEffect(() => {
+    if (hydratedExpand) return;
+    if (loading) return;
+    const next = new Set<number>();
+    if (!disabled) {
+      answer.devices.forEach((row, i) => {
+        if (!rowHasBasicInfo(row)) next.add(i);
+      });
+    }
+    setExpanded(next);
+    setHydratedExpand(true);
+  }, [loading, disabled, answer.devices, hydratedExpand]);
+
+  // Keep expand set in range when list shrinks; do not auto-open filled rows.
+  useEffect(() => {
+    setExpanded((prev) => {
+      const next = new Set<number>();
+      for (const i of prev) {
+        if (i >= 0 && i < answer.devices.length) next.add(i);
+      }
+      return next;
+    });
+  }, [answer.devices.length]);
+
+  const toggleExpanded = (index: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
   const reqMark = (key: DeviceSubFieldKey) =>
     requiredSet.has(key) ? (
       <span className="ml-0.5 text-destructive">*</span>
@@ -389,30 +456,31 @@ export function DeviceBlockField({
     return <p className="text-sm text-destructive">{error}</p>;
   }
 
+  const addDevice = () => {
+    const nextIndex = answer.devices.length;
+    setDevices([...answer.devices, emptyRow()]);
+    setExpanded((prev) => {
+      const next = new Set<number>();
+      // Collapse previously filled rows; keep empty ones + new row open.
+      answer.devices.forEach((row, i) => {
+        if (!rowHasBasicInfo(row)) next.add(i);
+      });
+      next.add(nextIndex);
+      return next;
+    });
+  };
+
   return (
     <>
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          {requiredSet.size > 0
-            ? `必填：${Array.from(requiredSet)
-                .map((k) => DEVICE_SUB_FIELD_LABELS[k] || k)
-                .join(" / ")}。`
-            : "当前模板未设置设备子字段必填。"}
-          所属公司可联想或自定义（迈瑞 / 竞品）。
-        </p>
-        {!disabled ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setDevices([...answer.devices, emptyRow()])}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            添加设备
-          </Button>
-        ) : null}
-      </div>
+      <p className="text-xs text-muted-foreground">
+        {requiredSet.size > 0
+          ? `必填：${Array.from(requiredSet)
+              .map((k) => DEVICE_SUB_FIELD_LABELS[k] || k)
+              .join(" / ")}。`
+          : "当前模板未设置设备子字段必填。"}
+        所属公司可联想或自定义（迈瑞 / 竞品）。已填设备默认收起，点击卡片展开编辑。
+      </p>
       {answer.devices.length === 0 ? (
         <p className="text-sm text-muted-foreground">尚未添加设备。</p>
       ) : null}
@@ -421,13 +489,56 @@ export function DeviceBlockField({
           ? categoriesUnderLine(tree, row.assayLineCode)
           : [];
         const selected = new Set(row.itemCodes);
+        const isOpen = expanded.has(index);
+        const filled = rowHasBasicInfo(row);
+        // Empty row always show form while editing; audit always uses toggle.
+        const showForm = disabled ? isOpen : isOpen || !filled;
+
+        if (!showForm) {
+          return (
+            <button
+              key={index}
+              type="button"
+              onClick={() => toggleExpanded(index)}
+              className="flex w-full items-center gap-2 rounded-md border bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  {deviceSummaryLine(row, lines)}
+                </div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">
+                  设备 #{index + 1}
+                  {(row.reagentBrand || "").trim()
+                    ? ` · 试剂 ${(row.reagentBrand || "").trim()}`
+                    : ""}
+                  {(row.monthlySampleVolume || "").trim()
+                    ? ` · 月样本 ${(row.monthlySampleVolume || "").trim()}`
+                    : ""}
+                </div>
+              </div>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+          );
+        }
+
         return (
           <div
             key={index}
             className="space-y-3 rounded-md border border-dashed p-3"
           >
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">设备 #{index + 1}</p>
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                onClick={() => {
+                  if (filled || disabled) toggleExpanded(index);
+                }}
+              >
+                <p className="text-sm font-medium">设备 #{index + 1}</p>
+                {filled || disabled ? (
+                  <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : null}
+              </button>
               {!disabled ? (
                 <Button
                   type="button"
@@ -848,9 +959,40 @@ export function DeviceBlockField({
                 return null;
               })}
             </div>
+            {filled && !disabled ? (
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs text-muted-foreground"
+                  onClick={() => {
+                    setExpanded((prev) => {
+                      const next = new Set(prev);
+                      next.delete(index);
+                      return next;
+                    });
+                  }}
+                >
+                  收起
+                </Button>
+              </div>
+            ) : null}
           </div>
         );
       })}
+      {!disabled ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full sm:w-auto"
+          onClick={addDevice}
+        >
+          <Plus className="mr-1 h-4 w-4" />
+          添加设备
+        </Button>
+      ) : null}
     </div>
     {confirmDlg.dialog}
     </>

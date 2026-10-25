@@ -306,7 +306,7 @@ function DeviceCard({
 }
 
 const SECTION_TITLE =
-  "text-base font-semibold tracking-tight text-foreground";
+  "text-base font-semibold tracking-tight text-primary";
 
 export function HospitalDetailSheet({
   hospitalId,
