@@ -94,7 +94,6 @@ export const ARCHIVE_FIELD_DEFS: ArchiveFieldDef[] = [
   { key: "branchOffice", label: "分公司", section: "客户基础" },
   { key: "customerName", label: "客户名称", section: "客户基础" },
   { key: "customerCode", label: "客户编码", section: "客户基础" },
-  { key: "dualMajorCustomer", label: "双大客户", section: "客户基础" },
 ];
 
 /** 看板默认列（关键指标，适配窄侧栏） */
@@ -110,7 +109,6 @@ export const DASHBOARD_EXTRA_COLUMNS: ArchiveFieldKey[] = [
   "customerCode",
   "region",
   "branchOffice",
-  "dualMajorCustomer",
 ];
 
 /** @deprecated 使用 PRIMARY + EXTRA */
@@ -185,10 +183,12 @@ export const HOSPITAL_COLUMN_TARGETS = HOSPITAL_COLUMNS.map((c) => ({
 }));
 
 /** 可扩展标签（hospital_attributes） */
-/** Active hospital_attributes keys aligned with xlsx sheet1+4 (+ dual_major). */
+/** Active hospital_attributes keys for template mapping / writeback.
+ * collector_name is fill-only (not shown on dashboard detail).
+ * dual_major soft-deactivated from catalog and UI.
+ */
 export const HOSPITAL_ATTRIBUTE_KEYS = [
   "customer_level",
-  "dual_major",
   "customer_stage",
   "pending_issues",
   "collector_name",
@@ -227,7 +227,7 @@ export const HOSPITAL_ATTRIBUTE_LABELS: Record<string, string> = {
   collector_name: "采集者姓名",
   // deprecated / soft-archived from catalog — keep label for legacy attribute rows
   svip_level: "SVIP级别（已停用）",
-  dual_major: "双大客户",
+  dual_major: "双大客户（已停用）",
   sales_group: "分组",
   volume_direction: "上量方向",
   dual_major_type: "双大类型",
