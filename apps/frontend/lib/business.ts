@@ -422,6 +422,8 @@ export interface SurveyField {
   enableProvincial?: boolean;
   /** device_block: ordered list of collectable sub-field keys (e.g. brand, model) */
   subFieldOrder?: string[];
+  /** device_block: short keys that are required on each device row; omit → defaults */
+  subFieldRequired?: string[];
 }
 
 export interface SurveySchema {

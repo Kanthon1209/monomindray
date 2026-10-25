@@ -1384,11 +1384,14 @@ func (l *SurveyLogic) validateSurveySchemaFields(schemaBytes []byte, allowTarget
 func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any) error {
 	var schema struct {
 		Fields []struct {
-			Key      string `json:"key"`
-			Label    string `json:"label"`
-			Required bool   `json:"required"`
-			Type     string `json:"type"`
-			Fields   []struct {
+			Key              string   `json:"key"`
+			Label            string   `json:"label"`
+			Required         bool     `json:"required"`
+			Type             string   `json:"type"`
+			SubFieldRequired []string `json:"subFieldRequired"`
+			// present vs absent: distinguish unset (defaults) from explicit empty.
+			rawSubFieldRequired json.RawMessage `json:"-"`
+			Fields              []struct {
 				Key      string `json:"key"`
 				Label    string `json:"label"`
 				Required bool   `json:"required"`
@@ -1397,21 +1400,52 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any)
 	}
 	if len(schemaJSON) > 0 {
 		_ = json.Unmarshal(schemaJSON, &schema)
+		// Second pass: detect whether subFieldRequired was present on each device_block.
+		var raw struct {
+			Fields []json.RawMessage `json:"fields"`
+		}
+		_ = json.Unmarshal(schemaJSON, &raw)
+		for i := range schema.Fields {
+			if i >= len(raw.Fields) {
+				break
+			}
+			var probe map[string]json.RawMessage
+			if json.Unmarshal(raw.Fields[i], &probe) == nil {
+				if v, ok := probe["subFieldRequired"]; ok {
+					schema.Fields[i].rawSubFieldRequired = v
+				}
+			}
+		}
 	}
 	missing := make([]string, 0)
 	for _, f := range schema.Fields {
-		if !f.Required {
-			continue
-		}
 		label := f.Label
 		if label == "" {
 			label = f.Key
+		}
+		if strings.EqualFold(f.Type, "device_block") {
+			rows := extractDeviceAnswers(answers[f.Key])
+			if len(rows) == 0 {
+				continue
+			}
+			reqKeys := deviceBlockRequiredKeys(f.SubFieldRequired, f.rawSubFieldRequired != nil)
+			for i, row := range rows {
+				for _, rk := range reqKeys {
+					if !devicePropFilled(row, rk) {
+						missing = append(missing, fmt.Sprintf("%s#%d.%s", label, i+1, devicePropLabel(rk)))
+					}
+				}
+			}
+			continue
+		}
+		if !f.Required {
+			continue
 		}
 		if strings.EqualFold(f.Type, "eqa_block") {
 			// EQA block: neither/both/one scope is valid; no required scalar.
 			continue
 		}
-		if strings.EqualFold(f.Type, "assay_block") || strings.EqualFold(f.Type, "device_block") {
+		if strings.EqualFold(f.Type, "assay_block") {
 			continue
 		}
 		if strings.EqualFold(f.Type, "repeat") {
@@ -1444,6 +1478,80 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any)
 		return NewCodeError(400, "请填写必填项："+strings.Join(missing, "、"))
 	}
 	return nil
+}
+
+var defaultDeviceSubFieldRequired = []string{"model", "serialNo", "installedAt", "enabledAt"}
+
+var deviceSubFieldLabelMap = map[string]string{
+	"brand":                "所属公司",
+	"model":                "机型",
+	"serialNo":             "序列号",
+	"installedAt":          "安装日期",
+	"enabledAt":            "到期时间",
+	"usageLocation":        "使用位置",
+	"assayLineCode":        "所属检测线",
+	"itemCodes":            "检测细项覆盖",
+	"reagentBrand":         "试剂品牌",
+	"monthlySampleVolume":  "月样本量",
+	"deptHead":             "科室负责人",
+	"channelCsa":           "渠道CSA",
+	"serviceEvaluation":    "客户服务评价",
+}
+
+func deviceBlockRequiredKeys(configured []string, explicit bool) []string {
+	if !explicit {
+		return append([]string{}, defaultDeviceSubFieldRequired...)
+	}
+	allowed := map[string]struct{}{}
+	for k := range deviceSubFieldLabelMap {
+		allowed[k] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(configured))
+	for _, raw := range configured {
+		k := strings.TrimSpace(raw)
+		k = strings.TrimPrefix(k, "devices[].")
+		if k == "" {
+			continue
+		}
+		if _, ok := allowed[k]; !ok {
+			continue
+		}
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+func devicePropLabel(key string) string {
+	if v, ok := deviceSubFieldLabelMap[key]; ok {
+		return v
+	}
+	return key
+}
+
+func devicePropFilled(row map[string]any, key string) bool {
+	if row == nil {
+		return false
+	}
+	v, ok := row[key]
+	if !ok || v == nil {
+		return false
+	}
+	if key == "itemCodes" {
+		switch t := v.(type) {
+		case []any:
+			return len(t) > 0
+		case []string:
+			return len(t) > 0
+		default:
+			return anyToString(v) != ""
+		}
+	}
+	return anyToString(v) != ""
 }
 
 

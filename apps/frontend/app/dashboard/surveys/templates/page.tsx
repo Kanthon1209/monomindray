@@ -79,6 +79,8 @@ import { AssayTreeField } from "@/components/assay-tree-field";
 import {
   DeviceBlockField,
   normalizeDeviceSubFieldOrder,
+  normalizeDeviceSubFieldRequired,
+  type DeviceSubFieldKey,
 } from "@/components/device-block-field";
 import { EqaParticipationField } from "@/components/eqa-participation-field";
 import { fetchEqaFields, type EqaFieldNode } from "@/lib/eqa";
@@ -435,6 +437,7 @@ function specialBlockInfo(field: SurveyField): {
         "选择所属检测线后，勾选该线下细项",
         "写回客户设备及 device→assay 覆盖；看板覆盖与竞品由此推导",
         "下方列表可调整子字段展示顺序（上移 / 下移）",
+        "每个子字段可单独设为必填或选填",
       ],
       collectFields: orderDeviceCollectFields(field),
     };
@@ -1017,6 +1020,56 @@ export default function SurveyTemplatesPage() {
       );
     }
   };
+
+  const toggleDeviceSubFieldRequired = async (key: string) => {
+    if (!specialBlockTemplateId || !specialBlockField) return;
+    if ((specialBlockField.type || "").toLowerCase() !== "device_block") return;
+    const template = items.find((t) => t.id === specialBlockTemplateId);
+    if (!template) return;
+    const prevField = specialBlockField;
+    const short = key.replace(/^devices\[\]\./, "") as DeviceSubFieldKey;
+    const current = new Set(
+      normalizeDeviceSubFieldRequired(specialBlockField.subFieldRequired),
+    );
+    if (current.has(short)) current.delete(short);
+    else current.add(short);
+    // Persist explicit list (even empty) so defaults no longer apply.
+    const nextRequired = normalizeDeviceSubFieldOrder(
+      Array.from(current),
+    ).filter((k) => current.has(k));
+    const schema = normalizeSchema(template.schema);
+    const fields = (schema.fields || []).map((f) =>
+      f.key === specialBlockField.key
+        ? { ...f, subFieldRequired: nextRequired }
+        : f,
+    );
+    setSpecialBlockField({
+      ...specialBlockField,
+      subFieldRequired: nextRequired,
+    });
+    setItems((prev) =>
+      prev.map((t) =>
+        t.id !== template.id
+          ? t
+          : {
+              ...t,
+              schema: { fields, sections: schema.sections },
+            },
+      ),
+    );
+    setError(null);
+    const ok = await persistSchema(
+      { ...template, schema: { fields, sections: schema.sections } },
+      { fields, sections: schema.sections },
+    );
+    if (!ok) {
+      setSpecialBlockField(prevField);
+      setItems((prev) =>
+        prev.map((t) => (t.id === template.id ? template : t)),
+      );
+    }
+  };
+
 
   const reorderFields = async (
     template: SurveyTemplate,
@@ -2172,7 +2225,7 @@ export default function SurveyTemplatesPage() {
                       采集员在填报端会填写下列每一项（模板结构预览，无答卷值）。
                       {(specialBlockField.type || "").toLowerCase() ===
                       "device_block"
-                        ? " 可用上下箭头调整子字段顺序。"
+                        ? " 可用上下箭头调整子字段顺序；点「必填/选填」切换是否必填。"
                         : ""}
                     </p>
                   </div>
@@ -2295,7 +2348,22 @@ export default function SurveyTemplatesPage() {
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
-                                  <div className="font-medium">{cf.label}</div>
+                                  <div className="font-medium">
+                                    {cf.label}
+                                    {canReorder &&
+                                    normalizeDeviceSubFieldRequired(
+                                      specialBlockField.subFieldRequired,
+                                    ).includes(
+                                      cf.key.replace(
+                                        /^devices\[\]\./,
+                                        "",
+                                      ) as DeviceSubFieldKey,
+                                    ) ? (
+                                      <span className="ml-0.5 text-destructive">
+                                        *
+                                      </span>
+                                    ) : null}
+                                  </div>
                                   <div className="font-mono text-[11px] text-muted-foreground">
                                     {cf.key}
                                   </div>
@@ -2305,34 +2373,81 @@ export default function SurveyTemplatesPage() {
                                     {typeLabel(cf.type)}
                                   </Badge>
                                   {canReorder ? (
-                                    <div className="flex flex-col">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        disabled={saving || i === 0}
-                                        title="上移"
-                                        onClick={() =>
-                                          void reorderDeviceSubField(cf.key, -1)
-                                        }
-                                      >
-                                        <ChevronUp className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        disabled={saving || i === arr.length - 1}
-                                        title="下移"
-                                        onClick={() =>
-                                          void reorderDeviceSubField(cf.key, 1)
-                                        }
-                                      >
-                                        <ChevronDown className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </div>
+                                    <>
+                                      {(() => {
+                                        const short = cf.key.replace(
+                                          /^devices\[\]\./,
+                                          "",
+                                        );
+                                        const reqSet = new Set(
+                                          normalizeDeviceSubFieldRequired(
+                                            specialBlockField.subFieldRequired,
+                                          ),
+                                        );
+                                        const isReq = reqSet.has(
+                                          short as DeviceSubFieldKey,
+                                        );
+                                        return (
+                                          <Button
+                                            type="button"
+                                            variant={
+                                              isReq ? "default" : "outline"
+                                            }
+                                            size="sm"
+                                            className="h-7 px-2 text-xs"
+                                            disabled={saving}
+                                            title={
+                                              isReq
+                                                ? "当前必填，点击改为选填"
+                                                : "当前选填，点击改为必填"
+                                            }
+                                            onClick={() =>
+                                              void toggleDeviceSubFieldRequired(
+                                                cf.key,
+                                              )
+                                            }
+                                          >
+                                            {isReq ? "必填" : "选填"}
+                                          </Button>
+                                        );
+                                      })()}
+                                      <div className="flex flex-col">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6"
+                                          disabled={saving || i === 0}
+                                          title="上移"
+                                          onClick={() =>
+                                            void reorderDeviceSubField(
+                                              cf.key,
+                                              -1,
+                                            )
+                                          }
+                                        >
+                                          <ChevronUp className="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6"
+                                          disabled={
+                                            saving || i === arr.length - 1
+                                          }
+                                          title="下移"
+                                          onClick={() =>
+                                            void reorderDeviceSubField(
+                                              cf.key,
+                                              1,
+                                            )
+                                          }
+                                        >
+                                          <ChevronDown className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
+                                    </>
                                   ) : null}
                                 </div>
                               </div>
@@ -2398,6 +2513,7 @@ export default function SurveyTemplatesPage() {
                         onChange={() => {}}
                         disabled
                         subFieldOrder={specialBlockField.subFieldOrder}
+                        subFieldRequired={specialBlockField.subFieldRequired}
                       />
                     ) : (specialBlockField.type || "").toLowerCase() ===
                       "assay_block" ? (

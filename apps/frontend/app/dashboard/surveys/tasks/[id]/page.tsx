@@ -24,6 +24,7 @@ import {
 import {
   DeviceBlockField,
   normalizeDeviceBlockAnswer,
+  validateDeviceBlockRequired,
 } from "@/components/device-block-field";
 import { HospitalNameTypeahead } from "@/components/hospital-name-typeahead";
 import { ComboboxInput } from "@/components/ui/combobox-input";
@@ -479,6 +480,18 @@ export default function SurveyTaskFillPage() {
           );
           return;
         }
+      }
+    }
+    // device_block: enforce template-configured sub-field required flags
+    for (const f of assignment?.schema?.fields || []) {
+      if ((f.type || "").toLowerCase() !== "device_block") continue;
+      const msg = validateDeviceBlockRequired(
+        answers[f.key],
+        f.subFieldRequired,
+      );
+      if (msg) {
+        showActionFeedback("error", msg);
+        return;
       }
     }
     setSaving(true);
@@ -950,6 +963,7 @@ export default function SurveyTaskFillPage() {
                       disabled={readOnly || lockedSet.has(field.key)}
                       onChange={(v) => setField(field.key, v)}
                       subFieldOrder={field.subFieldOrder}
+                      subFieldRequired={field.subFieldRequired}
                     />
                   </div>
                 ))}

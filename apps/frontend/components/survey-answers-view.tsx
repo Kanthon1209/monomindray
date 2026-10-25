@@ -262,6 +262,7 @@ export function SurveyAnswersView({
             onChange={() => {}}
             disabled
             subFieldOrder={meta.field?.subFieldOrder}
+            subFieldRequired={meta.field?.subFieldRequired}
           />
         </div>
       );

@@ -177,12 +177,126 @@ export function normalizeDeviceSubFieldOrder(
   return out;
 }
 
+/** Default required sub-fields when template has not set subFieldRequired yet. */
+export const DEFAULT_DEVICE_SUB_FIELD_REQUIRED: DeviceSubFieldKey[] = [
+  "model",
+  "serialNo",
+  "installedAt",
+  "enabledAt",
+];
+
+export const DEVICE_SUB_FIELD_LABELS: Record<DeviceSubFieldKey, string> = {
+  brand: "所属公司",
+  model: "机型",
+  serialNo: "序列号",
+  installedAt: "安装日期",
+  enabledAt: "到期时间",
+  usageLocation: "使用位置",
+  assayLineCode: "所属检测线",
+  itemCodes: "检测细项覆盖",
+  reagentBrand: "试剂品牌",
+  monthlySampleVolume: "月样本量",
+  deptHead: "科室负责人",
+  channelCsa: "渠道CSA",
+  serviceEvaluation: "客户服务评价",
+};
+
+/** Accept short or `devices[].*` keys. `undefined`/`null` → defaults; `[]` → none. */
+export function normalizeDeviceSubFieldRequired(
+  required?: string[] | null,
+): DeviceSubFieldKey[] {
+  if (required == null) {
+    return [...DEFAULT_DEVICE_SUB_FIELD_REQUIRED];
+  }
+  const allowed = new Set<string>(DEFAULT_DEVICE_SUB_FIELD_ORDER);
+  const seen = new Set<string>();
+  const out: DeviceSubFieldKey[] = [];
+  for (const raw of required) {
+    const k = String(raw || "")
+      .trim()
+      .replace(/^devices\[\]\./, "");
+    if (!k || !allowed.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k as DeviceSubFieldKey);
+  }
+  return out;
+}
+
+function deviceSubFieldValue(row: DeviceBlockRow, key: DeviceSubFieldKey): unknown {
+  switch (key) {
+    case "brand":
+      return row.brand;
+    case "model":
+      return row.model;
+    case "serialNo":
+      return row.serialNo;
+    case "installedAt":
+      return row.installedAt;
+    case "enabledAt":
+      return row.enabledAt;
+    case "usageLocation":
+      return row.usageLocation;
+    case "assayLineCode":
+      return row.assayLineCode;
+    case "itemCodes":
+      return row.itemCodes;
+    case "reagentBrand":
+      return row.reagentBrand;
+    case "monthlySampleVolume":
+      return row.monthlySampleVolume;
+    case "deptHead":
+      return row.deptHead;
+    case "channelCsa":
+      return row.channelCsa;
+    case "serviceEvaluation":
+      return row.serviceEvaluation;
+    default:
+      return undefined;
+  }
+}
+
+export function isDeviceSubFieldFilled(
+  row: DeviceBlockRow,
+  key: DeviceSubFieldKey,
+): boolean {
+  const v = deviceSubFieldValue(row, key);
+  if (key === "itemCodes") {
+    return Array.isArray(v) && v.length > 0;
+  }
+  return String(v ?? "").trim() !== "";
+}
+
+/** Returns Chinese error message, or null if OK. Empty device list is allowed. */
+export function validateDeviceBlockRequired(
+  value: any,
+  subFieldRequired?: string[] | null,
+): string | null {
+  const answer = normalizeDeviceBlockAnswer(value);
+  if (answer.devices.length === 0) return null;
+  const required = normalizeDeviceSubFieldRequired(subFieldRequired);
+  if (required.length === 0) return null;
+  const missing: string[] = [];
+  answer.devices.forEach((row, i) => {
+    for (const key of required) {
+      if (!isDeviceSubFieldFilled(row, key)) {
+        missing.push(
+          `设备#${i + 1}.${DEVICE_SUB_FIELD_LABELS[key] || key}`,
+        );
+      }
+    }
+  });
+  if (missing.length === 0) return null;
+  return "请填写必填项：" + missing.join("、");
+}
+
 type Props = {
   value: any;
   onChange: (next: DeviceBlockAnswer) => void;
   disabled?: boolean;
   /** Template-configured display order; short or `devices[].*` keys. */
   subFieldOrder?: string[];
+  /** Template-configured required sub-field keys; omit → defaults. */
+  subFieldRequired?: string[];
 };
 
 export function DeviceBlockField({
@@ -190,6 +304,7 @@ export function DeviceBlockField({
   onChange,
   disabled,
   subFieldOrder,
+  subFieldRequired,
 }: Props) {
   const confirmDlg = useConfirmDialog();
   const [tree, setTree] = useState<AssayTreeNode[]>([]);
@@ -201,6 +316,14 @@ export function DeviceBlockField({
     () => normalizeDeviceSubFieldOrder(subFieldOrder),
     [subFieldOrder],
   );
+  const requiredSet = useMemo(
+    () => new Set(normalizeDeviceSubFieldRequired(subFieldRequired)),
+    [subFieldRequired],
+  );
+  const reqMark = (key: DeviceSubFieldKey) =>
+    requiredSet.has(key) ? (
+      <span className="ml-0.5 text-destructive">*</span>
+    ) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -271,7 +394,12 @@ export function DeviceBlockField({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          每台设备需填写机型 / 序列号 / 安装日期与到期时间，再选检测线并勾选细项覆盖；所属公司可联想或自定义（迈瑞 / 竞品）。
+          {requiredSet.size > 0
+            ? `必填：${Array.from(requiredSet)
+                .map((k) => DEVICE_SUB_FIELD_LABELS[k] || k)
+                .join(" / ")}。`
+            : "当前模板未设置设备子字段必填。"}
+          所属公司可联想或自定义（迈瑞 / 竞品）。
         </p>
         {!disabled ? (
           <Button
@@ -324,7 +452,7 @@ export function DeviceBlockField({
                 if (fieldKey === "brand") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>所属公司</Label>
+                      <Label>所属公司{reqMark("brand")}</Label>
                       <ComboboxInput
                         value={row.brand}
                         disabled={disabled}
@@ -341,11 +469,11 @@ export function DeviceBlockField({
                 if (fieldKey === "model") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>机型</Label>
+                      <Label>机型{reqMark("model")}</Label>
                       <Input
                         value={row.model}
                         disabled={disabled}
-                        placeholder="如 BS-2000M / CL-8000（必填）"
+                        placeholder="如 BS-2000M / CL-8000"
                         onChange={(e) =>
                           updateRow(index, { model: e.target.value })
                         }
@@ -356,7 +484,7 @@ export function DeviceBlockField({
                 if (fieldKey === "serialNo") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>序列号</Label>
+                      <Label>序列号{reqMark("serialNo")}</Label>
                       <Input
                         value={row.serialNo || ""}
                         disabled={disabled}
@@ -370,7 +498,7 @@ export function DeviceBlockField({
                 if (fieldKey === "installedAt") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>安装日期</Label>
+                      <Label>安装日期{reqMark("installedAt")}</Label>
                       <Input
                         type="date"
                         value={row.installedAt || ""}
@@ -385,7 +513,7 @@ export function DeviceBlockField({
                 if (fieldKey === "enabledAt") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>到期时间</Label>
+                      <Label>到期时间{reqMark("enabledAt")}</Label>
                       <Input
                         type="date"
                         value={row.enabledAt || ""}
@@ -400,7 +528,7 @@ export function DeviceBlockField({
                 if (fieldKey === "usageLocation") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>使用位置</Label>
+                      <Label>使用位置{reqMark("usageLocation")}</Label>
                       <Select
                         value={
                           (() => {
@@ -472,7 +600,7 @@ export function DeviceBlockField({
                 if (fieldKey === "assayLineCode") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>所属检测线</Label>
+                      <Label>所属检测线{reqMark("assayLineCode")}</Label>
                       <Select
                         value={row.assayLineCode || undefined}
                         disabled={disabled}
@@ -497,7 +625,7 @@ export function DeviceBlockField({
                 if (fieldKey === "reagentBrand") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>试剂品牌</Label>
+                      <Label>试剂品牌{reqMark("reagentBrand")}</Label>
                       <Input
                         value={row.reagentBrand || ""}
                         disabled={disabled}
@@ -512,7 +640,7 @@ export function DeviceBlockField({
                 if (fieldKey === "monthlySampleVolume") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>月样本量</Label>
+                      <Label>月样本量{reqMark("monthlySampleVolume")}</Label>
                       <Input
                         value={row.monthlySampleVolume || ""}
                         disabled={disabled}
@@ -529,7 +657,7 @@ export function DeviceBlockField({
                 if (fieldKey === "deptHead") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>科室负责人</Label>
+                      <Label>科室负责人{reqMark("deptHead")}</Label>
                       <Input
                         value={row.deptHead || ""}
                         disabled={disabled}
@@ -544,7 +672,7 @@ export function DeviceBlockField({
                 if (fieldKey === "channelCsa") {
                   return (
                     <div key={fieldKey} className="space-y-1.5">
-                      <Label>渠道CSA</Label>
+                      <Label>渠道CSA{reqMark("channelCsa")}</Label>
                       <Input
                         value={row.channelCsa || ""}
                         disabled={disabled}
@@ -559,7 +687,7 @@ export function DeviceBlockField({
                 if (fieldKey === "serviceEvaluation") {
                   return (
                     <div key={fieldKey} className="space-y-1.5 md:col-span-2">
-                      <Label>客户服务评价</Label>
+                      <Label>客户服务评价{reqMark("serviceEvaluation")}</Label>
                       <Select
                         value={row.serviceEvaluation || undefined}
                         disabled={disabled}
@@ -589,6 +717,7 @@ export function DeviceBlockField({
                           <div className="flex items-center justify-between gap-2">
                             <Label className="text-xs text-muted-foreground">
                               该检测线下细项（已选 {row.itemCodes.length}）
+                              {reqMark("itemCodes")}
                             </Label>
                             {!disabled && cats.length > 0 ? (
                               <Button
