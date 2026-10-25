@@ -5,7 +5,9 @@ Usage:
   DATABASE_URL=postgres://... python3 scripts/eqa_xlsx_import.py [--xlsx PATH] [--dry-run] [--commit]
 
 Rules (mandatory):
-  - Hospital universe = sheet 「EQA信息表」 only (国考/省考 never add hospitals).
+  - Hospital universe = sheet 「EQA信息表」 VISIBLE rows only
+    (skip AutoFilter-hidden / 26年EQA标签 empty or "/"; ~364).
+    国考/省考 never add hospitals.
   - Match by normalized customer_code (strip, leading-zero-insensitive); store padded form.
   - Name fallback only if code empty on BOTH sides.
   - INSERT new hospitals only; on match UPDATE empty columns only; never overwrite
@@ -97,6 +99,16 @@ def parse_eqa_tag(v: Any) -> Optional[str]:
     return t
 
 
+def is_info_row_included(ws, row_idx: int, tag_c: Optional[int]) -> bool:
+    """EQA信息表: skip AutoFilter-hidden rows and empty/slash EQA tags."""
+    if bool(ws.row_dimensions[row_idx].hidden):
+        return False
+    if tag_c:
+        if parse_eqa_tag(ws.cell(row_idx, tag_c).value) is None:
+            return False
+    return True
+
+
 def city_from_branch(branch: str) -> str:
     b = norm_ws(branch)
     if not b:
@@ -172,7 +184,7 @@ def load_xlsx(path: Path):
 
     hospitals = {}  # norm_code -> record (info sheet is universe)
 
-    def read_rows(ws, headers, with_owner=False):
+    def read_rows(ws, headers, with_owner=False, visible_eqa_only=False):
         rows = []
         code_c = headers.get("客户编码")
         name_c = headers.get("客户名称")
@@ -183,6 +195,8 @@ def load_xlsx(path: Path):
         owner_c = headers.get("责任人") if with_owner else None
         subj = subject_headers(headers)
         for r in range(2, ws.max_row + 1):
+            if visible_eqa_only and not is_info_row_included(ws, r, tag_c):
+                continue
             code = store_code(ws.cell(r, code_c).value) if code_c else ""
             name = norm_ws(ws.cell(r, name_c).value) if name_c else ""
             if not code and not name:
@@ -203,7 +217,7 @@ def load_xlsx(path: Path):
             rows.append(row)
         return rows, subj
 
-    info_rows, info_subj = read_rows(info, info_h)
+    info_rows, info_subj = read_rows(info, info_h, visible_eqa_only=True)
     guo_rows, guo_subj = read_rows(guo, guo_h, with_owner=True)
     sheng_rows, sheng_subj = read_rows(sheng, sheng_h)
 

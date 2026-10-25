@@ -83,6 +83,15 @@ def parse_tag(v: Any) -> Optional[str]:
     return t
 
 
+def is_info_row_included(ws, row_idx: int, tag_c: Optional[int]) -> bool:
+    """EQA信息表: skip AutoFilter-hidden rows and empty/slash EQA tags."""
+    if bool(ws.row_dimensions[row_idx].hidden):
+        return False
+    if tag_c and parse_tag(ws.cell(row_idx, tag_c).value) is None:
+        return False
+    return True
+
+
 class API:
     def __init__(self, base: str, token: str):
         self.base = base.rstrip("/")
@@ -186,11 +195,14 @@ def load_xlsx(path: Path):
     def headers(ws):
         return {norm_ws(ws.cell(1, c).value): c for c in range(1, ws.max_column + 1) if ws.cell(1, c).value}
 
-    def read(ws, with_owner=False):
+    def read(ws, with_owner=False, visible_eqa_only=False):
         h = headers(ws)
         subj = [k for k in h if k not in META]
+        tag_c = h.get("26年EQA标签")
         rows = []
         for r in range(2, ws.max_row + 1):
+            if visible_eqa_only and not is_info_row_included(ws, r, tag_c):
+                continue
             code = store_code(ws.cell(r, h["客户编码"]).value) if "客户编码" in h else ""
             name = norm_ws(ws.cell(r, h["客户名称"]).value) if "客户名称" in h else ""
             if not code and not name:
@@ -207,7 +219,7 @@ def load_xlsx(path: Path):
             rows.append(row)
         return rows, subj
 
-    info_rows, _ = read(wb["EQA信息表"])
+    info_rows, _ = read(wb["EQA信息表"], visible_eqa_only=True)
     guo_rows, guo_subj = read(wb["国考客户"], with_owner=True)
     sheng_rows, _ = read(wb["省考客户"])
 

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Keep only hospitals listed on EQA_v1.xlsx sheet 1 (EQA信息表).
+"""Keep only hospitals listed on EQA_v1.xlsx sheet 1 (EQA信息表) VISIBLE rows.
+
+Excel AutoFilter hides rows with 26年EQA标签 = '/' (~1073). Canonical
+universe = visible rows only (~364, same as 省考客户 scale).
 
 Matching:
   - Prefer exact customer_code match to sheet1 客户编码.
   - Else leading-zero-insensitive match (化免短码 → 同一家).
   - One keep row per sheet1 code (prefer exact padded code).
   - Recode kept unpadded rows to the sheet1 padded code.
-  - Delete all other hospitals (demo seeds, tests, short-code duplicates).
+  - Delete all other hospitals (demo seeds, tests, short-code duplicates,
+    and sheet1 rows that are filter-hidden / tag='/').
 
 FK handling before DELETE:
   - survey_assignments: ON DELETE RESTRICT → delete assignments for drop set.
@@ -60,33 +64,58 @@ def norm_code(s: Any) -> str:
     return t
 
 
+EMPTY_TAGS = {"", "/", "-", "—", "#N/A", "N/A"}
+
+
+def is_empty_eqa_tag(v: Any) -> bool:
+    return norm_ws(v) in EMPTY_TAGS
+
+
 def load_sheet1_codes(path: Path) -> list[str]:
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    """Visible EQA信息表 rows only (skip AutoFilter-hidden / empty tag '/').
+
+    openpyxl needs read_only=False for ws.row_dimensions[r].hidden.
+    """
+    # NOT read_only: row_dimensions.hidden is unavailable in read_only mode
+    wb = openpyxl.load_workbook(path, data_only=True)
     if SHEET1_NAME in wb.sheetnames:
         ws = wb[SHEET1_NAME]
     else:
         ws = wb[wb.sheetnames[0]]
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
+    if ws.max_row is None or ws.max_row < 2:
         raise SystemExit(f"empty sheet in {path}")
-    header = [norm_ws(c) for c in rows[0]]
+    header = [norm_ws(ws.cell(1, c).value) for c in range(1, (ws.max_column or 0) + 1)]
     try:
-        code_i = header.index("客户编码")
+        code_i = header.index("客户编码") + 1  # 1-based
     except ValueError:
-        # fallback: col index 2 (0-based) as in known EQA files
-        code_i = 2
+        code_i = 3
+    try:
+        tag_i = header.index("26年EQA标签") + 1
+    except ValueError:
+        tag_i = 6
     codes: list[str] = []
     seen: set[str] = set()
-    for r in rows[1:]:
-        if not r or code_i >= len(r) or r[code_i] is None:
+    skipped_hidden = 0
+    skipped_empty_tag = 0
+    for r in range(2, ws.max_row + 1):
+        if bool(ws.row_dimensions[r].hidden):
+            skipped_hidden += 1
             continue
-        code = norm_ws(r[code_i])
+        if is_empty_eqa_tag(ws.cell(r, tag_i).value):
+            skipped_empty_tag += 1
+            continue
+        code = norm_ws(ws.cell(r, code_i).value)
         if not code or code in {"#N/A", "N/A", "/", "-"}:
             continue
         if code in seen:
             continue
         seen.add(code)
         codes.append(code)
+    print(
+        f"sheet1 visible codes={len(codes)} "
+        f"(skipped_hidden={skipped_hidden}, skipped_empty_tag={skipped_empty_tag})",
+        flush=True,
+    )
     return codes
 
 
