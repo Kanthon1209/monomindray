@@ -1,7 +1,11 @@
 -- +goose Up
 -- Dashboard view: aggregate distinct device brands (公司) per hospital for list filters.
+-- Must DROP+CREATE: CREATE OR REPLACE VIEW cannot rename/reorder existing columns
+-- (inserting device_brands before created_by would fail with SQLSTATE 42P16).
 
-CREATE OR REPLACE VIEW v_hospital_dashboard AS
+DROP VIEW IF EXISTS v_hospital_dashboard;
+
+CREATE VIEW v_hospital_dashboard AS
 SELECT
     h.id,
     h.name,
