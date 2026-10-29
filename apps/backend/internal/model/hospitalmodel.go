@@ -32,6 +32,7 @@ type Hospital struct {
 	UpdatedAt     time.Time      `db:"updated_at"`
 	DeviceCount   int            `db:"device_count"`
 	DeviceModels  []string       `db:"device_models"`
+	DeviceBrands  []string       `db:"device_brands"`
 }
 
 type HospitalFilter struct {
@@ -99,7 +100,7 @@ func (m *hospitalModel) Search(ctx context.Context, keyword string, limit int) (
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
 		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
 		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
-		       0, ARRAY[]::TEXT[]
+		       0, ARRAY[]::TEXT[], ARRAY[]::TEXT[]
 		FROM hospitals h
 		WHERE h.name ILIKE $1 OR h.customer_code ILIKE $1
 		ORDER BY
@@ -126,13 +127,16 @@ func (m *hospitalModel) Search(ctx context.Context, keyword string, limit int) (
 			&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
 			&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
 			&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
-			&h.DeviceCount, &h.DeviceModels,
+			&h.DeviceCount, &h.DeviceModels, &h.DeviceBrands,
 		); err != nil {
 			return nil, fmt.Errorf("scan hospital search: %w", err)
 		}
 		h.Archive = decodeArchive(archiveRaw)
 		if h.DeviceModels == nil {
 			h.DeviceModels = []string{}
+		}
+		if h.DeviceBrands == nil {
+			h.DeviceBrands = []string{}
 		}
 		items = append(items, h)
 	}
@@ -214,7 +218,7 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
 		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
 		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
-		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
+		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[]), COALESCE(v.device_brands, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
 		WHERE %s
@@ -235,13 +239,16 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 			&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
 			&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
 			&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
-			&h.DeviceCount, &h.DeviceModels,
+			&h.DeviceCount, &h.DeviceModels, &h.DeviceBrands,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan hospital: %w", err)
 		}
 		h.Archive = decodeArchive(archiveRaw)
 		if h.DeviceModels == nil {
 			h.DeviceModels = []string{}
+		}
+		if h.DeviceBrands == nil {
+			h.DeviceBrands = []string{}
 		}
 		items = append(items, h)
 	}
@@ -255,14 +262,14 @@ func (m *hospitalModel) FindById(ctx context.Context, id int64) (*Hospital, erro
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
 		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
 		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
-		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
+		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[]), COALESCE(v.device_brands, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
 		WHERE h.id = $1`, id).Scan(
 		&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
 		&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
 		&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
-		&h.DeviceCount, &h.DeviceModels,
+		&h.DeviceCount, &h.DeviceModels, &h.DeviceBrands,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -273,6 +280,9 @@ func (m *hospitalModel) FindById(ctx context.Context, id int64) (*Hospital, erro
 	h.Archive = decodeArchive(archiveRaw)
 	if h.DeviceModels == nil {
 		h.DeviceModels = []string{}
+	}
+	if h.DeviceBrands == nil {
+		h.DeviceBrands = []string{}
 	}
 	return &h, nil
 }
@@ -288,7 +298,7 @@ func (m *hospitalModel) FindByName(ctx context.Context, name string) (*Hospital,
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
 		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
 		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
-		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
+		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[]), COALESCE(v.device_brands, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
 		WHERE lower(trim(h.name)) = lower(trim($1))
@@ -297,7 +307,7 @@ func (m *hospitalModel) FindByName(ctx context.Context, name string) (*Hospital,
 		&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
 		&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
 		&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
-		&h.DeviceCount, &h.DeviceModels,
+		&h.DeviceCount, &h.DeviceModels, &h.DeviceBrands,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -309,6 +319,9 @@ func (m *hospitalModel) FindByName(ctx context.Context, name string) (*Hospital,
 	if h.DeviceModels == nil {
 		h.DeviceModels = []string{}
 	}
+	if h.DeviceBrands == nil {
+		h.DeviceBrands = []string{}
+	}
 	return &h, nil
 }
 
@@ -319,14 +332,14 @@ func (m *hospitalModel) FindByNameProvinceCity(ctx context.Context, name, provin
 		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
 		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
 		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
-		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[])
+		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[]), COALESCE(v.device_brands, ARRAY[]::TEXT[])
 		FROM hospitals h
 		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
 		WHERE h.name=$1 AND h.province=$2 AND h.city=$3`, name, province, city).Scan(
 		&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
 		&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
 		&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
-		&h.DeviceCount, &h.DeviceModels,
+		&h.DeviceCount, &h.DeviceModels, &h.DeviceBrands,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -337,6 +350,9 @@ func (m *hospitalModel) FindByNameProvinceCity(ctx context.Context, name, provin
 	h.Archive = decodeArchive(archiveRaw)
 	if h.DeviceModels == nil {
 		h.DeviceModels = []string{}
+	}
+	if h.DeviceBrands == nil {
+		h.DeviceBrands = []string{}
 	}
 	return &h, nil
 }

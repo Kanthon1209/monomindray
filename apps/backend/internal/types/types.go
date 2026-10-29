@@ -83,6 +83,7 @@ type (
 		Metrics      map[string]string `json:"metrics,omitempty"`
 		DeviceCount  int               `json:"deviceCount"`
 		DeviceModels []string          `json:"deviceModels"`
+		DeviceBrands []string          `json:"deviceBrands,omitempty"`
 		AssayNames          []string          `json:"assayNames,omitempty"`
 		AssayCategoryCodes  []string          `json:"assayCategoryCodes,omitempty"`
 		CreatedAt           string            `json:"createdAt,omitempty"`
