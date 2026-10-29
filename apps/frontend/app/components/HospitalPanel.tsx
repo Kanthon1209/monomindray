@@ -24,7 +24,6 @@ import {
   archiveFieldLabel,
   displayValue,
   formatMatchingRate,
-  parseNumericField,
   resolveArchiveField,
   type ArchiveFieldKey,
 } from "@/lib/hospital-archive";
@@ -131,26 +130,12 @@ export function HospitalPanel({
 
   const summary = useMemo(() => {
     let withModel = 0;
-    let rateSum = 0;
-    let rateCount = 0;
-    let mindraySamples = 0;
     for (const h of filtered) {
       if (resolveArchiveField(h, "model")) withModel += 1;
-      const rate = parseNumericField(resolveArchiveField(h, "matchingRate"));
-      if (rate != null) {
-        rateSum += rate <= 1 ? rate * 100 : rate;
-        rateCount += 1;
-      }
-      const ms = parseNumericField(resolveArchiveField(h, "mindraySampleVolume"));
-      if (ms != null) mindraySamples += ms;
     }
     return {
       total: filtered.length,
       withModel,
-      avgRate: rateCount ? `${(rateSum / rateCount).toFixed(1)}%` : "—",
-      mindraySamples: mindraySamples
-        ? Math.round(mindraySamples).toLocaleString()
-        : "—",
     };
   }, [filtered]);
 
@@ -235,18 +220,6 @@ export function HospitalPanel({
             有机型{" "}
             <span className="ml-1 font-medium text-foreground">
               {summary.withModel}
-            </span>
-          </Badge>
-          <Badge variant="outline" className="font-normal">
-            均配套率{" "}
-            <span className="ml-1 font-medium text-foreground">
-              {summary.avgRate}
-            </span>
-          </Badge>
-          <Badge variant="outline" className="font-normal">
-            标本量{" "}
-            <span className="ml-1 font-medium text-foreground">
-              {summary.mindraySamples}
             </span>
           </Badge>
         </div>
