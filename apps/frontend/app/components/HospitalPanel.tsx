@@ -166,6 +166,12 @@ export function HospitalPanel({
     }
     const raw = resolveArchiveField(h, key as ArchiveFieldKey);
     if (key === "matchingRate") return formatMatchingRate(raw);
+    // Empty customer level: blank (no "—"); hide in list / badge when unset.
+    if (key === "customerLevel") {
+      const v = (raw || "").trim();
+      if (!v || v === "-" || v === "—") return "";
+      return v;
+    }
     return displayValue(raw);
   };
 
@@ -563,7 +569,7 @@ export function HospitalPanel({
                         <span className="text-[15px] font-medium leading-snug">
                           {name}
                         </span>
-                        {level !== "—" ? (
+                        {level ? (
                           <Badge
                             variant="outline"
                             className="shrink-0 font-normal"

@@ -509,7 +509,10 @@ export function HospitalDetailSheet({
                 ? `${hospital.province} · ${hospital.city}`
                 : "客户档案详情"}
             </span>
-            {hospital ? (
+            {hospital?.level &&
+            hospital.level.trim() &&
+            hospital.level.trim() !== "-" &&
+            hospital.level.trim() !== "—" ? (
               <Badge variant="outline" className="text-[10px]">
                 {hospital.level}
               </Badge>
@@ -530,24 +533,33 @@ export function HospitalDetailSheet({
               <h3 className={SECTION_TITLE}>客户基础</h3>
               <div className="grid divide-y rounded-lg border-2 border-border bg-background md:grid-cols-2 md:divide-x md:divide-y-0">
                 {[
-                  { label: "客户名称", value: hospital?.name || "" },
-                  { label: "区域", value: hospital?.region || "" },
-                  { label: "分公司", value: hospital?.branchOffice || "" },
+                  { label: "客户名称", value: hospital?.name || "", hideIfEmpty: false },
+                  { label: "区域", value: hospital?.region || "", hideIfEmpty: false },
+                  { label: "分公司", value: hospital?.branchOffice || "", hideIfEmpty: false },
                   {
                     label: HOSPITAL_ATTRIBUTE_LABELS.customer_level || "客户等级",
                     value: hospital?.attributes?.customer_level || "",
+                    hideIfEmpty: true,
                   },
                   {
                     label: HOSPITAL_ATTRIBUTE_LABELS.customer_stage || "客户所在阶段",
                     value: hospital?.attributes?.customer_stage || "",
+                    hideIfEmpty: false,
                   },
                   {
                     label:
                       HOSPITAL_ATTRIBUTE_LABELS.pending_issues ||
                       "客户端待解决问题及需求",
                     value: hospital?.attributes?.pending_issues || "",
+                    hideIfEmpty: false,
                   },
-                ].map((row) => (
+                ]
+                  .filter((row) => {
+                    if (!row.hideIfEmpty) return true;
+                    const v = (row.value || "").trim();
+                    return Boolean(v) && v !== "-" && v !== "—";
+                  })
+                  .map((row) => (
                   <div
                     key={row.label}
                     className="flex flex-col gap-1 border-b px-3 py-3 text-sm last:border-b-0 md:grid md:grid-cols-[8rem_1fr] md:gap-3 md:border-b md:px-4 md:odd:border-r"
@@ -556,7 +568,7 @@ export function HospitalDetailSheet({
                       {row.label}
                     </div>
                     <div className="break-words whitespace-pre-wrap text-foreground">
-                      {displayValue(row.value)}
+                      {row.hideIfEmpty ? row.value : displayValue(row.value)}
                     </div>
                   </div>
                 ))}
