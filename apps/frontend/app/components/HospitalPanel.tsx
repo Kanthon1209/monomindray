@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
-import { Search, ClipboardList, Columns2, ChevronRight } from "lucide-react";
+import { Search, ClipboardList, Columns2, ChevronRight, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +57,8 @@ export function HospitalPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [expandedCols, setExpandedCols] = useState(false);
+  /** 套餐筛选区默认收起 */
+  const [packageFilterOpen, setPackageFilterOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const columns = useMemo(
@@ -65,6 +67,26 @@ export function HospitalPanel({
         ? [...DASHBOARD_PRIMARY_COLUMNS, ...DASHBOARD_EXTRA_COLUMNS]
         : DASHBOARD_PRIMARY_COLUMNS,
     [expandedCols],
+  );
+
+  /** Group 套餐 chips by 检测线 for one-row-per-line layout */
+  const packagesByLine = useMemo(() => {
+    const order: string[] = [];
+    const map = new Map<string, { lineCode: string; lineName: string; packages: AssayPackage[] }>();
+    for (const pkg of packages) {
+      const key = pkg.lineCode || pkg.lineName;
+      if (!map.has(key)) {
+        order.push(key);
+        map.set(key, { lineCode: pkg.lineCode, lineName: pkg.lineName, packages: [] });
+      }
+      map.get(key)!.packages.push(pkg);
+    }
+    return order.map((k) => map.get(k)!);
+  }, [packages]);
+
+  const selectedPackage = useMemo(
+    () => packages.find((x) => x.code === selectedPackageCode) || null,
+    [packages, selectedPackageCode],
   );
 
   const filtered = useMemo(() => {
@@ -213,95 +235,146 @@ export function HospitalPanel({
         {packages.length > 0 && onPackageChange ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                onClick={() => setPackageFilterOpen((v) => !v)}
+                aria-expanded={packageFilterOpen}
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 transition-transform",
+                    packageFilterOpen ? "rotate-0" : "-rotate-90",
+                  )}
+                />
                 按套餐筛选
-              </span>
-              {selectedPackageCode ? (
+                {selectedPackage ? (
+                  <Badge variant="outline" className="ml-1 h-5 font-normal">
+                    {selectedPackage.lineName} · {selectedPackage.name}
+                  </Badge>
+                ) : null}
+              </button>
+              <div className="flex items-center gap-2">
+                {selectedPackageCode ? (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    onClick={() => onPackageChange("")}
+                  >
+                    清除筛选
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                  onClick={() => onPackageChange("")}
+                  onClick={() => setPackageFilterOpen((v) => !v)}
                 >
-                  清除筛选
+                  {packageFilterOpen ? "收起" : "展开"}
                 </button>
-              ) : null}
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => onPackageChange("")}
-                className={cn(
-                  "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                  "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-                  !selectedPackageCode
-                    ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
-                    : "opacity-90 hover:opacity-100",
-                )}
-              >
-                全部
-                <span className="ml-1 tabular-nums opacity-80">
-                  {totalHospitalCount ?? hospitals.length}
-                </span>
-              </button>
-              {packages.map((pkg) => {
-                const active = selectedPackageCode === pkg.code;
-                const count = packageCounts[pkg.code] ?? 0;
-                return (
+
+            {packageFilterOpen ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
                   <button
-                    key={pkg.code}
                     type="button"
-                    title={`${pkg.lineName} · ${pkg.name}（${count} 家）`}
-                    onClick={() =>
-                      onPackageChange(active ? "" : pkg.code)
-                    }
+                    onClick={() => onPackageChange("")}
                     className={cn(
-                      "inline-flex max-w-full items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                      packageChipClass(pkg),
-                      active
+                      "inline-flex shrink-0 items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                      "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+                      !selectedPackageCode
                         ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
                         : "opacity-90 hover:opacity-100",
-                      count === 0 ? "opacity-50" : "",
                     )}
                   >
-                    <span className="truncate">{pkg.name}</span>
-                    <span className="shrink-0 tabular-nums opacity-80">
-                      {count}
+                    全部
+                    <span className="ml-1 tabular-nums opacity-80">
+                      {totalHospitalCount ?? hospitals.length}
                     </span>
                   </button>
-                );
-              })}
-            </div>
-            {selectedPackageCode
-              ? (() => {
-                  const pkg = packages.find((x) => x.code === selectedPackageCode);
-                  if (!pkg) return null;
-                  return (
-                    <div className="rounded-md border bg-muted/40 px-2.5 py-2">
-                      <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
-                        {pkg.lineName} · {pkg.name} · 细项 {pkg.items.length}
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {pkg.items.length === 0 ? (
-                          <span className="text-xs text-muted-foreground">
-                            暂无细项
-                          </span>
-                        ) : (
-                          pkg.items.map((it) => (
-                            <Badge
-                              key={it.code}
-                              variant="outline"
-                              className="h-6 font-normal"
-                              title={it.code}
-                            >
-                              {it.name}
-                            </Badge>
-                          ))
-                        )}
-                      </div>
+                </div>
+                {packagesByLine.map((line) => (
+                  <div
+                    key={line.lineCode || line.lineName}
+                    className="flex min-w-0 items-center gap-2"
+                  >
+                    <span
+                      className="w-14 shrink-0 truncate text-[11px] font-medium text-muted-foreground"
+                      title={line.lineName}
+                    >
+                      {line.lineName}
+                    </span>
+                    <div
+                      className={cn(
+                        "flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto",
+                        "[scrollbar-width:thin]",
+                      )}
+                      onWheel={(e) => {
+                        const el = e.currentTarget;
+                        if (el.scrollWidth <= el.clientWidth) return;
+                        el.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                    >
+                      {line.packages.map((pkg) => {
+                        const active = selectedPackageCode === pkg.code;
+                        const count = packageCounts[pkg.code] ?? 0;
+                        return (
+                          <button
+                            key={pkg.code}
+                            type="button"
+                            title={`${pkg.lineName} · ${pkg.name}（${count} 家）`}
+                            onClick={() =>
+                              onPackageChange(active ? "" : pkg.code)
+                            }
+                            className={cn(
+                              "inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                              packageChipClass(pkg),
+                              active
+                                ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                                : "opacity-90 hover:opacity-100",
+                              count === 0 ? "opacity-50" : "",
+                            )}
+                          >
+                            <span className="whitespace-nowrap">{pkg.name}</span>
+                            <span className="shrink-0 tabular-nums opacity-80">
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  );
-                })()
-              : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {selectedPackage ? (
+              <div className="rounded-md border bg-muted/40 px-2.5 py-2">
+                <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                  {selectedPackage.lineName} · {selectedPackage.name} · 细项{" "}
+                  {selectedPackage.items.length}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {selectedPackage.items.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">暂无细项</span>
+                  ) : (
+                    selectedPackage.items.map((it) => (
+                      <Badge
+                        key={it.code}
+                        variant="outline"
+                        className="h-6 font-normal"
+                        title={it.code}
+                      >
+                        {it.name}
+                      </Badge>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
