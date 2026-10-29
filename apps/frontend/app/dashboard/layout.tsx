@@ -19,6 +19,7 @@ import {
   LayoutTemplate,
   Cpu,
   FlaskConical,
+  FolderTree,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -66,8 +67,12 @@ const navItems = [
   { title: "客户管理", href: "/dashboard/customers", icon: Building2 },
   { title: "设备管理", href: "/dashboard/devices", icon: Cpu },
   { title: "检测项目", href: "/dashboard/assays", icon: FlaskConical },
-  { title: "室间质评", href: "/dashboard/eqa", icon: ClipboardList },
   { title: "系统设置", href: "/dashboard/settings", icon: Settings },
+];
+
+const eqaAdminSubItems = [
+  { title: "参评概览", href: "/dashboard/eqa", icon: ClipboardList },
+  { title: "EQA科目树", href: "/dashboard/eqa/subjects", icon: FolderTree },
 ];
 
 const userAdminSubItems = [
@@ -89,8 +94,10 @@ function AppSidebar() {
   const homeHref = homePathForRole(user?.role);
   const usersSectionActive = pathname.startsWith("/dashboard/users");
   const surveysSectionActive = pathname.startsWith("/dashboard/surveys");
+  const eqaSectionActive = pathname.startsWith("/dashboard/eqa");
   const [usersOpen, setUsersOpen] = useState(usersSectionActive);
   const [surveysOpen, setSurveysOpen] = useState(surveysSectionActive);
+  const [eqaOpen, setEqaOpen] = useState(eqaSectionActive);
 
   useEffect(() => {
     if (usersSectionActive) {
@@ -103,6 +110,12 @@ function AppSidebar() {
       setSurveysOpen(true);
     }
   }, [surveysSectionActive]);
+
+  useEffect(() => {
+    if (eqaSectionActive) {
+      setEqaOpen(true);
+    }
+  }, [eqaSectionActive]);
 
   const handleLogout = () => {
     logout();
@@ -139,7 +152,7 @@ function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {admin
-                ? navItems.slice(0, 5).map((item) => {
+                ? navItems.slice(0, 4).map((item) => {
                     const isActive =
                       item.href === "/dashboard"
                         ? pathname === "/dashboard"
@@ -160,6 +173,46 @@ function AppSidebar() {
                     );
                   })
                 : null}
+
+              {admin ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip="室间质评"
+                    isActive={eqaSectionActive}
+                    onClick={() => setEqaOpen((open) => !open)}
+                  >
+                    <ClipboardList />
+                    <span>室间质评</span>
+                    <ChevronRight
+                      className={cn(
+                        "ml-auto transition-transform duration-200",
+                        eqaOpen && "rotate-90",
+                      )}
+                    />
+                  </SidebarMenuButton>
+                  {eqaOpen ? (
+                    <SidebarMenuSub>
+                      {eqaAdminSubItems.map((item) => (
+                        <SidebarMenuSubItem key={item.href}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={
+                              item.href === "/dashboard/eqa"
+                                ? pathname === "/dashboard/eqa"
+                                : pathname.startsWith(item.href)
+                            }
+                          >
+                            <Link href={item.href}>
+                              <item.icon />
+                              <span>{item.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  ) : null}
+                </SidebarMenuItem>
+              ) : null}
 
               {admin ? (
                 <SidebarMenuItem>
@@ -246,12 +299,7 @@ function AppSidebar() {
                 </SidebarMenuItem>
               ) : null}
 
-              {navItems.slice(5).filter((item) => {
-                // 室间质评 stays in the admin primary block (after 检测项目).
-                // Keep this guard if EQA is ever moved back into the tail.
-                if (item.href === "/dashboard/eqa") return admin;
-                return true;
-              }).map((item) => {
+              {navItems.slice(4).map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (
                   <SidebarMenuItem key={item.href}>
