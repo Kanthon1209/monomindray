@@ -89,7 +89,7 @@ type EqaModel interface {
 	CreateField(ctx context.Context, in FieldRegistryInput) (*FieldRegistry, error)
 	UpdateField(ctx context.Context, code string, in FieldRegistryInput) (*FieldRegistry, error)
 	DeleteField(ctx context.Context, code string) error
-	ListParticipations(ctx context.Context, year int, scope string, hospitalID, ownerID int64, limit, offset int) ([]EqaParticipation, int64, error)
+	ListParticipations(ctx context.Context, year int, scope string, hospitalID, ownerID int64, fieldCode string, limit, offset int) ([]EqaParticipation, int64, error)
 	FindParticipation(ctx context.Context, id int64) (*EqaParticipation, error)
 	FindParticipationByKey(ctx context.Context, hospitalID int64, year int, scope string) (*EqaParticipation, error)
 	CreateParticipation(ctx context.Context, p *EqaParticipation) (*EqaParticipation, error)
@@ -290,7 +290,7 @@ func (m *eqaModel) DeleteField(ctx context.Context, code string) error {
 	return err
 }
 
-func (m *eqaModel) ListParticipations(ctx context.Context, year int, scope string, hospitalID, ownerID int64, limit, offset int) ([]EqaParticipation, int64, error) {
+func (m *eqaModel) ListParticipations(ctx context.Context, year int, scope string, hospitalID, ownerID int64, fieldCode string, limit, offset int) ([]EqaParticipation, int64, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -314,6 +314,13 @@ func (m *eqaModel) ListParticipations(ctx context.Context, year int, scope strin
 	if ownerID > 0 {
 		args = append(args, ownerID)
 		where += fmt.Sprintf(" AND p.owner_user_id = $%d", len(args))
+	}
+	fieldCode = strings.TrimSpace(fieldCode)
+	if fieldCode != "" {
+		args = append(args, fieldCode)
+		where += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM eqa_participation_items i
+			WHERE i.participation_id = p.id AND i.field_code = $%d AND i.value = TRUE)`, len(args))
 	}
 	var total int64
 	if err := m.conn.QueryRow(ctx, `SELECT COUNT(*) FROM eqa_participation p `+where, args...).Scan(&total); err != nil {
@@ -516,13 +523,12 @@ func (m *eqaModel) Dashboard(ctx context.Context, year int) (*EqaDashboardStats,
 		itemJoin = " JOIN eqa_participation p ON p.id = i.participation_id"
 	}
 	rows, err = m.conn.Query(ctx, `
-		SELECT i.field_code, COALESCE(f.name,i.field_code), COUNT(*)
+		SELECT i.field_code, COALESCE(f.name,i.field_code), COUNT(DISTINCT p.hospital_id)
 		FROM eqa_participation_items i`+itemJoin+`
 		LEFT JOIN field_registry f ON f.code = i.field_code
 		WHERE i.value = TRUE
 		GROUP BY i.field_code, f.name
-		ORDER BY COUNT(*) DESC, i.field_code
-		LIMIT 10`, itemArgs...)
+		ORDER BY COUNT(DISTINCT p.hospital_id) DESC, i.field_code`, itemArgs...)
 	if err != nil {
 		return nil, err
 	}

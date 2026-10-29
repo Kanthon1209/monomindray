@@ -271,7 +271,7 @@ func (l *EqaLogic) ListParticipations(req *types.ListEqaParticipationsRequest) (
 	if pageSize <= 0 {
 		pageSize = 50
 	}
-	items, total, err := l.svcCtx.EqaModel.ListParticipations(l.ctx, int(req.Year), strings.TrimSpace(req.Scope), req.HospitalId, ownerID, int(pageSize), int((page-1)*pageSize))
+	items, total, err := l.svcCtx.EqaModel.ListParticipations(l.ctx, int(req.Year), strings.TrimSpace(req.Scope), req.HospitalId, ownerID, strings.TrimSpace(req.FieldCode), int(pageSize), int((page-1)*pageSize))
 	if err != nil {
 		l.Errorf("list participations: %v", err)
 		return nil, ErrInternal

@@ -599,6 +599,7 @@ type (
 		Scope       string `form:"scope,optional"`
 		HospitalId  int64  `form:"hospitalId,optional"`
 		OwnerUserId int64  `form:"ownerUserId,optional"`
+		FieldCode   string `form:"fieldCode,optional"`
 		Page        int64  `form:"page,optional"`
 		PageSize    int64  `form:"pageSize,optional"`
 	}

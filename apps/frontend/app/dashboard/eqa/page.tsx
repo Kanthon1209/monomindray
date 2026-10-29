@@ -31,6 +31,7 @@ import {
   type EqaParticipationItem,
 } from "@/lib/eqa";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -102,6 +103,8 @@ export default function EqaDashboardPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detailItems, setDetailItems] = useState<Record<number, EqaParticipationItem[]>>({});
   const [detailLoading, setDetailLoading] = useState<number | null>(null);
+  /** Empty = 全部科目；非空 = 按科目筛选参评医院列表 */
+  const [selectedFieldCode, setSelectedFieldCode] = useState("");
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [keyword, setKeyword] = useState("");
@@ -118,7 +121,11 @@ export default function EqaDashboardPage() {
     const [d, f, p] = await Promise.all([
       fetchEqaDashboard(year),
       fetchEqaFields(),
-      fetchEqaParticipations({ year }),
+      fetchEqaParticipations({
+        year,
+        fieldCode: selectedFieldCode || undefined,
+        pageSize: 200,
+      }),
     ]);
     if (d.error) setError(d.error);
     else setDash(d.data || null);
@@ -130,8 +137,16 @@ export default function EqaDashboardPage() {
     if (p.data) {
       setRows(p.data.items || []);
       setTotal(p.data.total || 0);
+    } else if (p.error) {
+      setError(p.error);
+      setRows([]);
+      setTotal(0);
     }
     setLoading(false);
+  }, [year, selectedFieldCode]);
+
+  useEffect(() => {
+    setSelectedFieldCode("");
   }, [year]);
 
   useEffect(() => {
@@ -187,6 +202,59 @@ export default function EqaDashboardPage() {
     () => fields.filter((n) => n.valueType === "group" || !n.parentCode),
     [fields],
   );
+
+  /** Subject chips for hospital-list filter: all leaf subjects with coverage counts. */
+  const subjectChips = useMemo(() => {
+    const countByCode = new Map<string, number>();
+    for (const it of dash?.topItems || []) {
+      countByCode.set(it.fieldCode, it.count);
+    }
+    const chips: {
+      code: string;
+      name: string;
+      parentCode: string;
+      parentName: string;
+      count: number;
+    }[] = [];
+    for (const g of groups) {
+      for (const c of g.children || []) {
+        if (c.valueType === "group") continue;
+        chips.push({
+          code: c.code,
+          name: c.name,
+          parentCode: g.code,
+          parentName: g.name,
+          count: countByCode.get(c.code) || 0,
+        });
+      }
+    }
+    // Prefer subjects that already have coverage, keep catalog order otherwise
+    return chips.sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.name.localeCompare(b.name, "zh");
+    });
+  }, [groups, dash?.topItems]);
+
+  const selectedSubject = useMemo(
+    () => subjectChips.find((c) => c.code === selectedFieldCode) || null,
+    [subjectChips, selectedFieldCode],
+  );
+
+  const filteredHospitalCount = useMemo(() => {
+    if (!selectedFieldCode) return dash?.coverageHospitals ?? 0;
+    if (selectedSubject) return selectedSubject.count;
+    const ids = new Set(rows.map((r) => r.hospitalId));
+    return ids.size;
+  }, [selectedFieldCode, selectedSubject, dash?.coverageHospitals, rows]);
+
+  const SCOPE_CHIP_CLASS: Record<string, string> = {
+    "scope.national":
+      "border-transparent bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-200",
+    "scope.provincial":
+      "border-transparent bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-200",
+  };
+  const FILTER_ALL_CLASS =
+    "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
 
   const closeDialog = (open: boolean) => {
     setDialogOpen(open);
@@ -392,8 +460,91 @@ export default function EqaDashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">参评记录（{total}）</CardTitle>
-          <CardDescription>点击行展开：按字段树父级（国家/省级）查看已勾选科目</CardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">
+                参评医院
+                <Badge variant="secondary" className="ml-2 font-normal">
+                  {loading ? "…" : `${filteredHospitalCount} 家`}
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                {selectedSubject
+                  ? `已筛选科目「${selectedSubject.name}」· ${filteredHospitalCount} 家医院 · ${total} 条参评记录。点击行可展开查看勾选明细。`
+                  : "上方点选科目可筛选覆盖该科目的医院；点击行展开查看已勾选科目。"}
+              </CardDescription>
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">按科目筛选</span>
+              {selectedSubject ? (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => setSelectedFieldCode("")}
+                >
+                  清除筛选
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSelectedFieldCode("")}
+                className={cn(
+                  "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                  FILTER_ALL_CLASS,
+                  !selectedFieldCode
+                    ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                    : "opacity-90 hover:opacity-100",
+                )}
+              >
+                全部
+                <span className="ml-1 tabular-nums opacity-80">
+                  {dash?.coverageHospitals ?? 0}
+                </span>
+              </button>
+              {subjectChips.map((chip) => {
+                const active = selectedFieldCode === chip.code;
+                const scopeKey =
+                  chip.parentCode in SCOPE_CHIP_CLASS
+                    ? chip.parentCode
+                    : chip.parentName.includes("国家")
+                      ? "scope.national"
+                      : chip.parentName.includes("省")
+                        ? "scope.provincial"
+                        : "";
+                const color =
+                  (scopeKey && SCOPE_CHIP_CLASS[scopeKey]) ||
+                  "border-transparent bg-secondary text-secondary-foreground";
+                return (
+                  <button
+                    key={chip.code}
+                    type="button"
+                    title={`${chip.parentName} · ${chip.name}（${chip.count} 家）`}
+                    onClick={() =>
+                      setSelectedFieldCode((prev) => (prev === chip.code ? "" : chip.code))
+                    }
+                    className={cn(
+                      "inline-flex max-w-full items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                      color,
+                      active
+                        ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                        : "opacity-90 hover:opacity-100",
+                      chip.count === 0 ? "opacity-50" : "",
+                    )}
+                  >
+                    <span className="truncate">{chip.name}</span>
+                    <span className="shrink-0 tabular-nums opacity-80">{chip.count}</span>
+                  </button>
+                );
+              })}
+              {!loading && subjectChips.length === 0 ? (
+                <span className="text-xs text-muted-foreground">暂无科目，请先在下方科目树维护</span>
+              ) : null}
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="overflow-auto">
           <Table>
@@ -416,7 +567,9 @@ export default function EqaDashboardPage() {
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
-                    暂无参评记录。可通过问卷发放 EQA 模板，审核通过后自动写入。
+                    {selectedSubject
+                      ? `当前科目「${selectedSubject.name}」暂无参评医院。`
+                      : "暂无参评记录。可通过问卷发放 EQA 模板，审核通过后自动写入。"}
                   </TableCell>
                 </TableRow>
               ) : (

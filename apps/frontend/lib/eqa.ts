@@ -111,6 +111,7 @@ export async function fetchEqaParticipations(params?: {
   year?: number;
   scope?: string;
   hospitalId?: number | string;
+  fieldCode?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -118,6 +119,7 @@ export async function fetchEqaParticipations(params?: {
   if (params?.year) qs.set("year", String(params.year));
   if (params?.scope) qs.set("scope", params.scope);
   if (params?.hospitalId) qs.set("hospitalId", String(params.hospitalId));
+  if (params?.fieldCode) qs.set("fieldCode", params.fieldCode);
   qs.set("page", String(params?.page || 1));
   qs.set("pageSize", String(params?.pageSize || 50));
   return eqaFetch<{ total: number; items: EqaParticipation[] }>(
