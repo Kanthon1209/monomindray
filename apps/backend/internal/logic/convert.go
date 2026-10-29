@@ -174,6 +174,10 @@ func toHospitalInfo(h *model.Hospital) types.HospitalInfo {
 	if models == nil {
 		models = []string{}
 	}
+	brands := h.DeviceBrands
+	if brands == nil {
+		brands = []string{}
+	}
 	archive := h.Archive
 	if archive == nil {
 		archive = map[string]any{}
@@ -182,7 +186,8 @@ func toHospitalInfo(h *model.Hospital) types.HospitalInfo {
 		Id: h.Id, Name: h.Name, Province: h.Province, City: h.City, District: h.District,
 		Level: h.Level, Type: h.Type, Status: h.Status, Address: h.Address, Remark: h.Remark,
 		CustomerCode: h.CustomerCode, Region: h.Region, BranchOffice: h.BranchOffice,
-		Archive: archive, DeviceCount: h.DeviceCount, DeviceModels: models, CreatedAt: formatTime(h.CreatedAt),
+		Archive: archive, DeviceCount: h.DeviceCount, DeviceModels: models, DeviceBrands: brands,
+		CreatedAt: formatTime(h.CreatedAt),
 	}
 }
 

@@ -10,6 +10,7 @@ export interface Hospital {
   type: string;
   deviceCount: number;
   deviceModels: string[];
+  deviceBrands?: string[];
   status: "active" | "pending" | "inactive" | string;
   address?: string;
   remark?: string;

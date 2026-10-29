@@ -72,6 +72,9 @@ function mapHospital(raw: any): Hospital {
     type: raw.type,
     deviceCount: raw.deviceCount ?? 0,
     deviceModels: raw.deviceModels || [],
+    deviceBrands: Array.isArray(raw.deviceBrands)
+      ? raw.deviceBrands.map(String)
+      : [],
     status: raw.status,
     address: raw.address || undefined,
     remark: raw.remark || undefined,

@@ -39,9 +39,9 @@ interface HospitalPanelProps {
   packageCounts?: Record<string, number>;
   selectedPackageCode?: string;
   onPackageChange?: (code: string) => void;
-  deviceModelOptions?: { model: string; count: number }[];
-  selectedDeviceModels?: string[];
-  onDeviceModelsChange?: (models: string[]) => void;
+  deviceBrandOptions?: { brand: string; count: number }[];
+  selectedDeviceBrands?: string[];
+  onDeviceBrandsChange?: (brands: string[]) => void;
   totalHospitalCount?: number;
 }
 
@@ -54,9 +54,9 @@ export function HospitalPanel({
   packageCounts = {},
   selectedPackageCode = "",
   onPackageChange,
-  deviceModelOptions = [],
-  selectedDeviceModels = [],
-  onDeviceModelsChange,
+  deviceBrandOptions = [],
+  selectedDeviceBrands = [],
+  onDeviceBrandsChange,
   totalHospitalCount,
 }: HospitalPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -65,8 +65,8 @@ export function HospitalPanel({
   const [expandedCols, setExpandedCols] = useState(false);
   /** 套餐筛选区默认收起 */
   const [packageFilterOpen, setPackageFilterOpen] = useState(false);
-  /** 设备筛选区默认收起 */
-  const [deviceFilterOpen, setDeviceFilterOpen] = useState(false);
+  /** 设备公司筛选区默认收起 */
+  const [deviceBrandFilterOpen, setDeviceBrandFilterOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const columns = useMemo(
@@ -99,17 +99,17 @@ export function HospitalPanel({
 
   const filtered = useMemo(() => {
     const lower = searchQuery.trim().toLowerCase();
-    const deviceFilterActive = selectedDeviceModels.length > 0;
-    const deviceSet = deviceFilterActive ? new Set(selectedDeviceModels) : null;
+    const brandFilterActive = selectedDeviceBrands.length > 0;
+    const brandSet = brandFilterActive ? new Set(selectedDeviceBrands) : null;
     return hospitals.filter((h) => {
       const customerName = resolveArchiveField(h, "customerName");
       const model = resolveArchiveField(h, "model");
       const level = resolveArchiveField(h, "customerLevel");
       if (modelFilter !== "all" && model !== modelFilter) return false;
       if (levelFilter !== "all" && level !== levelFilter) return false;
-      if (deviceSet) {
-        const hospitalModels = h.deviceModels || [];
-        if (!hospitalModels.some((m) => deviceSet.has(m))) return false;
+      if (brandSet) {
+        const hospitalBrands = h.deviceBrands || [];
+        if (!hospitalBrands.some((b) => brandSet.has(b))) return false;
       }
       if (!lower) return true;
       return (
@@ -120,7 +120,7 @@ export function HospitalPanel({
         resolveArchiveField(h, "branchOffice").toLowerCase().includes(lower)
       );
     });
-  }, [hospitals, searchQuery, modelFilter, levelFilter, selectedDeviceModels]);
+  }, [hospitals, searchQuery, modelFilter, levelFilter, selectedDeviceBrands]);
 
   useEffect(() => {
     if (selectedId && !filtered.some((h) => h.id === selectedId)) {
@@ -390,36 +390,36 @@ export function HospitalPanel({
           </div>
         ) : null}
 
-        {onDeviceModelsChange ? (
+        {onDeviceBrandsChange ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
                 className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                onClick={() => setDeviceFilterOpen((v) => !v)}
-                aria-expanded={deviceFilterOpen}
+                onClick={() => setDeviceBrandFilterOpen((v) => !v)}
+                aria-expanded={deviceBrandFilterOpen}
               >
                 <ChevronDown
                   className={cn(
                     "h-3.5 w-3.5 transition-transform",
-                    deviceFilterOpen ? "rotate-0" : "-rotate-90",
+                    deviceBrandFilterOpen ? "rotate-0" : "-rotate-90",
                   )}
                 />
-                按设备筛选
-                {selectedDeviceModels.length > 0 ? (
+                按设备公司筛选
+                {selectedDeviceBrands.length > 0 ? (
                   <Badge variant="outline" className="ml-1 h-5 max-w-[12rem] truncate font-normal">
-                    {selectedDeviceModels.length === 1
-                      ? selectedDeviceModels[0]
-                      : `已选 ${selectedDeviceModels.length} 个型号`}
+                    {selectedDeviceBrands.length === 1
+                      ? selectedDeviceBrands[0]
+                      : `已选 ${selectedDeviceBrands.length} 家公司`}
                   </Badge>
                 ) : null}
               </button>
               <div className="flex items-center gap-2">
-                {selectedDeviceModels.length > 0 ? (
+                {selectedDeviceBrands.length > 0 ? (
                   <button
                     type="button"
                     className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                    onClick={() => onDeviceModelsChange([])}
+                    onClick={() => onDeviceBrandsChange([])}
                   >
                     清除筛选
                   </button>
@@ -427,23 +427,23 @@ export function HospitalPanel({
                 <button
                   type="button"
                   className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                  onClick={() => setDeviceFilterOpen((v) => !v)}
+                  onClick={() => setDeviceBrandFilterOpen((v) => !v)}
                 >
-                  {deviceFilterOpen ? "收起" : "展开"}
+                  {deviceBrandFilterOpen ? "收起" : "展开"}
                 </button>
               </div>
             </div>
 
-            {deviceFilterOpen ? (
+            {deviceBrandFilterOpen ? (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => onDeviceModelsChange([])}
+                    onClick={() => onDeviceBrandsChange([])}
                     className={cn(
                       "inline-flex shrink-0 items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                       "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-                      selectedDeviceModels.length === 0
+                      selectedDeviceBrands.length === 0
                         ? filterChipSelectedClass
                         : "opacity-90 hover:opacity-100",
                     )}
@@ -454,8 +454,8 @@ export function HospitalPanel({
                     </span>
                   </button>
                 </div>
-                {deviceModelOptions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">暂无设备型号数据</p>
+                {deviceBrandOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">暂无设备公司数据</p>
                 ) : (
                   <div
                     className={cn(
@@ -469,20 +469,20 @@ export function HospitalPanel({
                       e.stopPropagation();
                     }}
                   >
-                    {deviceModelOptions.map(({ model, count }) => {
-                      const active = selectedDeviceModels.includes(model);
+                    {deviceBrandOptions.map(({ brand, count }) => {
+                      const active = selectedDeviceBrands.includes(brand);
                       return (
                         <button
-                          key={model}
+                          key={brand}
                           type="button"
-                          title={`${model}（${count} 家）`}
+                          title={`${brand}（${count} 家）`}
                           onClick={() => {
                             if (active) {
-                              onDeviceModelsChange(
-                                selectedDeviceModels.filter((m) => m !== model),
+                              onDeviceBrandsChange(
+                                selectedDeviceBrands.filter((b) => b !== brand),
                               );
                             } else {
-                              onDeviceModelsChange([...selectedDeviceModels, model]);
+                              onDeviceBrandsChange([...selectedDeviceBrands, brand]);
                             }
                           }}
                           className={cn(
@@ -495,7 +495,7 @@ export function HospitalPanel({
                           )}
                         >
                           <span className="max-w-[10rem] truncate whitespace-nowrap">
-                            {model}
+                            {brand}
                           </span>
                           <span className="shrink-0 tabular-nums opacity-80">
                             {count}
