@@ -8,7 +8,6 @@ import { HospitalPanel } from "../components/HospitalPanel";
 import {
   fetchAssayTree,
   fetchDashboardHospitals,
-  fetchProvinceStats,
 } from "@/lib/business";
 import { resolveArchiveField } from "@/lib/hospital-archive";
 import { useIsDesktop } from "@/hooks/use-mobile";
@@ -26,6 +25,12 @@ const defaultFilters: FilterOptions = {
   model: "all",
 };
 
+function normalizeCityName(name: string): string {
+  const n = (name || "").trim();
+  if (!n) return "";
+  return n.endsWith("市") ? n : `${n}市`;
+}
+
 export default function DashboardPage() {
   const isDesktop = useIsDesktop();
   const [filters, setFilters] = useState<FilterOptions>(defaultFilters);
@@ -37,7 +42,6 @@ export default function DashboardPage() {
   const [deviceBrandCounts, setDeviceBrandCounts] = useState<Record<string, number>>({});
   const [totalHospitalCount, setTotalHospitalCount] = useState(0);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
-  const [mapData, setMapData] = useState<ProvinceData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,6 +110,8 @@ export default function DashboardPage() {
     };
   }, [filters.region, selectedCity]);
 
+  // Load hospitals for current region + package (no city). Map + list share this set;
+  // city / device-company / model / level are applied client-side so choropleth matches the list.
   useEffect(() => {
     if (isDesktop === null) return;
     let cancelled = false;
@@ -113,27 +119,17 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
       const assayCategory = selectedPackageCode || undefined;
-      const hospPromise = fetchDashboardHospitals({
+      const hospRes = await fetchDashboardHospitals({
         region: filters.region,
         province: "安徽省",
-        city: selectedCity,
         assayCategory,
       });
-      const cityPromise = isDesktop
-        ? fetchProvinceStats(filters.region, assayCategory)
-        : Promise.resolve({
-            items: [] as ProvinceData[],
-            error: undefined as string | undefined,
-          });
-      const [hospRes, cityRes] = await Promise.all([hospPromise, cityPromise]);
       if (cancelled) return;
-      if (hospRes.error || cityRes.error) {
-        setError(hospRes.error || cityRes.error || "加载失败");
+      if (hospRes.error) {
+        setError(hospRes.error || "加载失败");
         setHospitals([]);
-        setMapData([]);
       } else {
         setHospitals(hospRes.items);
-        setMapData(cityRes.items);
       }
       setLoading(false);
     };
@@ -141,7 +137,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters.region, selectedCity, selectedPackageCode, isDesktop]);
+  }, [filters.region, selectedPackageCode, isDesktop]);
 
   const selectedPackage = useMemo(
     () => packages.find((p) => p.code === selectedPackageCode) || null,
@@ -156,6 +152,44 @@ export default function DashboardPage() {
     () => packageAccentColor(selectedPackage),
     [selectedPackage],
   );
+
+  /** Same filters as HospitalPanel (except search): device company AND model AND level. */
+  const mapFilteredHospitals = useMemo(() => {
+    const brandFilterActive = selectedDeviceBrands.length > 0;
+    const brandSet = brandFilterActive ? new Set(selectedDeviceBrands) : null;
+    return hospitals.filter((h) => {
+      const model = resolveArchiveField(h, "model");
+      const level = resolveArchiveField(h, "customerLevel");
+      if (filters.model !== "all" && model !== filters.model) return false;
+      if (filters.customerLevel !== "all" && level !== filters.customerLevel) return false;
+      if (brandSet) {
+        const hospitalBrands = h.deviceBrands || [];
+        if (!hospitalBrands.some((b) => brandSet.has(b))) return false;
+      }
+      return true;
+    });
+  }, [hospitals, selectedDeviceBrands, filters.model, filters.customerLevel]);
+
+  const mapData = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const h of mapFilteredHospitals) {
+      const name = normalizeCityName(h.city);
+      if (!name) continue;
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    const items: ProvinceData[] = Array.from(counts.entries()).map(([name, value]) => ({
+      name,
+      value,
+    }));
+    items.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+    return items;
+  }, [mapFilteredHospitals]);
+
+  const listHospitals = useMemo(() => {
+    if (!selectedCity) return hospitals;
+    const selected = normalizeCityName(selectedCity);
+    return hospitals.filter((h) => normalizeCityName(h.city) === selected);
+  }, [hospitals, selectedCity]);
 
   const modelOptions = useMemo(() => {
     const set = new Set<string>();
@@ -256,7 +290,7 @@ export default function DashboardPage() {
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <HospitalPanel
-            hospitals={hospitals}
+            hospitals={listHospitals}
             selectedProvince={selectedCity}
             modelFilter={filters.model}
             levelFilter={filters.customerLevel}
