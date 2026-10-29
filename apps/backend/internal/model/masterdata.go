@@ -382,7 +382,6 @@ var DeviceServiceEvaluationEnum = []string{
 	"新人 有资质",
 	"负责区域一年以上",
 	"客户关系良好, 口碑优于竞品",
-	"竞品未知",
 }
 
 func IsAllowedEnum(value string, allowed []string) bool {
