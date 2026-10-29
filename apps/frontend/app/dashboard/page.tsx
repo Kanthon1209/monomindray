@@ -31,8 +31,10 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState<FilterOptions>(defaultFilters);
   const [selectedCity, setSelectedCity] = useState<string | undefined>();
   const [selectedPackageCode, setSelectedPackageCode] = useState("");
+  const [selectedDeviceModels, setSelectedDeviceModels] = useState<string[]>([]);
   const [packages, setPackages] = useState<AssayPackage[]>([]);
   const [packageCounts, setPackageCounts] = useState<Record<string, number>>({});
+  const [deviceModelCounts, setDeviceModelCounts] = useState<Record<string, number>>({});
   const [totalHospitalCount, setTotalHospitalCount] = useState(0);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [mapData, setMapData] = useState<ProvinceData[]>([]);
@@ -53,6 +55,10 @@ export default function DashboardPage() {
 
   const handlePackageChange = useCallback((code: string) => {
     setSelectedPackageCode(code);
+  }, []);
+
+  const handleDeviceModelsChange = useCallback((models: string[]) => {
+    setSelectedDeviceModels(models);
   }, []);
 
   useEffect(() => {
@@ -78,12 +84,21 @@ export default function DashboardPage() {
       });
       if (cancelled || res.error) return;
       const counts: Record<string, number> = {};
+      const deviceCounts: Record<string, number> = {};
       for (const h of res.items) {
         for (const code of h.assayCategoryCodes || []) {
           counts[code] = (counts[code] || 0) + 1;
         }
+        const seenModels = new Set<string>();
+        for (const raw of h.deviceModels || []) {
+          const model = String(raw || "").trim();
+          if (!model || seenModels.has(model)) continue;
+          seenModels.add(model);
+          deviceCounts[model] = (deviceCounts[model] || 0) + 1;
+        }
       }
       setPackageCounts(counts);
+      setDeviceModelCounts(deviceCounts);
       setTotalHospitalCount(res.total || res.items.length);
     })();
     return () => {
@@ -150,6 +165,15 @@ export default function DashboardPage() {
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-CN"));
   }, [hospitals]);
+
+  const deviceModelOptions = useMemo(() => {
+    return Object.entries(deviceModelCounts)
+      .map(([model, count]) => ({ model, count }))
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return a.model.localeCompare(b.model, "zh-CN");
+      });
+  }, [deviceModelCounts]);
 
   const levelOptions = useMemo(() => {
     const set = new Set<string>(["V1", "V2", "V3", "非V"]);
@@ -238,6 +262,9 @@ export default function DashboardPage() {
             packageCounts={packageCounts}
             selectedPackageCode={selectedPackageCode}
             onPackageChange={handlePackageChange}
+            deviceModelOptions={deviceModelOptions}
+            selectedDeviceModels={selectedDeviceModels}
+            onDeviceModelsChange={handleDeviceModelsChange}
             totalHospitalCount={totalHospitalCount}
           />
         </div>
