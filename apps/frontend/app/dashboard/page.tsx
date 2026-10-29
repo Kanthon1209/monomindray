@@ -5,10 +5,20 @@ import { Loader2 } from "lucide-react";
 import { FilterBar } from "../components/FilterBar";
 import { AnhuiMap } from "../components/ChinaMap";
 import { HospitalPanel } from "../components/HospitalPanel";
-import { fetchDashboardHospitals, fetchProvinceStats } from "@/lib/business";
+import {
+  fetchAssayTree,
+  fetchDashboardHospitals,
+  fetchProvinceStats,
+} from "@/lib/business";
 import { resolveArchiveField } from "@/lib/hospital-archive";
 import { useIsDesktop } from "@/hooks/use-mobile";
 import type { FilterOptions, Hospital, ProvinceData } from "@/lib/types";
+import {
+  extractAssayPackages,
+  packageAccentColor,
+  packageThemeColors,
+  type AssayPackage,
+} from "@/lib/assay-packages";
 
 const defaultFilters: FilterOptions = {
   region: "all",
@@ -20,6 +30,10 @@ export default function DashboardPage() {
   const isDesktop = useIsDesktop();
   const [filters, setFilters] = useState<FilterOptions>(defaultFilters);
   const [selectedCity, setSelectedCity] = useState<string | undefined>();
+  const [selectedPackageCode, setSelectedPackageCode] = useState("");
+  const [packages, setPackages] = useState<AssayPackage[]>([]);
+  const [packageCounts, setPackageCounts] = useState<Record<string, number>>({});
+  const [totalHospitalCount, setTotalHospitalCount] = useState(0);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [mapData, setMapData] = useState<ProvinceData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,21 +51,65 @@ export default function DashboardPage() {
     setSelectedCity((prev) => (prev === cityName ? undefined : cityName));
   }, []);
 
+  const handlePackageChange = useCallback((code: string) => {
+    setSelectedPackageCode(code);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await fetchAssayTree();
+      if (cancelled) return;
+      if (!res.error) setPackages(extractAssayPackages(res.items));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Baseline hospital set for 套餐 chip counts (ignores package filter).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await fetchDashboardHospitals({
+        region: filters.region,
+        province: "安徽省",
+        city: selectedCity,
+      });
+      if (cancelled || res.error) return;
+      const counts: Record<string, number> = {};
+      for (const h of res.items) {
+        for (const code of h.assayCategoryCodes || []) {
+          counts[code] = (counts[code] || 0) + 1;
+        }
+      }
+      setPackageCounts(counts);
+      setTotalHospitalCount(res.total || res.items.length);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.region, selectedCity]);
+
   useEffect(() => {
     if (isDesktop === null) return;
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       setError(null);
+      const assayCategory = selectedPackageCode || undefined;
       const hospPromise = fetchDashboardHospitals({
         region: filters.region,
         province: "安徽省",
         city: selectedCity,
+        assayCategory,
       });
-      // 手机端不展示地图，跳过省市统计请求
       const cityPromise = isDesktop
-        ? fetchProvinceStats(filters.region)
-        : Promise.resolve({ items: [] as ProvinceData[], error: undefined as string | undefined });
+        ? fetchProvinceStats(filters.region, assayCategory)
+        : Promise.resolve({
+            items: [] as ProvinceData[],
+            error: undefined as string | undefined,
+          });
       const [hospRes, cityRes] = await Promise.all([hospPromise, cityPromise]);
       if (cancelled) return;
       if (hospRes.error || cityRes.error) {
@@ -68,7 +126,21 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters.region, selectedCity, isDesktop]);
+  }, [filters.region, selectedCity, selectedPackageCode, isDesktop]);
+
+  const selectedPackage = useMemo(
+    () => packages.find((p) => p.code === selectedPackageCode) || null,
+    [packages, selectedPackageCode],
+  );
+
+  const mapThemeColors = useMemo(
+    () => packageThemeColors(selectedPackage),
+    [selectedPackage],
+  );
+  const mapAccent = useMemo(
+    () => packageAccentColor(selectedPackage),
+    [selectedPackage],
+  );
 
   const modelOptions = useMemo(() => {
     const set = new Set<string>();
@@ -80,7 +152,6 @@ export default function DashboardPage() {
   }, [hospitals]);
 
   const levelOptions = useMemo(() => {
-    // Mindray 客户等级（公司视角）；医院等级(二甲/三甲)不在此列
     const set = new Set<string>(["V1", "V2", "V3", "非V"]);
     for (const h of hospitals) {
       const level = resolveArchiveField(h, "customerLevel").trim();
@@ -123,17 +194,35 @@ export default function DashboardPage() {
               data={mapData}
               onCityClick={handleCityClick}
               selectedCity={selectedCity}
+              themeColors={mapThemeColors}
+              accentColor={mapAccent}
             />
-            {selectedCity ? (
-              <div className="absolute left-4 top-4 z-20 rounded-md border bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm">
-                已选择: {selectedCity}
-                <button
-                  type="button"
-                  onClick={() => setSelectedCity(undefined)}
-                  className="ml-2 text-muted-foreground hover:text-foreground"
-                >
-                  ✕
-                </button>
+            {selectedCity || selectedPackage ? (
+              <div className="absolute left-4 top-4 z-20 flex flex-col gap-1.5">
+                {selectedCity ? (
+                  <div className="rounded-md border bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm">
+                    已选择: {selectedCity}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCity(undefined)}
+                      className="ml-2 text-muted-foreground hover:text-foreground"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : null}
+                {selectedPackage ? (
+                  <div className="rounded-md border bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm">
+                    套餐: {selectedPackage.lineName} · {selectedPackage.name}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPackageCode("")}
+                      className="ml-2 text-muted-foreground hover:text-foreground"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -145,6 +234,11 @@ export default function DashboardPage() {
             selectedProvince={selectedCity}
             modelFilter={filters.model}
             levelFilter={filters.customerLevel}
+            packages={packages}
+            packageCounts={packageCounts}
+            selectedPackageCode={selectedPackageCode}
+            onPackageChange={handlePackageChange}
+            totalHospitalCount={totalHospitalCount}
           />
         </div>
       </div>

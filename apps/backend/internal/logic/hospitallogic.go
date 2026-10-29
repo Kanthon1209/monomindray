@@ -88,7 +88,8 @@ func (l *HospitalLogic) DashboardList(req *types.DashboardHospitalsRequest) (*ty
 		Province: province,
 		Level: resolveLevel(req.Level), Type: resolveType(req.Type),
 		Status: req.Status, DeviceCategory: req.DeviceCategory, DeviceModel: resolveModel(req.DeviceModel),
-		Keyword: req.Keyword, Sort: "updated", Limit: 5000, Offset: 0,
+		Keyword: req.Keyword, AssayCategoryCode: strings.TrimSpace(req.AssayCategory),
+		Sort: "updated", Limit: 5000, Offset: 0,
 	}
 	if city := strings.TrimSpace(req.City); city != "" {
 		f.Cities = cityVariants(city)
@@ -113,8 +114,8 @@ func (l *HospitalLogic) Provinces(req *types.DashboardProvincesRequest) (*types.
 	if err := requireAdminCtx(l.ctx); err != nil {
 		return nil, err
 	}
-	// 看板已收敛为安徽省：返回地市医院数量，供安徽地图着色
-	stats, err := l.svcCtx.HospitalModel.CityStats(l.ctx, defaultDashboardProvince, citiesByAnhuiRegion(req.Region))
+	// 看板已收敛为安徽省：返回地市医院数量，供安徽地图着色（可按套餐/检测类别筛选）
+	stats, err := l.svcCtx.HospitalModel.CityStats(l.ctx, defaultDashboardProvince, citiesByAnhuiRegion(req.Region), strings.TrimSpace(req.AssayCategory))
 	if err != nil {
 		l.Errorf("city stats: %v", err)
 		return nil, ErrInternal
@@ -149,6 +150,13 @@ func (l *HospitalLogic) Get(id int64) (*types.HospitalResponse, error) {
 			info.AssayNames = n
 		} else {
 			info.AssayNames = []string{}
+		}
+	}
+	if codes, err := l.svcCtx.MasterDataModel.ListAssayCategoryCodesByHospitalIDs(l.ctx, []int64{id}); err == nil {
+		if c := codes[id]; c != nil {
+			info.AssayCategoryCodes = c
+		} else {
+			info.AssayCategoryCodes = []string{}
 		}
 	}
 	return &types.HospitalResponse{Hospital: info}, nil
@@ -293,13 +301,25 @@ func (l *HospitalLogic) attachAssayNames(items []model.Hospital, out []types.Hos
 	namesByID, err := l.svcCtx.MasterDataModel.ListAssayNamesByHospitalIDs(l.ctx, ids)
 	if err != nil {
 		l.Errorf("list assay names batch: %v", err)
+	} else {
+		for i := range out {
+			if names, ok := namesByID[out[i].Id]; ok {
+				out[i].AssayNames = names
+			} else {
+				out[i].AssayNames = []string{}
+			}
+		}
+	}
+	codesByID, err := l.svcCtx.MasterDataModel.ListAssayCategoryCodesByHospitalIDs(l.ctx, ids)
+	if err != nil {
+		l.Errorf("list assay category codes batch: %v", err)
 		return out
 	}
 	for i := range out {
-		if names, ok := namesByID[out[i].Id]; ok {
-			out[i].AssayNames = names
+		if codes, ok := codesByID[out[i].Id]; ok {
+			out[i].AssayCategoryCodes = codes
 		} else {
-			out[i].AssayNames = []string{}
+			out[i].AssayCategoryCodes = []string{}
 		}
 	}
 	return out

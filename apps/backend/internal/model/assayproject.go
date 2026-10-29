@@ -572,6 +572,51 @@ func (m *masterDataModel) ListAssayNamesByHospitalIDs(ctx context.Context, hospi
 	return out, rows.Err()
 }
 
+
+// ListAssayCategoryCodesByHospitalIDs returns distinct assay category codes per hospital
+// (a hospital covers a category when any leaf under it is in hospital_assays).
+func (m *masterDataModel) ListAssayCategoryCodesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64][]string, error) {
+	out := map[int64][]string{}
+	if len(hospitalIDs) == 0 {
+		return out, nil
+	}
+	rows, err := m.conn.Query(ctx, `
+		SELECT ha.hospital_id, cat.code,
+		       COALESCE(cat.sort_order, 0) AS sort_order
+		FROM hospital_assays ha
+		JOIN assay_projects item ON item.id = ha.assay_project_id
+		JOIN assay_projects cat ON cat.code = item.parent_code AND cat.kind = 'category' AND cat.status = 'active'
+		WHERE ha.hospital_id = ANY($1) AND item.kind = 'item' AND item.status = 'active'
+		  AND TRIM(COALESCE(cat.code, '')) <> ''
+		ORDER BY ha.hospital_id, sort_order, cat.code`, hospitalIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := map[int64]map[string]struct{}{}
+	for rows.Next() {
+		var hid int64
+		var code string
+		var sortOrder int
+		if err := rows.Scan(&hid, &code, &sortOrder); err != nil {
+			return nil, err
+		}
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		if seen[hid] == nil {
+			seen[hid] = map[string]struct{}{}
+		}
+		if _, ok := seen[hid][code]; ok {
+			continue
+		}
+		seen[hid][code] = struct{}{}
+		out[hid] = append(out[hid], code)
+	}
+	return out, rows.Err()
+}
+
 // ListHospitalAssayGroups returns selected leaves grouped under their parent categories (derived).
 func (m *masterDataModel) ListHospitalAssayGroups(ctx context.Context, hospitalID int64) ([]HospitalAssayCategoryGroup, error) {
 	if hospitalID <= 0 {

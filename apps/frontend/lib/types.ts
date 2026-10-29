@@ -20,6 +20,7 @@ export interface Hospital {
   metrics?: Record<string, string>;
   archive?: Record<string, ArchiveValue>;
   assayNames?: string[];
+  assayCategoryCodes?: string[];
 }
 
 export interface FilterOptions {

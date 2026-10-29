@@ -83,8 +83,9 @@ type (
 		Metrics      map[string]string `json:"metrics,omitempty"`
 		DeviceCount  int               `json:"deviceCount"`
 		DeviceModels []string          `json:"deviceModels"`
-		AssayNames   []string          `json:"assayNames,omitempty"`
-		CreatedAt    string            `json:"createdAt,omitempty"`
+		AssayNames          []string          `json:"assayNames,omitempty"`
+		AssayCategoryCodes  []string          `json:"assayCategoryCodes,omitempty"`
+		CreatedAt           string            `json:"createdAt,omitempty"`
 	}
 	HospitalUpsertRequest struct {
 		Name         string            `json:"name"`
@@ -153,13 +154,16 @@ type (
 		DeviceCategory string `form:"deviceCategory,optional"`
 		DeviceModel    string `form:"deviceModel,optional"`
 		Keyword        string `form:"keyword,optional"`
+		// AssayCategory: assay_projects category code (套餐); hospital covers it if any leaf under it is selected.
+		AssayCategory  string `form:"assayCategory,optional"`
 	}
 	ProvinceStat struct {
 		Name  string `json:"name"`
 		Value int    `json:"value"`
 	}
 	DashboardProvincesRequest struct {
-		Region string `form:"region,optional"`
+		Region        string `form:"region,optional"`
+		AssayCategory string `form:"assayCategory,optional"`
 	}
 	DashboardProvincesResponse struct {
 		Items []ProvinceStat `json:"items"`

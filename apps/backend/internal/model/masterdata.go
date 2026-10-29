@@ -24,6 +24,7 @@ type MasterDataModel interface {
 	ListHospitalAssayCodes(ctx context.Context, hospitalID int64) ([]string, error)
 	ListHospitalAssayGroups(ctx context.Context, hospitalID int64) ([]HospitalAssayCategoryGroup, error)
 	ListAssayNamesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64][]string, error)
+	ListAssayCategoryCodesByHospitalIDs(ctx context.Context, hospitalIDs []int64) (map[int64][]string, error)
 	ResolveAssayItemCodesByNames(ctx context.Context, names []string) ([]string, error)
 	ListAssayTree(ctx context.Context) ([]AssayTreeNode, error)
 	GetAssayProjectByCode(ctx context.Context, code string) (*AssayProject, error)

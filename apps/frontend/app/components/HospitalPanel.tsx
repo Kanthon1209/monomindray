@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/table";
 import { HospitalDetailSheet } from "./HospitalDetailSheet";
 import type { Hospital } from "@/lib/types";
+import type { AssayPackage } from "@/lib/assay-packages";
+import { packageChipClass } from "@/lib/assay-packages";
 import {
   DASHBOARD_EXTRA_COLUMNS,
   DASHBOARD_PRIMARY_COLUMNS,
@@ -33,6 +35,11 @@ interface HospitalPanelProps {
   selectedProvince?: string;
   modelFilter?: string;
   levelFilter?: string;
+  packages?: AssayPackage[];
+  packageCounts?: Record<string, number>;
+  selectedPackageCode?: string;
+  onPackageChange?: (code: string) => void;
+  totalHospitalCount?: number;
 }
 
 export function HospitalPanel({
@@ -40,6 +47,11 @@ export function HospitalPanel({
   selectedProvince,
   modelFilter = "all",
   levelFilter = "all",
+  packages = [],
+  packageCounts = {},
+  selectedPackageCode = "",
+  onPackageChange,
+  totalHospitalCount,
 }: HospitalPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -197,6 +209,101 @@ export function HospitalPanel({
             </span>
           </Badge>
         </div>
+
+        {packages.length > 0 && onPackageChange ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                按套餐筛选
+              </span>
+              {selectedPackageCode ? (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => onPackageChange("")}
+                >
+                  清除筛选
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => onPackageChange("")}
+                className={cn(
+                  "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                  "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+                  !selectedPackageCode
+                    ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                    : "opacity-90 hover:opacity-100",
+                )}
+              >
+                全部
+                <span className="ml-1 tabular-nums opacity-80">
+                  {totalHospitalCount ?? hospitals.length}
+                </span>
+              </button>
+              {packages.map((pkg) => {
+                const active = selectedPackageCode === pkg.code;
+                const count = packageCounts[pkg.code] ?? 0;
+                return (
+                  <button
+                    key={pkg.code}
+                    type="button"
+                    title={`${pkg.lineName} · ${pkg.name}（${count} 家）`}
+                    onClick={() =>
+                      onPackageChange(active ? "" : pkg.code)
+                    }
+                    className={cn(
+                      "inline-flex max-w-full items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                      packageChipClass(pkg),
+                      active
+                        ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                        : "opacity-90 hover:opacity-100",
+                      count === 0 ? "opacity-50" : "",
+                    )}
+                  >
+                    <span className="truncate">{pkg.name}</span>
+                    <span className="shrink-0 tabular-nums opacity-80">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {selectedPackageCode
+              ? (() => {
+                  const pkg = packages.find((x) => x.code === selectedPackageCode);
+                  if (!pkg) return null;
+                  return (
+                    <div className="rounded-md border bg-muted/40 px-2.5 py-2">
+                      <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                        {pkg.lineName} · {pkg.name} · 细项 {pkg.items.length}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {pkg.items.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">
+                            暂无细项
+                          </span>
+                        ) : (
+                          pkg.items.map((it) => (
+                            <Badge
+                              key={it.code}
+                              variant="outline"
+                              className="h-6 font-normal"
+                              title={it.code}
+                            >
+                              {it.name}
+                            </Badge>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()
+              : null}
+          </div>
+        ) : null}
 
         <div className="flex items-center gap-2">
           <div className="relative min-w-0 flex-1">

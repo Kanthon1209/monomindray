@@ -44,6 +44,8 @@ type HospitalFilter struct {
 	DeviceCategory string
 	DeviceModel    string
 	Keyword        string
+	// AssayCategoryCode: filter hospitals that have any leaf under this assay category (套餐).
+	AssayCategoryCode string
 	// Sort: "" = province,city,name (default); "updated" = updated_at DESC
 	Sort           string
 	Limit          int
@@ -66,7 +68,7 @@ type HospitalModel interface {
 	Update(ctx context.Context, h *Hospital) error
 	Delete(ctx context.Context, id int64) error
 	ProvinceStats(ctx context.Context, regionProvinces []string) ([]ProvinceCount, error)
-	CityStats(ctx context.Context, province string, cities []string) ([]ProvinceCount, error)
+	CityStats(ctx context.Context, province string, cities []string, assayCategoryCode string) ([]ProvinceCount, error)
 }
 
 type hospitalModel struct {
@@ -185,6 +187,14 @@ func (m *hospitalModel) List(ctx context.Context, f HospitalFilter) ([]Hospital,
 	}
 	if f.DeviceModel != "" {
 		add(`EXISTS (SELECT 1 FROM devices d WHERE d.hospital_id = h.id AND d.status = 'active' AND d.model = $%d)`, f.DeviceModel)
+	}
+	if code := strings.TrimSpace(f.AssayCategoryCode); code != "" {
+		add(`EXISTS (
+			SELECT 1 FROM hospital_assays ha
+			JOIN assay_projects item ON item.id = ha.assay_project_id AND item.kind = 'item' AND item.status = 'active'
+			JOIN assay_projects cat ON cat.code = item.parent_code AND cat.kind = 'category' AND cat.status = 'active'
+			WHERE ha.hospital_id = h.id AND cat.code = $%d
+		)`, code)
 	}
 
 	whereSQL := strings.Join(where, " AND ")
@@ -428,20 +438,29 @@ func (m *hospitalModel) ProvinceStats(ctx context.Context, regionProvinces []str
 	return out, rows.Err()
 }
 
-func (m *hospitalModel) CityStats(ctx context.Context, province string, cities []string) ([]ProvinceCount, error) {
-	var rows pgx.Rows
-	var err error
-	if len(cities) == 0 {
-		rows, err = m.conn.Query(ctx, `
-			SELECT city AS name, COUNT(*)::INT AS value
-			FROM hospitals WHERE province = $1
-			GROUP BY city ORDER BY city`, province)
-	} else {
-		rows, err = m.conn.Query(ctx, `
-			SELECT city AS name, COUNT(*)::INT AS value
-			FROM hospitals WHERE province = $1 AND city = ANY($2)
-			GROUP BY city ORDER BY city`, province, cities)
+func (m *hospitalModel) CityStats(ctx context.Context, province string, cities []string, assayCategoryCode string) ([]ProvinceCount, error) {
+	assayCategoryCode = strings.TrimSpace(assayCategoryCode)
+	where := []string{"h.province = $1"}
+	args := []any{province}
+	if len(cities) > 0 {
+		args = append(args, cities)
+		where = append(where, fmt.Sprintf("h.city = ANY($%d)", len(args)))
 	}
+	if assayCategoryCode != "" {
+		args = append(args, assayCategoryCode)
+		where = append(where, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM hospital_assays ha
+			JOIN assay_projects item ON item.id = ha.assay_project_id AND item.kind = 'item' AND item.status = 'active'
+			JOIN assay_projects cat ON cat.code = item.parent_code AND cat.kind = 'category' AND cat.status = 'active'
+			WHERE ha.hospital_id = h.id AND cat.code = $%d
+		)`, len(args)))
+	}
+	whereSQL := strings.Join(where, " AND ")
+	rows, err := m.conn.Query(ctx, `
+		SELECT h.city AS name, COUNT(*)::INT AS value
+		FROM hospitals h
+		WHERE `+whereSQL+`
+		GROUP BY h.city ORDER BY h.city`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("city stats: %w", err)
 	}

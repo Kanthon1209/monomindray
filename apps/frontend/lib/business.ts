@@ -82,6 +82,9 @@ function mapHospital(raw: any): Hospital {
     metrics: raw.metrics || undefined,
     archive: raw.archive || {},
     assayNames: Array.isArray(raw.assayNames) ? raw.assayNames.map(String) : [],
+    assayCategoryCodes: Array.isArray(raw.assayCategoryCodes)
+      ? raw.assayCategoryCodes.map(String)
+      : [],
   };
 }
 
@@ -143,6 +146,7 @@ export async function fetchDashboardHospitals(params: {
   deviceCategory?: string;
   deviceModel?: string;
   keyword?: string;
+  assayCategory?: string;
 }) {
   const { data, error } = await apiFetch<{ total: number; items: any[] }>(
     `/dashboard/hospitals${qs({
@@ -155,6 +159,7 @@ export async function fetchDashboardHospitals(params: {
       deviceCategory: params.deviceCategory,
       deviceModel: params.deviceModel,
       keyword: params.keyword,
+      assayCategory: params.assayCategory,
     })}`,
   );
   if (error) return { error, items: [] as Hospital[], total: 0 };
@@ -164,9 +169,9 @@ export async function fetchDashboardHospitals(params: {
   };
 }
 
-export async function fetchProvinceStats(region?: string) {
+export async function fetchProvinceStats(region?: string, assayCategory?: string) {
   const { data, error } = await apiFetch<{ items: ProvinceData[] }>(
-    `/dashboard/provinces${qs({ region })}`,
+    `/dashboard/provinces${qs({ region, assayCategory })}`,
   );
   if (error) return { error, items: [] as ProvinceData[] };
   return { items: data?.items || [] };

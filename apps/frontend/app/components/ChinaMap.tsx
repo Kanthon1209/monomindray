@@ -26,6 +26,10 @@ interface AnhuiMapProps {
   data: ProvinceData[];
   onCityClick?: (cityName: string) => void;
   selectedCity?: string;
+  /** VisualMap / area palette; defaults to red. When a 套餐 is selected, pass its theme. */
+  themeColors?: string[];
+  /** Emphasis / selected city fill; derived from theme if omitted. */
+  accentColor?: string;
 }
 
 const ANHUI_MAP_LOCAL = "/anhui.json";
@@ -40,7 +44,27 @@ function normalizeCityName(name: string): string {
   return n.endsWith("市") ? n : `${n}市`;
 }
 
-export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
+const DEFAULT_THEME = [
+  "#fff1f0",
+  "#ffccc7",
+  "#ffa39e",
+  "#ff7875",
+  "#f5222d",
+  "#cf1322",
+  "#a8071a",
+];
+
+export function AnhuiMap({
+  data,
+  onCityClick,
+  selectedCity,
+  themeColors,
+  accentColor,
+}: AnhuiMapProps) {
+  const palette =
+    themeColors && themeColors.length >= 2 ? themeColors : DEFAULT_THEME;
+  const selectedFill = accentColor || palette[palette.length - 1];
+  const emphasisFill = palette[Math.min(3, palette.length - 1)];
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<EChartsType | null>(null);
   const onCityClickRef = useRef(onCityClick);
@@ -91,15 +115,7 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
           min: 0,
           max,
           inRange: {
-            color: [
-              "#fff1f0",
-              "#ffccc7",
-              "#ffa39e",
-              "#ff7875",
-              "#f5222d",
-              "#cf1322",
-              "#a8071a",
-            ],
+            color: palette,
           },
           text: ["多", "少"],
           calculable: true,
@@ -133,7 +149,7 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
                 textBorderWidth: 2.5,
               },
               itemStyle: {
-                areaColor: "#ff7875",
+                areaColor: emphasisFill,
               },
             },
             data: Array.from(valueByCity.entries()).map(([name, value]) => ({
@@ -142,7 +158,7 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
               itemStyle:
                 selected && selected === name
                   ? {
-                      areaColor: "#a8071a",
+                      areaColor: selectedFill,
                       borderColor: "#f59e0b",
                       borderWidth: 2,
                     }
@@ -193,7 +209,7 @@ export function AnhuiMap({ data, onCityClick, selectedCity }: AnhuiMapProps) {
       .catch((err) => {
         console.error("加载安徽地图失败:", err);
       });
-  }, [data, selectedCity]);
+  }, [data, selectedCity, palette, selectedFill, emphasisFill]);
 
   useEffect(() => {
     const el = chartRef.current;
