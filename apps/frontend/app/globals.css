@@ -125,6 +125,31 @@ body {
   border-color: var(--border);
 }
 
+/* Hide scrollbar chrome app-wide; scrolling still works (wheel / touch / programmatic). */
+html,
+body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 
 /* ---- Login page MINDRAY watermark (Oswald, full-bleed cover) ---- */
 .login-marquee-bg {

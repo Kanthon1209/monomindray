@@ -36,7 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, filterChipSelectedClass } from "@/lib/utils";
 
 interface HospitalDetailSheetProps {
   hospitalId: string | null;
@@ -595,7 +595,7 @@ export function HospitalDetailSheet({
                           "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                           color,
                           active
-                            ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                            ? filterChipSelectedClass
                             : "opacity-90 hover:opacity-100",
                         )}
                       >
