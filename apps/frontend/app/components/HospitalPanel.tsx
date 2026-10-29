@@ -28,7 +28,7 @@ import {
   resolveArchiveField,
   type ArchiveFieldKey,
 } from "@/lib/hospital-archive";
-import { cn } from "@/lib/utils";
+import { cn, filterChipSelectedClass } from "@/lib/utils";
 
 interface HospitalPanelProps {
   hospitals: Hospital[];
@@ -166,7 +166,6 @@ export function HospitalPanel({
         className={cn(
           "flex h-7 max-w-full flex-nowrap items-center gap-1 overflow-x-hidden overflow-y-hidden",
           "hover:overflow-x-auto",
-          "[scrollbar-width:thin]",
         )}
         title={names.join("、")}
         onClick={(e) => e.stopPropagation()}
@@ -284,7 +283,7 @@ export function HospitalPanel({
                       "inline-flex shrink-0 items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                       "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
                       !selectedPackageCode
-                        ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                        ? filterChipSelectedClass
                         : "opacity-90 hover:opacity-100",
                     )}
                   >
@@ -307,8 +306,7 @@ export function HospitalPanel({
                     </span>
                     <div
                       className={cn(
-                        "flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto",
-                        "[scrollbar-width:thin]",
+                        "flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto py-0.5",
                       )}
                       onWheel={(e) => {
                         const el = e.currentTarget;
@@ -333,7 +331,7 @@ export function HospitalPanel({
                               "inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                               packageChipClass(pkg),
                               active
-                                ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                                ? filterChipSelectedClass
                                 : "opacity-90 hover:opacity-100",
                               count === 0 ? "opacity-50" : "",
                             )}

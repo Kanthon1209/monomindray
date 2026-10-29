@@ -19,7 +19,7 @@ import {
   type EqaParticipationItem,
 } from "@/lib/eqa";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn, filterChipSelectedClass } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -435,7 +435,7 @@ export default function EqaDashboardPage() {
                   "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                   FILTER_ALL_CLASS,
                   !selectedFieldCode && !selectedScope
-                    ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                    ? filterChipSelectedClass
                     : "opacity-90 hover:opacity-100",
                 )}
               >
@@ -474,7 +474,7 @@ export default function EqaDashboardPage() {
                       "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                       block.allClass,
                       selectedScope === block.key && !selectedFieldCode
-                        ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                        ? filterChipSelectedClass
                         : "opacity-90 hover:opacity-100",
                     )}
                   >
@@ -495,7 +495,7 @@ export default function EqaDashboardPage() {
                           "inline-flex max-w-full items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                           block.chipClass,
                           active
-                            ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                            ? filterChipSelectedClass
                             : "opacity-90 hover:opacity-100",
                           chip.count === 0 ? "opacity-50" : "",
                         )}
