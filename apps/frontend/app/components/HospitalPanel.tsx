@@ -39,6 +39,9 @@ interface HospitalPanelProps {
   packageCounts?: Record<string, number>;
   selectedPackageCode?: string;
   onPackageChange?: (code: string) => void;
+  deviceModelOptions?: { model: string; count: number }[];
+  selectedDeviceModels?: string[];
+  onDeviceModelsChange?: (models: string[]) => void;
   totalHospitalCount?: number;
 }
 
@@ -51,6 +54,9 @@ export function HospitalPanel({
   packageCounts = {},
   selectedPackageCode = "",
   onPackageChange,
+  deviceModelOptions = [],
+  selectedDeviceModels = [],
+  onDeviceModelsChange,
   totalHospitalCount,
 }: HospitalPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -59,6 +65,8 @@ export function HospitalPanel({
   const [expandedCols, setExpandedCols] = useState(false);
   /** 套餐筛选区默认收起 */
   const [packageFilterOpen, setPackageFilterOpen] = useState(false);
+  /** 设备筛选区默认收起 */
+  const [deviceFilterOpen, setDeviceFilterOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const columns = useMemo(
@@ -91,12 +99,18 @@ export function HospitalPanel({
 
   const filtered = useMemo(() => {
     const lower = searchQuery.trim().toLowerCase();
+    const deviceFilterActive = selectedDeviceModels.length > 0;
+    const deviceSet = deviceFilterActive ? new Set(selectedDeviceModels) : null;
     return hospitals.filter((h) => {
       const customerName = resolveArchiveField(h, "customerName");
       const model = resolveArchiveField(h, "model");
       const level = resolveArchiveField(h, "customerLevel");
       if (modelFilter !== "all" && model !== modelFilter) return false;
       if (levelFilter !== "all" && level !== levelFilter) return false;
+      if (deviceSet) {
+        const hospitalModels = h.deviceModels || [];
+        if (!hospitalModels.some((m) => deviceSet.has(m))) return false;
+      }
       if (!lower) return true;
       return (
         customerName.toLowerCase().includes(lower) ||
@@ -106,7 +120,7 @@ export function HospitalPanel({
         resolveArchiveField(h, "branchOffice").toLowerCase().includes(lower)
       );
     });
-  }, [hospitals, searchQuery, modelFilter, levelFilter]);
+  }, [hospitals, searchQuery, modelFilter, levelFilter, selectedDeviceModels]);
 
   useEffect(() => {
     if (selectedId && !filtered.some((h) => h.id === selectedId)) {
@@ -371,6 +385,126 @@ export function HospitalPanel({
                     ))
                   )}
                 </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {onDeviceModelsChange ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                onClick={() => setDeviceFilterOpen((v) => !v)}
+                aria-expanded={deviceFilterOpen}
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 transition-transform",
+                    deviceFilterOpen ? "rotate-0" : "-rotate-90",
+                  )}
+                />
+                按设备筛选
+                {selectedDeviceModels.length > 0 ? (
+                  <Badge variant="outline" className="ml-1 h-5 max-w-[12rem] truncate font-normal">
+                    {selectedDeviceModels.length === 1
+                      ? selectedDeviceModels[0]
+                      : `已选 ${selectedDeviceModels.length} 个型号`}
+                  </Badge>
+                ) : null}
+              </button>
+              <div className="flex items-center gap-2">
+                {selectedDeviceModels.length > 0 ? (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    onClick={() => onDeviceModelsChange([])}
+                  >
+                    清除筛选
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => setDeviceFilterOpen((v) => !v)}
+                >
+                  {deviceFilterOpen ? "收起" : "展开"}
+                </button>
+              </div>
+            </div>
+
+            {deviceFilterOpen ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onDeviceModelsChange([])}
+                    className={cn(
+                      "inline-flex shrink-0 items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                      "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+                      selectedDeviceModels.length === 0
+                        ? filterChipSelectedClass
+                        : "opacity-90 hover:opacity-100",
+                    )}
+                  >
+                    全部
+                    <span className="ml-1 tabular-nums opacity-80">
+                      {totalHospitalCount ?? hospitals.length}
+                    </span>
+                  </button>
+                </div>
+                {deviceModelOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">暂无设备型号数据</p>
+                ) : (
+                  <div
+                    className={cn(
+                      "flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto py-0.5",
+                    )}
+                    onWheel={(e) => {
+                      const el = e.currentTarget;
+                      if (el.scrollWidth <= el.clientWidth) return;
+                      el.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    {deviceModelOptions.map(({ model, count }) => {
+                      const active = selectedDeviceModels.includes(model);
+                      return (
+                        <button
+                          key={model}
+                          type="button"
+                          title={`${model}（${count} 家）`}
+                          onClick={() => {
+                            if (active) {
+                              onDeviceModelsChange(
+                                selectedDeviceModels.filter((m) => m !== model),
+                              );
+                            } else {
+                              onDeviceModelsChange([...selectedDeviceModels, model]);
+                            }
+                          }}
+                          className={cn(
+                            "inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                            "border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+                            active
+                              ? filterChipSelectedClass
+                              : "opacity-90 hover:opacity-100",
+                            count === 0 ? "opacity-50" : "",
+                          )}
+                        >
+                          <span className="max-w-[10rem] truncate whitespace-nowrap">
+                            {model}
+                          </span>
+                          <span className="shrink-0 tabular-nums opacity-80">
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
