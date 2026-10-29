@@ -103,8 +103,10 @@ export default function EqaDashboardPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detailItems, setDetailItems] = useState<Record<number, EqaParticipationItem[]>>({});
   const [detailLoading, setDetailLoading] = useState<number | null>(null);
-  /** Empty = 全部科目；非空 = 按科目筛选参评医院列表 */
+  /** Empty = 未按单科筛选；非空 = 按单个科目筛选参评医院列表 */
   const [selectedFieldCode, setSelectedFieldCode] = useState("");
+  /** Empty = 未按级别筛选；national/provincial = 该级别下全部科目 */
+  const [selectedScope, setSelectedScope] = useState<"" | "national" | "provincial">("");
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [keyword, setKeyword] = useState("");
@@ -124,6 +126,7 @@ export default function EqaDashboardPage() {
       fetchEqaParticipations({
         year,
         fieldCode: selectedFieldCode || undefined,
+        scope: selectedScope || undefined,
         pageSize: 200,
       }),
     ]);
@@ -143,10 +146,11 @@ export default function EqaDashboardPage() {
       setTotal(0);
     }
     setLoading(false);
-  }, [year, selectedFieldCode]);
+  }, [year, selectedFieldCode, selectedScope]);
 
   useEffect(() => {
     setSelectedFieldCode("");
+    setSelectedScope("");
   }, [year]);
 
   useEffect(() => {
@@ -214,9 +218,16 @@ export default function EqaDashboardPage() {
       name: string;
       parentCode: string;
       parentName: string;
+      scope: "national" | "provincial" | "other";
       count: number;
     }[] = [];
     for (const g of groups) {
+      const scope: "national" | "provincial" | "other" =
+        g.code === "scope.national" || g.name.includes("国家")
+          ? "national"
+          : g.code === "scope.provincial" || g.name.includes("省")
+            ? "provincial"
+            : "other";
       for (const c of g.children || []) {
         if (c.valueType === "group") continue;
         chips.push({
@@ -224,6 +235,7 @@ export default function EqaDashboardPage() {
           name: c.name,
           parentCode: g.code,
           parentName: g.name,
+          scope,
           count: countByCode.get(c.code) || 0,
         });
       }
@@ -235,17 +247,55 @@ export default function EqaDashboardPage() {
     });
   }, [groups, dash?.topItems]);
 
+  const nationalChips = useMemo(
+    () => subjectChips.filter((c) => c.scope === "national"),
+    [subjectChips],
+  );
+  const provincialChips = useMemo(
+    () => subjectChips.filter((c) => c.scope === "provincial"),
+    [subjectChips],
+  );
+
   const selectedSubject = useMemo(
     () => subjectChips.find((c) => c.code === selectedFieldCode) || null,
     [subjectChips, selectedFieldCode],
   );
 
+  const scopeCoverageCount = useCallback(
+    (scope: "national" | "provincial") =>
+      dash?.byScope?.find((s) => s.scope === scope)?.count ?? 0,
+    [dash?.byScope],
+  );
+
   const filteredHospitalCount = useMemo(() => {
-    if (!selectedFieldCode) return dash?.coverageHospitals ?? 0;
-    if (selectedSubject) return selectedSubject.count;
-    const ids = new Set(rows.map((r) => r.hospitalId));
-    return ids.size;
-  }, [selectedFieldCode, selectedSubject, dash?.coverageHospitals, rows]);
+    if (selectedFieldCode) {
+      if (selectedSubject) return selectedSubject.count;
+      const ids = new Set(rows.map((r) => r.hospitalId));
+      return ids.size;
+    }
+    if (selectedScope) return scopeCoverageCount(selectedScope);
+    return dash?.coverageHospitals ?? 0;
+  }, [
+    selectedFieldCode,
+    selectedSubject,
+    selectedScope,
+    scopeCoverageCount,
+    dash?.coverageHospitals,
+    rows,
+  ]);
+
+  const selectAllSubjects = () => {
+    setSelectedFieldCode("");
+    setSelectedScope("");
+  };
+  const selectScopeAll = (scope: "national" | "provincial") => {
+    setSelectedFieldCode("");
+    setSelectedScope((prev) => (prev === scope ? "" : scope));
+  };
+  const selectSubject = (code: string) => {
+    setSelectedScope("");
+    setSelectedFieldCode((prev) => (prev === code ? "" : code));
+  };
 
   const SCOPE_CHIP_CLASS: Record<string, string> = {
     "scope.national":
@@ -471,18 +521,20 @@ export default function EqaDashboardPage() {
               <CardDescription>
                 {selectedSubject
                   ? `已筛选科目「${selectedSubject.name}」· ${filteredHospitalCount} 家医院 · ${total} 条参评记录。点击行可展开查看勾选明细。`
-                  : "上方点选科目可筛选覆盖该科目的医院；点击行展开查看已勾选科目。"}
+                  : selectedScope
+                    ? `已筛选${selectedScope === "national" ? "国家级" : "省市级"}全部科目 · ${filteredHospitalCount} 家医院 · ${total} 条参评记录。点击行可展开查看勾选明细。`
+                    : "上方点选科目可筛选覆盖该科目的医院；也可按国家级/省市级整级筛选。点击行展开查看已勾选科目。"}
               </CardDescription>
             </div>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium text-muted-foreground">按科目筛选</span>
-              {selectedSubject ? (
+              {selectedSubject || selectedScope ? (
                 <button
                   type="button"
                   className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                  onClick={() => setSelectedFieldCode("")}
+                  onClick={selectAllSubjects}
                 >
                   清除筛选
                 </button>
@@ -491,11 +543,11 @@ export default function EqaDashboardPage() {
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setSelectedFieldCode("")}
+                onClick={selectAllSubjects}
                 className={cn(
                   "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                   FILTER_ALL_CLASS,
-                  !selectedFieldCode
+                  !selectedFieldCode && !selectedScope
                     ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
                     : "opacity-90 hover:opacity-100",
                 )}
@@ -505,45 +557,73 @@ export default function EqaDashboardPage() {
                   {dash?.coverageHospitals ?? 0}
                 </span>
               </button>
-              {subjectChips.map((chip) => {
-                const active = selectedFieldCode === chip.code;
-                const scopeKey =
-                  chip.parentCode in SCOPE_CHIP_CLASS
-                    ? chip.parentCode
-                    : chip.parentName.includes("国家")
-                      ? "scope.national"
-                      : chip.parentName.includes("省")
-                        ? "scope.provincial"
-                        : "";
-                const color =
-                  (scopeKey && SCOPE_CHIP_CLASS[scopeKey]) ||
-                  "border-transparent bg-secondary text-secondary-foreground";
-                return (
+            </div>
+            {(
+              [
+                {
+                  key: "national" as const,
+                  label: "国家级",
+                  chips: nationalChips,
+                  allClass: SCOPE_CHIP_CLASS["scope.national"],
+                  chipClass: SCOPE_CHIP_CLASS["scope.national"],
+                },
+                {
+                  key: "provincial" as const,
+                  label: "省市级",
+                  chips: provincialChips,
+                  allClass: SCOPE_CHIP_CLASS["scope.provincial"],
+                  chipClass: SCOPE_CHIP_CLASS["scope.provincial"],
+                },
+              ] as const
+            ).map((block) => (
+              <div key={block.key} className="space-y-1.5">
+                <div className="text-xs font-medium text-muted-foreground">{block.label}</div>
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
-                    key={chip.code}
                     type="button"
-                    title={`${chip.parentName} · ${chip.name}（${chip.count} 家）`}
-                    onClick={() =>
-                      setSelectedFieldCode((prev) => (prev === chip.code ? "" : chip.code))
-                    }
+                    title={`选中${block.label}下全部科目`}
+                    onClick={() => selectScopeAll(block.key)}
                     className={cn(
-                      "inline-flex max-w-full items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                      color,
-                      active
+                      "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                      block.allClass,
+                      selectedScope === block.key && !selectedFieldCode
                         ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
                         : "opacity-90 hover:opacity-100",
-                      chip.count === 0 ? "opacity-50" : "",
                     )}
                   >
-                    <span className="truncate">{chip.name}</span>
-                    <span className="shrink-0 tabular-nums opacity-80">{chip.count}</span>
+                    {block.label}全部
+                    <span className="ml-1 tabular-nums opacity-80">
+                      {scopeCoverageCount(block.key)}
+                    </span>
                   </button>
-                );
-              })}
-              {!loading && subjectChips.length === 0 ? (
-                <span className="text-xs text-muted-foreground">暂无科目，请先在下方科目树维护</span>
-              ) : null}
-            </div>
+                  {block.chips.map((chip) => {
+                    const active = selectedFieldCode === chip.code;
+                    return (
+                      <button
+                        key={chip.code}
+                        type="button"
+                        title={`${chip.parentName} · ${chip.name}（${chip.count} 家）`}
+                        onClick={() => selectSubject(chip.code)}
+                        className={cn(
+                          "inline-flex max-w-full items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                          block.chipClass,
+                          active
+                            ? "ring-2 ring-foreground/40 ring-offset-1 ring-offset-background"
+                            : "opacity-90 hover:opacity-100",
+                          chip.count === 0 ? "opacity-50" : "",
+                        )}
+                      >
+                        <span className="truncate">{chip.name}</span>
+                        <span className="shrink-0 tabular-nums opacity-80">{chip.count}</span>
+                      </button>
+                    );
+                  })}
+                  {!loading && block.chips.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">暂无科目</span>
+                  ) : null}
+                </div>
+              </div>
+            ))}
           </div>
         </CardHeader>
         <CardContent className="overflow-auto">
@@ -569,7 +649,9 @@ export default function EqaDashboardPage() {
                   <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
                     {selectedSubject
                       ? `当前科目「${selectedSubject.name}」暂无参评医院。`
-                      : "暂无参评记录。可通过问卷发放 EQA 模板，审核通过后自动写入。"}
+                      : selectedScope
+                        ? `当前${selectedScope === "national" ? "国家级" : "省市级"}暂无参评医院。`
+                        : "暂无参评记录。可通过问卷发放 EQA 模板，审核通过后自动写入。"}
                   </TableCell>
                 </TableRow>
               ) : (
