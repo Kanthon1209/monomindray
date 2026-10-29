@@ -5,6 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** Inset ring for filter chips — stays inside bounds so overflow-hidden parents do not clip it. */
+/** Inset ring for filter chips — neutral emphasis, not theme primary; stays inside bounds. */
 export const filterChipSelectedClass =
-  "ring-2 ring-inset ring-primary/70 dark:ring-primary/85";
+  "ring-2 ring-inset ring-foreground/40 dark:ring-foreground/55";
