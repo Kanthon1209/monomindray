@@ -37,9 +37,12 @@ import {
 } from "@/components/mobile-data-list";
 import { SurveyAnswersView } from "@/components/survey-answers-view";
 
+type ReviewTab = "pending" | "approved";
+
 export default function SurveyReviewPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const [tab, setTab] = useState<ReviewTab>("pending");
   const [items, setItems] = useState<SurveySubmission[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -57,16 +60,21 @@ export default function SurveyReviewPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const res = await listSurveySubmissions({ status: "submitted" });
+    const status = tab === "pending" ? "submitted" : "approved";
+    const res = await listSurveySubmissions({ status });
     if (res.error) setError(res.error);
     setItems(res.items);
     setTotal(res.total);
     setLoading(false);
-  }, []);
+  }, [tab]);
 
   useEffect(() => {
     if (user?.role === "admin") load();
   }, [user, load]);
+
+  useEffect(() => {
+    setExpandedId(null);
+  }, [tab]);
 
   const onApprove = async (id: string) => {
     setActingId(id);
@@ -93,6 +101,9 @@ export default function SurveyReviewPage() {
 
   if (!user || user.role !== "admin") return null;
 
+  const isPending = tab === "pending";
+  const emptyLabel = isPending ? "暂无待审答卷" : "暂无已通过记录";
+
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-auto p-4 md:p-6">
       <Card className="border-none shadow-none">
@@ -105,13 +116,37 @@ export default function SurveyReviewPage() {
               <div>
                 <CardTitle>答卷审核</CardTitle>
                 <CardDescription>
-                  审核采集员提交的问卷。待审 {total} 份。
+                  {isPending
+                    ? `审核采集员提交的问卷。待审 ${total} 份。`
+                    : `已通过答卷保留审核记录，共 ${total} 份。`}
                 </CardDescription>
               </div>
             </div>
-            <Button variant="outline" size="icon" onClick={load} disabled={loading}>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex rounded-lg border p-0.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isPending ? "secondary" : "ghost"}
+                  className="h-8"
+                  onClick={() => setTab("pending")}
+                >
+                  待审核
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={!isPending ? "secondary" : "ghost"}
+                  className="h-8"
+                  onClick={() => setTab("approved")}
+                >
+                  已通过
+                </Button>
+              </div>
+              <Button variant="outline" size="icon" onClick={load} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="px-0">
@@ -124,6 +159,7 @@ export default function SurveyReviewPage() {
                   <TableHead>发放</TableHead>
                   <TableHead>采集员</TableHead>
                   <TableHead>提交时间</TableHead>
+                  {isPending ? null : <TableHead>审核时间</TableHead>}
                   <TableHead>状态</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
@@ -131,14 +167,14 @@ export default function SurveyReviewPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={isPending ? 6 : 7} className="text-center text-muted-foreground">
                       加载中…
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      暂无待审答卷
+                    <TableCell colSpan={isPending ? 6 : 7} className="text-center text-muted-foreground">
+                      {emptyLabel}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -158,8 +194,15 @@ export default function SurveyReviewPage() {
                           </div>
                         </TableCell>
                         <TableCell>{formatTime(item.submittedAt)}</TableCell>
+                        {isPending ? null : (
+                          <TableCell>{formatTime(item.reviewedAt)}</TableCell>
+                        )}
                         <TableCell>
-                          <Badge variant="warning">待审核</Badge>
+                          {isPending ? (
+                            <Badge variant="warning">待审核</Badge>
+                          ) : (
+                            <Badge variant="success">已通过</Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -172,26 +215,28 @@ export default function SurveyReviewPage() {
                             >
                               {expandedId === item.id ? "收起" : "查看"}
                             </Button>
-                            <Button
-                              size="sm"
-                              disabled={actingId === item.id}
-                              onClick={() => onApprove(item.id)}
-                            >
-                              {actingId === item.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <>
-                                  <Check className="mr-1 h-4 w-4" />
-                                  通过
-                                </>
-                              )}
-                            </Button>
+                            {isPending ? (
+                              <Button
+                                size="sm"
+                                disabled={actingId === item.id}
+                                onClick={() => onApprove(item.id)}
+                              >
+                                {actingId === item.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Check className="mr-1 h-4 w-4" />
+                                    通过
+                                  </>
+                                )}
+                              </Button>
+                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>
                       {expandedId === item.id ? (
                         <TableRow>
-                          <TableCell colSpan={6} className="bg-muted/30">
+                          <TableCell colSpan={isPending ? 6 : 7} className="bg-muted/30">
                             <div className="mb-3 border-b border-border/60 pb-3 text-sm">
                               <div>
                                 <span className="text-muted-foreground">客户：</span>
@@ -208,28 +253,34 @@ export default function SurveyReviewPage() {
                               fields={item.schema?.fields}
                               sections={item.schema?.sections}
                             />
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                              <Input
-                                className="max-w-md"
-                                placeholder="驳回原因（必填）"
-                                value={rejectNotes[item.id] || ""}
-                                onChange={(e) =>
-                                  setRejectNotes((prev) => ({
-                                    ...prev,
-                                    [item.id]: e.target.value,
-                                  }))
-                                }
-                              />
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                disabled={actingId === item.id}
-                                onClick={() => onReject(item.id)}
-                              >
-                                <X className="mr-1 h-4 w-4" />
-                                驳回
-                              </Button>
-                            </div>
+                            {isPending ? (
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <Input
+                                  className="max-w-md"
+                                  placeholder="驳回原因（必填）"
+                                  value={rejectNotes[item.id] || ""}
+                                  onChange={(e) =>
+                                    setRejectNotes((prev) => ({
+                                      ...prev,
+                                      [item.id]: e.target.value,
+                                    }))
+                                  }
+                                />
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  disabled={actingId === item.id}
+                                  onClick={() => onReject(item.id)}
+                                >
+                                  <X className="mr-1 h-4 w-4" />
+                                  驳回
+                                </Button>
+                              </div>
+                            ) : item.reviewNote ? (
+                              <p className="mt-3 text-sm text-muted-foreground">
+                                审核备注：{item.reviewNote}
+                              </p>
+                            ) : null}
                           </TableCell>
                         </TableRow>
                       ) : null}
@@ -247,7 +298,7 @@ export default function SurveyReviewPage() {
               </li>
             ) : items.length === 0 ? (
               <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-                暂无待审答卷
+                {emptyLabel}
               </li>
             ) : (
               items.map((item) => {
@@ -267,12 +318,16 @@ export default function SurveyReviewPage() {
                       {item.assigneeEmail}
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Badge variant="warning">待审核</Badge>
+                      {isPending ? (
+                        <Badge variant="warning">待审核</Badge>
+                      ) : (
+                        <Badge variant="success">已通过</Badge>
+                      )}
                       <span className="text-xs text-muted-foreground">
-                        {formatTime(item.submittedAt)}
+                        {formatTime(isPending ? item.submittedAt : item.reviewedAt || item.submittedAt)}
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className={`grid gap-2 ${isPending ? "grid-cols-2" : "grid-cols-1"}`}>
                       <Button
                         variant="outline"
                         className="min-h-10 w-full"
@@ -282,20 +337,22 @@ export default function SurveyReviewPage() {
                       >
                         {open ? "收起" : "查看"}
                       </Button>
-                      <Button
-                        className="min-h-10 w-full"
-                        disabled={actingId === item.id}
-                        onClick={() => onApprove(item.id)}
-                      >
-                        {actingId === item.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Check className="mr-1 h-4 w-4" />
-                            通过
-                          </>
-                        )}
-                      </Button>
+                      {isPending ? (
+                        <Button
+                          className="min-h-10 w-full"
+                          disabled={actingId === item.id}
+                          onClick={() => onApprove(item.id)}
+                        >
+                          {actingId === item.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Check className="mr-1 h-4 w-4" />
+                              通过
+                            </>
+                          )}
+                        </Button>
+                      ) : null}
                     </div>
                     {open ? (
                       <div className="space-y-3 rounded-md bg-muted/30 p-3">
@@ -309,26 +366,34 @@ export default function SurveyReviewPage() {
                           sections={item.schema?.sections}
                           className="grid gap-2 text-sm"
                         />
-                        <Input
-                          className="w-full"
-                          placeholder="驳回原因（必填）"
-                          value={rejectNotes[item.id] || ""}
-                          onChange={(e) =>
-                            setRejectNotes((prev) => ({
-                              ...prev,
-                              [item.id]: e.target.value,
-                            }))
-                          }
-                        />
-                        <Button
-                          variant="destructive"
-                          className="min-h-10 w-full"
-                          disabled={actingId === item.id}
-                          onClick={() => onReject(item.id)}
-                        >
-                          <X className="mr-1 h-4 w-4" />
-                          驳回
-                        </Button>
+                        {isPending ? (
+                          <>
+                            <Input
+                              className="w-full"
+                              placeholder="驳回原因（必填）"
+                              value={rejectNotes[item.id] || ""}
+                              onChange={(e) =>
+                                setRejectNotes((prev) => ({
+                                  ...prev,
+                                  [item.id]: e.target.value,
+                                }))
+                              }
+                            />
+                            <Button
+                              variant="destructive"
+                              className="min-h-10 w-full"
+                              disabled={actingId === item.id}
+                              onClick={() => onReject(item.id)}
+                            >
+                              <X className="mr-1 h-4 w-4" />
+                              驳回
+                            </Button>
+                          </>
+                        ) : item.reviewNote ? (
+                          <p className="text-sm text-muted-foreground">
+                            审核备注：{item.reviewNote}
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
                   </MobileCardItem>

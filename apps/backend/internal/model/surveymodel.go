@@ -936,6 +936,15 @@ func (m *surveyModel) ReviewSubmission(ctx context.Context, id, reviewerID int64
 		}
 	}
 
+	if status == "approved" {
+		// Keep survey_submissions (status, reviewed_by/at/note, answers). Never DELETE the
+		// assignment here — survey_submissions.assignment_id is ON DELETE CASCADE.
+		if _, err := tx.Exec(ctx, `
+			UPDATE survey_assignments SET status='approved', updated_at=NOW() WHERE id=$1`, assignmentID); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit(ctx)
 }
 

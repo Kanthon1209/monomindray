@@ -169,6 +169,8 @@ function assignmentStatusLabel(status: string): string {
       return "已提交";
     case "rejected":
       return "驳回";
+    case "approved":
+      return "已通过";
     case "cancelled":
       return "已取消";
     default:

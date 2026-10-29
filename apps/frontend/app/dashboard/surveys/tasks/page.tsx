@@ -42,6 +42,8 @@ function assignmentStatusBadge(status: string) {
       return <Badge variant="success">已提交</Badge>;
     case "rejected":
       return <Badge variant="destructive">驳回</Badge>;
+    case "approved":
+      return <Badge variant="success">已通过</Badge>;
     case "cancelled":
       return <Badge variant="secondary">已取消</Badge>;
     default:
