@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { type SurveyField } from "@/lib/business";
 import {
@@ -186,6 +187,57 @@ function groupKeysBySection(
   return out;
 }
 
+/** Read-only EQA block: default collapsed (long subject lists), click header to expand. */
+function CollapsibleEqaBlock({
+  label,
+  value,
+  enableNational,
+  enableProvincial,
+}: {
+  label: string;
+  value: unknown;
+  enableNational: boolean;
+  enableProvincial: boolean;
+}) {
+  // Default collapsed — EQA subject grids are long; match device audit UX.
+  const [open, setOpen] = useState(false);
+  const summary = formatSurveyAnswerText(value);
+
+  return (
+    <div className="min-w-0 space-y-2 md:col-span-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 rounded-md border bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+        aria-expanded={open}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">{label}</div>
+          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            {summary}
+          </div>
+        </div>
+        {open ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+      </button>
+      {open ? (
+        <EqaParticipationField
+          value={value}
+          onChange={() => {}}
+          disabled
+          config={{
+            enableNational,
+            enableProvincial,
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 type Props = {
   answers: Record<string, any>;
   /** Optional template fields for labels / typed render / order */
@@ -223,20 +275,13 @@ export function SurveyAnswersView({
 
     if (isEqa) {
       return (
-        <div key={k} className="min-w-0 space-y-2 md:col-span-2">
-          <div className="text-sm font-medium text-muted-foreground">
-            {meta.label}
-          </div>
-          <EqaParticipationField
-            value={v}
-            onChange={() => {}}
-            disabled
-            config={{
-              enableNational: meta.field?.enableNational !== false,
-              enableProvincial: meta.field?.enableProvincial !== false,
-            }}
-          />
-        </div>
+        <CollapsibleEqaBlock
+          key={k}
+          label={meta.label}
+          value={v}
+          enableNational={meta.field?.enableNational !== false}
+          enableProvincial={meta.field?.enableProvincial !== false}
+        />
       );
     }
 
