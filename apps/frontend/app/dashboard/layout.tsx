@@ -61,6 +61,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  SidebarNotifyDot,
+  useAdminPendingBadges,
+} from "@/lib/admin-pending-badges";
 
 const navItems = [
   { title: "数据看板", href: "/dashboard", icon: LayoutDashboard },
@@ -98,6 +102,10 @@ function AppSidebar() {
   const [usersOpen, setUsersOpen] = useState(usersSectionActive);
   const [surveysOpen, setSurveysOpen] = useState(surveysSectionActive);
   const [eqaOpen, setEqaOpen] = useState(eqaSectionActive);
+  const { showUsersDot, showSurveysDot } = useAdminPendingBadges(
+    admin,
+    pathname,
+  );
 
   useEffect(() => {
     if (usersSectionActive) {
@@ -230,21 +238,34 @@ function AppSidebar() {
                       )}
                     />
                   </SidebarMenuButton>
+                  <SidebarNotifyDot
+                    show={showSurveysDot && !surveysOpen}
+                    className="pointer-events-none absolute top-2.5 right-8"
+                  />
                   {surveysOpen ? (
                     <SidebarMenuSub>
-                      {surveyAdminSubItems.map((item) => (
-                        <SidebarMenuSubItem key={item.href}>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={pathname.startsWith(item.href)}
-                          >
-                            <Link href={item.href}>
-                              <item.icon />
-                              <span>{item.title}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
+                      {surveyAdminSubItems.map((item) => {
+                        const showDot =
+                          item.href === "/dashboard/surveys/review" &&
+                          showSurveysDot;
+                        return (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={pathname.startsWith(item.href)}
+                            >
+                              <Link href={item.href}>
+                                <item.icon />
+                                <span>{item.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                            <SidebarNotifyDot
+                              show={showDot}
+                              className="pointer-events-none absolute top-2.5 right-2"
+                            />
+                          </SidebarMenuSubItem>
+                        );
+                      })}
                     </SidebarMenuSub>
                   ) : null}
                 </SidebarMenuItem>
@@ -279,21 +300,34 @@ function AppSidebar() {
                       )}
                     />
                   </SidebarMenuButton>
+                  <SidebarNotifyDot
+                    show={showUsersDot && !usersOpen}
+                    className="pointer-events-none absolute top-2.5 right-8"
+                  />
                   {usersOpen ? (
                     <SidebarMenuSub>
-                      {userAdminSubItems.map((item) => (
-                        <SidebarMenuSubItem key={item.href}>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={pathname.startsWith(item.href)}
-                          >
-                            <Link href={item.href}>
-                              <item.icon />
-                              <span>{item.title}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
+                      {userAdminSubItems.map((item) => {
+                        const showDot =
+                          item.href === "/dashboard/users/review" &&
+                          showUsersDot;
+                        return (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={pathname.startsWith(item.href)}
+                            >
+                              <Link href={item.href}>
+                                <item.icon />
+                                <span>{item.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                            <SidebarNotifyDot
+                              show={showDot}
+                              className="pointer-events-none absolute top-2.5 right-2"
+                            />
+                          </SidebarMenuSubItem>
+                        );
+                      })}
                     </SidebarMenuSub>
                   ) : null}
                 </SidebarMenuItem>

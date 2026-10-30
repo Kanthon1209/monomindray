@@ -816,12 +816,16 @@ export async function submitSurveyAssignment(
   };
 }
 
-export async function listSurveySubmissions(params?: { status?: string }) {
+export async function listSurveySubmissions(params?: {
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}) {
   const { data, error } = await apiFetch<{ total: number; items: any[] }>(
     `/surveys/submissions${qs({
       status: params?.status ?? "submitted",
-      page: 1,
-      pageSize: 100,
+      page: params?.page ?? 1,
+      pageSize: params?.pageSize ?? 100,
     })}`,
   );
   if (error) return { error, items: [] as SurveySubmission[], total: 0 };
