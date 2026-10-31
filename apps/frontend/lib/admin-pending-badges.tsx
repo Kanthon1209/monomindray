@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import { API_BASE, getAuthToken } from "@/lib/auth";
 import { listSurveySubmissions } from "@/lib/business";
+import { listPasswordResetRequests } from "@/lib/password-reset";
 
-export type PendingSection = "users" | "surveys";
+export type PendingSection = "users" | "surveys" | "passwordResets";
 
 const STORAGE_KEY = "mindray.admin.pendingSeen.v1";
 
@@ -17,6 +18,8 @@ type Snapshot = {
   usersNewestId: number;
   surveysTotal: number;
   surveysNewestId: number;
+  passwordResetsTotal: number;
+  passwordResetsNewestId: number;
 };
 
 function readSeen(): SeenMap {
@@ -51,6 +54,8 @@ async function fetchPendingSnapshot(): Promise<Omit<Snapshot, "loaded">> {
     usersNewestId: 0,
     surveysTotal: 0,
     surveysNewestId: 0,
+    passwordResetsTotal: 0,
+    passwordResetsNewestId: 0,
   };
   const token = getAuthToken();
   if (!token) return empty;
@@ -82,12 +87,27 @@ async function fetchPendingSnapshot(): Promise<Omit<Snapshot, "loaded">> {
     };
   })();
 
-  const [users, surveys] = await Promise.all([usersPromise, surveysPromise]);
+  const passwordResetsPromise = (async () => {
+    const res = await listPasswordResetRequests({ status: "pending", page: 1, pageSize: 1 });
+    if (!res.ok) return { total: 0, newestId: 0 };
+    return {
+      total: res.total || 0,
+      newestId: parseId(res.items[0]?.id),
+    };
+  })();
+
+  const [users, surveys, passwordResets] = await Promise.all([
+    usersPromise,
+    surveysPromise,
+    passwordResetsPromise,
+  ]);
   return {
     usersTotal: users.total,
     usersNewestId: users.newestId,
     surveysTotal: surveys.total,
     surveysNewestId: surveys.newestId,
+    passwordResetsTotal: passwordResets.total,
+    passwordResetsNewestId: passwordResets.newestId,
   };
 }
 
@@ -103,9 +123,10 @@ function visibleFor(
 }
 
 /**
- * Admin sidebar red-dot state for pending user approvals and survey reviews.
- * Visiting the matching review route acknowledges the current newest pending id
- * (localStorage); the dot returns when a newer pending item appears.
+ * Admin sidebar red-dot state for pending user approvals, password resets,
+ * and survey reviews. Visiting the matching review route acknowledges the
+ * current newest pending id (localStorage); the dot returns when a newer
+ * pending item appears.
  */
 export function useAdminPendingBadges(enabled: boolean, pathname: string) {
   const [snap, setSnap] = useState<Snapshot>({
@@ -114,6 +135,8 @@ export function useAdminPendingBadges(enabled: boolean, pathname: string) {
     usersNewestId: 0,
     surveysTotal: 0,
     surveysNewestId: 0,
+    passwordResetsTotal: 0,
+    passwordResetsNewestId: 0,
   });
   const [seen, setSeen] = useState<SeenMap>({});
 
@@ -153,12 +176,23 @@ export function useAdminPendingBadges(enabled: boolean, pathname: string) {
     if (!enabled || !snap.loaded) return;
     let section: PendingSection | null = null;
     if (pathname.startsWith("/dashboard/users/review")) section = "users";
+    else if (pathname.startsWith("/dashboard/users/password-resets"))
+      section = "passwordResets";
     else if (pathname.startsWith("/dashboard/surveys/review")) section = "surveys";
     if (!section) return;
 
     const newestId =
-      section === "users" ? snap.usersNewestId : snap.surveysNewestId;
-    const total = section === "users" ? snap.usersTotal : snap.surveysTotal;
+      section === "users"
+        ? snap.usersNewestId
+        : section === "passwordResets"
+          ? snap.passwordResetsNewestId
+          : snap.surveysNewestId;
+    const total =
+      section === "users"
+        ? snap.usersTotal
+        : section === "passwordResets"
+          ? snap.passwordResetsTotal
+          : snap.surveysTotal;
 
     if (total <= 0) {
       setSeen((prev) => {
@@ -184,6 +218,8 @@ export function useAdminPendingBadges(enabled: boolean, pathname: string) {
     snap.loaded,
     snap.usersNewestId,
     snap.usersTotal,
+    snap.passwordResetsNewestId,
+    snap.passwordResetsTotal,
     snap.surveysNewestId,
     snap.surveysTotal,
   ]);
@@ -191,14 +227,23 @@ export function useAdminPendingBadges(enabled: boolean, pathname: string) {
   const showUsersDot =
     snap.loaded &&
     visibleFor(snap.usersTotal, snap.usersNewestId, seen.users);
+  const showPasswordResetsDot =
+    snap.loaded &&
+    visibleFor(
+      snap.passwordResetsTotal,
+      snap.passwordResetsNewestId,
+      seen.passwordResets,
+    );
   const showSurveysDot =
     snap.loaded &&
     visibleFor(snap.surveysTotal, snap.surveysNewestId, seen.surveys);
 
   return {
     showUsersDot,
+    showPasswordResetsDot,
     showSurveysDot,
     usersTotal: snap.usersTotal,
+    passwordResetsTotal: snap.passwordResetsTotal,
     surveysTotal: snap.surveysTotal,
     refresh,
   };

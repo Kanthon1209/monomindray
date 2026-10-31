@@ -20,6 +20,7 @@ import {
   Cpu,
   FlaskConical,
   FolderTree,
+  KeyRound,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -81,6 +82,7 @@ const eqaAdminSubItems = [
 
 const userAdminSubItems = [
   { title: "用户审核", href: "/dashboard/users/review", icon: ClipboardCheck },
+  { title: "密码重置", href: "/dashboard/users/password-resets", icon: KeyRound },
   { title: "用户列表", href: "/dashboard/users/manage", icon: UserRoundCog },
 ];
 
@@ -102,7 +104,7 @@ function AppSidebar() {
   const [usersOpen, setUsersOpen] = useState(usersSectionActive);
   const [surveysOpen, setSurveysOpen] = useState(surveysSectionActive);
   const [eqaOpen, setEqaOpen] = useState(eqaSectionActive);
-  const { showUsersDot, showSurveysDot } = useAdminPendingBadges(
+  const { showUsersDot, showPasswordResetsDot, showSurveysDot } = useAdminPendingBadges(
     admin,
     pathname,
   );
@@ -301,15 +303,17 @@ function AppSidebar() {
                     />
                   </SidebarMenuButton>
                   <SidebarNotifyDot
-                    show={showUsersDot && !usersOpen}
+                    show={(showUsersDot || showPasswordResetsDot) && !usersOpen}
                     className="pointer-events-none absolute top-2.5 right-8"
                   />
                   {usersOpen ? (
                     <SidebarMenuSub>
                       {userAdminSubItems.map((item) => {
                         const showDot =
-                          item.href === "/dashboard/users/review" &&
-                          showUsersDot;
+                          (item.href === "/dashboard/users/review" &&
+                            showUsersDot) ||
+                          (item.href === "/dashboard/users/password-resets" &&
+                            showPasswordResetsDot);
                         return (
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton
