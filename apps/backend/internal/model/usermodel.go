@@ -70,7 +70,7 @@ func scanUser(row pgx.Row) (*User, error) {
 
 func (m *userModel) FindByEmail(ctx context.Context, email string) (*User, error) {
 	u, err := scanUser(m.conn.QueryRow(ctx,
-		`SELECT `+userSelectCols+` FROM users WHERE email = $1`, email,
+		`SELECT `+userSelectCols+` FROM users WHERE lower(email) = lower($1)`, email,
 	))
 	if err != nil {
 		return nil, fmt.Errorf("query user by email: %w", err)

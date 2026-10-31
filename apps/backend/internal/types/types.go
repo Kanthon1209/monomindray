@@ -64,6 +64,59 @@ type (
 		User UserInfo `json:"user"`
 	}
 
+	PasswordResetRequestBody struct {
+		Email string `json:"email"`
+	}
+	PasswordResetRequestResponse struct {
+		Message string `json:"message"`
+	}
+	PasswordResetValidateRequest struct {
+		Token string `form:"token"`
+	}
+	PasswordResetValidateResponse struct {
+		Valid bool   `json:"valid"`
+		Email string `json:"email,omitempty"`
+		Msg   string `json:"msg,omitempty"`
+	}
+	PasswordResetConfirmRequest struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	PasswordResetConfirmResponse struct {
+		Message string `json:"message"`
+	}
+	PasswordResetInfo struct {
+		Id            int64  `json:"id"`
+		UserId        int64  `json:"userId"`
+		Name          string `json:"name"`
+		Email         string `json:"email"`
+		Role          string `json:"role"`
+		Status        string `json:"status"`
+		RequestedAt   string `json:"requestedAt"`
+		ReviewedAt    string `json:"reviewedAt,omitempty"`
+		ReviewedBy    int64  `json:"reviewedBy,omitempty"`
+		RejectReason  string `json:"rejectReason,omitempty"`
+		TokenExpiresAt string `json:"tokenExpiresAt,omitempty"`
+		ResetToken    string `json:"resetToken,omitempty"`
+		ResetPath     string `json:"resetPath,omitempty"`
+	}
+	ListPasswordResetRequestsRequest struct {
+		Status   string `form:"status,optional"`
+		Page     int    `form:"page,optional"`
+		PageSize int    `form:"pageSize,optional"`
+	}
+	ListPasswordResetRequestsResponse struct {
+		Total int64               `json:"total"`
+		Items []PasswordResetInfo `json:"items"`
+	}
+	ReviewPasswordResetRequest struct {
+		Id     int64  `path:"id"`
+		Reason string `json:"reason,optional"`
+	}
+	ReviewPasswordResetResponse struct {
+		Item PasswordResetInfo `json:"item"`
+	}
+
 	HospitalInfo struct {
 		Id           int64             `json:"id"`
 		Name         string            `json:"name"`

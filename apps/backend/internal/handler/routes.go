@@ -14,6 +14,9 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		[]rest.Route{
 			{Method: http.MethodPost, Path: "/api/v1/auth/login", Handler: LoginHandler(svcCtx)},
 			{Method: http.MethodPost, Path: "/api/v1/auth/signup", Handler: SignupHandler(svcCtx)},
+			{Method: http.MethodPost, Path: "/api/v1/auth/password-reset/request", Handler: RequestPasswordResetHandler(svcCtx)},
+			{Method: http.MethodGet, Path: "/api/v1/auth/password-reset/validate", Handler: ValidatePasswordResetHandler(svcCtx)},
+			{Method: http.MethodPost, Path: "/api/v1/auth/password-reset/confirm", Handler: ConfirmPasswordResetHandler(svcCtx)},
 		},
 	)
 
@@ -50,6 +53,10 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 		{Method: http.MethodPost, Path: "/api/v1/admin/users/:id/reject", Handler: RejectUserHandler(svcCtx)},
 		{Method: http.MethodPut, Path: "/api/v1/admin/users/:id", Handler: AdminUpdateUserHandler(svcCtx)},
 		{Method: http.MethodDelete, Path: "/api/v1/admin/users/:id", Handler: AdminDeleteUserHandler(svcCtx)},
+
+		{Method: http.MethodGet, Path: "/api/v1/admin/password-reset-requests", Handler: ListPasswordResetRequestsHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/admin/password-reset-requests/:id/approve", Handler: ApprovePasswordResetHandler(svcCtx)},
+		{Method: http.MethodPost, Path: "/api/v1/admin/password-reset-requests/:id/reject", Handler: RejectPasswordResetHandler(svcCtx)},
 
 		{Method: http.MethodGet, Path: "/api/v1/dashboard/hospitals", Handler: DashboardHospitalsHandler(svcCtx)},
 		{Method: http.MethodGet, Path: "/api/v1/dashboard/provinces", Handler: DashboardProvincesHandler(svcCtx)},

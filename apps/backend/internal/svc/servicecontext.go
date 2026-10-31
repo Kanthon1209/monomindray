@@ -21,6 +21,7 @@ type ServiceContext struct {
 	MasterDataModel model.MasterDataModel
 	EqaModel             model.EqaModel
 	CollectableFieldModel model.CollectableFieldModel
+	PasswordResetModel    model.PasswordResetModel
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -50,5 +51,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		MasterDataModel: model.NewMasterDataModel(pool),
 		EqaModel:             model.NewEqaModel(pool),
 		CollectableFieldModel: model.NewCollectableFieldModel(pool),
+		PasswordResetModel:     model.NewPasswordResetModel(pool),
 	}
 }
