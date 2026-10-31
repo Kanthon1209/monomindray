@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Loader2, Plus, Save, Send, Trash2 } from "lucide-react";
 
 import {
   getMySurveyAssignment,
@@ -237,6 +237,8 @@ export default function SurveyTaskFillPage() {
     undefined,
   );
   const [pca, setPca] = useState<ChinaPcaData | null>(null);
+  /** Section keys that are collapsed; default expanded so required fields stay visible. */
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -956,9 +958,32 @@ export default function SurveyTaskFillPage() {
               scalarFields.length > 0 &&
               scalarFields.filter((f) => f.type === "boolean").length >=
                 Math.ceil(scalarFields.length * 0.6);
+            const sectionOpen = !collapsedSections[section];
             return (
-              <div key={section} className="space-y-4 rounded-lg border p-4 sm:p-5">
-                <h3 className="text-sm font-semibold">{section}</h3>
+              <div key={section} className="rounded-lg border">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCollapsedSections((s) => ({
+                      ...s,
+                      [section]: !s[section],
+                    }))
+                  }
+                  className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/30 sm:px-5"
+                  aria-expanded={sectionOpen}
+                >
+                  {sectionOpen ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <h3 className="min-w-0 flex-1 text-sm font-semibold">{section}</h3>
+                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                    {fields.length} 项
+                  </span>
+                </button>
+                {sectionOpen ? (
+                <div className="space-y-4 border-t px-4 py-4 sm:px-5 sm:py-5">
                 {eqaFields.map((field) => (
                   <div key={field.key} className="space-y-2">
                     <Label>
@@ -1092,19 +1117,38 @@ export default function SurveyTaskFillPage() {
                     ))}
                   </div>
                 )}
+                </div>
+                ) : null}
               </div>
             );
           })}
 
           {devicesField ? (
-            <div className="space-y-4 rounded-lg border p-4 sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">
-                  {devicesField.label || "设备列表"}
-                  {devicesField.required ? (
-                    <span className="text-destructive"> *</span>
-                  ) : null}
-                </h3>
+            <div className="rounded-lg border">
+              <div className="flex flex-wrap items-center gap-2 px-4 py-3 sm:px-5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCollapsedSections((s) => ({
+                      ...s,
+                      __devices__: !s.__devices__,
+                    }))
+                  }
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  aria-expanded={!collapsedSections.__devices__}
+                >
+                  {!collapsedSections.__devices__ ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <h3 className="min-w-0 flex-1 text-sm font-semibold">
+                    {devicesField.label || "设备列表"}
+                    {devicesField.required ? (
+                      <span className="text-destructive"> *</span>
+                    ) : null}
+                  </h3>
+                </button>
                 {!readOnly ? (
                   <Button type="button" size="sm" variant="outline" onClick={addDevice}>
                     <Plus className="mr-1 h-4 w-4" />
@@ -1112,6 +1156,8 @@ export default function SurveyTaskFillPage() {
                   </Button>
                 ) : null}
               </div>
+              {!collapsedSections.__devices__ ? (
+              <div className="space-y-4 border-t px-4 py-4 sm:px-5 sm:py-5">
               {devices.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   尚未添加设备。请点击「添加」录入迈瑞装机。
@@ -1157,6 +1203,8 @@ export default function SurveyTaskFillPage() {
                   </div>
                 </div>
               ))}
+              </div>
+              ) : null}
             </div>
           ) : null}
 
