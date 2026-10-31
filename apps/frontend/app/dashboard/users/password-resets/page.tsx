@@ -373,7 +373,7 @@ export default function PasswordResetsPage() {
           if (!open) setIssuedLink(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="gap-5 p-5 sm:max-w-md sm:p-6">
           <DialogHeader>
             <DialogTitle>重置链接已生成</DialogTitle>
             <DialogDescription>
