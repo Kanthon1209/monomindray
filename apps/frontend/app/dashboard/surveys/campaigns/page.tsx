@@ -16,7 +16,6 @@ import {
   type SurveyCampaign,
   type SurveyTemplate,
 } from "@/lib/business";
-import { formatTime } from "@/lib/users-admin";
 import { API_BASE, getAuthToken, mapUser, type User } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +51,19 @@ import {
   PageToolbar,
 } from "@/components/mobile-data-list";
 
+
+
+function formatCampaignCreatedAt(value?: string) {
+  if (!value) return "-";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  } catch {
+    return value;
+  }
+}
 
 function campaignAssigneeLabel(c: SurveyCampaign) {
   const fromSummary = (c.assigneeNames || []).map((n) => n.trim()).filter(Boolean);
@@ -603,7 +615,7 @@ export default function SurveyCampaignsPage() {
                       <TableCell className="text-sm text-muted-foreground">
                         {reviewProgressLabel(c)}
                       </TableCell>
-                      <TableCell>{formatTime(c.createdAt)}</TableCell>
+                      <TableCell className="font-mono tabular-nums">{formatCampaignCreatedAt(c.createdAt)}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
                           {c.status === "active" ? (
@@ -668,8 +680,8 @@ export default function SurveyCampaignsPage() {
                   <div className="text-sm text-muted-foreground">
                     {reviewProgressLabel(c)}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatTime(c.createdAt)}
+                  <div className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {formatCampaignCreatedAt(c.createdAt)}
                   </div>
                   <div className="flex flex-col gap-2">
                     {c.status === "active" ? (
