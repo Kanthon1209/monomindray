@@ -377,6 +377,7 @@ type (
 		ApprovedCount      int                     `json:"approvedCount"`
 		PendingReviewCount int                     `json:"pendingReviewCount"`
 		CreatedAt          string                  `json:"createdAt,omitempty"`
+		AssigneeNames      []string                `json:"assigneeNames,omitempty"`
 		Assignments        []SurveyAssignmentBrief `json:"assignments,omitempty"`
 	}
 	CreateSurveyCampaignRequest struct {

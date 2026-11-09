@@ -53,6 +53,19 @@ import {
 } from "@/components/mobile-data-list";
 
 
+function campaignAssigneeLabel(c: SurveyCampaign) {
+  const fromSummary = (c.assigneeNames || []).map((n) => n.trim()).filter(Boolean);
+  if (fromSummary.length > 0) return fromSummary.join("、");
+  const fromAssign = [
+    ...new Set(
+      (c.assignments || [])
+        .map((a) => (a.assigneeName || a.assigneeEmail || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  return fromAssign.length > 0 ? fromAssign.join("、") : "—";
+}
+
 function reviewProgressLabel(c: SurveyCampaign) {
   const approved = c.approvedCount ?? 0;
   const pending = c.pendingReviewCount ?? 0;
@@ -548,6 +561,7 @@ export default function SurveyCampaignsPage() {
                   <TableHead>标题</TableHead>
                   <TableHead>模板</TableHead>
                   <TableHead>任务数</TableHead>
+                  <TableHead>采集者</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>审核</TableHead>
                   <TableHead>创建时间</TableHead>
@@ -557,13 +571,13 @@ export default function SurveyCampaignsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       加载中…
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       暂无发放
                     </TableCell>
                   </TableRow>
@@ -582,6 +596,9 @@ export default function SurveyCampaignsPage() {
                         {templateLabel(c.templateId, c.templateTitle)}
                       </TableCell>
                       <TableCell>{c.assignmentCount}</TableCell>
+                      <TableCell className="max-w-[180px] text-sm">
+                        {campaignAssigneeLabel(c)}
+                      </TableCell>
                       <TableCell>{campaignStatusBadge(c.status)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {reviewProgressLabel(c)}
@@ -644,6 +661,9 @@ export default function SurveyCampaignsPage() {
                       {c.assignmentCount} 条任务
                     </span>
                     {campaignStatusBadge(c.status)}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    采集者：{campaignAssigneeLabel(c)}
                   </div>
                   <div className="text-sm text-muted-foreground">
                     {reviewProgressLabel(c)}

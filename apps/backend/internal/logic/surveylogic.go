@@ -1238,7 +1238,7 @@ func toSurveyCampaignInfo(c *model.SurveyCampaign, assigns []types.SurveyAssignm
 		Defaults: c.Defaults, LockedKeys: c.LockedKeys, DistributionMode: mode,
 		AssignmentCount: c.AssignmentCount, ApprovedCount: c.ApprovedCount,
 		PendingReviewCount: c.PendingReviewCount, CreatedAt: formatTime(c.CreatedAt),
-		Assignments: assigns,
+		AssigneeNames: c.AssigneeNames, Assignments: assigns,
 	}
 	if c.DueAt != nil {
 		info.DueAt = formatTime(*c.DueAt)

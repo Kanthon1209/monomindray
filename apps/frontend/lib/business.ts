@@ -469,6 +469,8 @@ export interface SurveyCampaign {
   /** Submissions waiting for review (status=submitted). */
   pendingReviewCount: number;
   createdAt?: string;
+  /** Distinct collector names for this campaign's assignments. */
+  assigneeNames?: string[];
   assignments?: {
     id: string;
     assigneeId: string;
@@ -566,6 +568,9 @@ function mapCampaign(raw: any): SurveyCampaign {
     approvedCount: raw.approvedCount ?? 0,
     pendingReviewCount: raw.pendingReviewCount ?? 0,
     createdAt: raw.createdAt || undefined,
+    assigneeNames: Array.isArray(raw.assigneeNames)
+      ? raw.assigneeNames.filter((n: unknown) => typeof n === "string" && n.trim())
+      : undefined,
     assignments: (raw.assignments || []).map((a: any) => ({
       id: String(a.id),
       assigneeId: String(a.assigneeId),

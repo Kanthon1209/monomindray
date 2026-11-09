@@ -42,6 +42,7 @@ type SurveyCampaign struct {
 	AssignmentCount    int
 	ApprovedCount      int
 	PendingReviewCount int
+	AssigneeNames      []string
 }
 
 type SurveyAssignment struct {
@@ -385,7 +386,16 @@ func (m *surveyModel) ListCampaigns(ctx context.Context, f SurveyCampaignFilter)
 		          WHERE a.campaign_id = c.id AND s.status = 'approved'),
 		       (SELECT COUNT(*)::INT FROM survey_submissions s
 		          JOIN survey_assignments a ON a.id = s.assignment_id
-		          WHERE a.campaign_id = c.id AND s.status = 'submitted')
+		          WHERE a.campaign_id = c.id AND s.status = 'submitted'),
+		       COALESCE((
+		         SELECT array_agg(x ORDER BY x)
+		         FROM (
+		           SELECT DISTINCT COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), '未知') AS x
+		           FROM survey_assignments a
+		           LEFT JOIN users u ON u.id = a.assignee_id
+		           WHERE a.campaign_id = c.id
+		         ) s
+		       ), '{}'::text[])
 		FROM survey_campaigns c
 		LEFT JOIN survey_templates t ON t.id = c.template_id
 		WHERE %s
@@ -418,7 +428,16 @@ func (m *surveyModel) FindCampaignById(ctx context.Context, id int64) (*SurveyCa
 		          WHERE a.campaign_id = c.id AND s.status = 'approved'),
 		       (SELECT COUNT(*)::INT FROM survey_submissions s
 		          JOIN survey_assignments a ON a.id = s.assignment_id
-		          WHERE a.campaign_id = c.id AND s.status = 'submitted')
+		          WHERE a.campaign_id = c.id AND s.status = 'submitted'),
+		       COALESCE((
+		         SELECT array_agg(x ORDER BY x)
+		         FROM (
+		           SELECT DISTINCT COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), '未知') AS x
+		           FROM survey_assignments a
+		           LEFT JOIN users u ON u.id = a.assignee_id
+		           WHERE a.campaign_id = c.id
+		         ) s
+		       ), '{}'::text[])
 		FROM survey_campaigns c
 		LEFT JOIN survey_templates t ON t.id = c.template_id
 		WHERE c.id=$1`, id)
@@ -432,7 +451,7 @@ func scanCampaign(row pgx.Row) (*SurveyCampaign, error) {
 		&c.Id, &c.TemplateId, &c.Title, &c.Description, &c.DueAt, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 		&defaultsRaw, &lockedRaw, &c.DistributionMode,
 		&c.TemplateCode, &c.TemplateTitle, &c.AssignmentCount,
-		&c.ApprovedCount, &c.PendingReviewCount,
+		&c.ApprovedCount, &c.PendingReviewCount, &c.AssigneeNames,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
