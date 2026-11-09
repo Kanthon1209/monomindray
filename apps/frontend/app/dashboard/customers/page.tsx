@@ -76,7 +76,6 @@ import {
 } from "@/lib/china-regions";
 import {
   CUSTOMER_STAGE_OPTIONS,
-  resolveArchiveField,
 } from "@/lib/hospital-archive";
 
 const levels = filterOptions.hospitalLevel
@@ -554,7 +553,6 @@ export default function CustomersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>客户</TableHead>
-                  <TableHead>采集人</TableHead>
                   <TableHead>类别/类型</TableHead>
                   <TableHead>设备</TableHead>
                   <TableHead>状态</TableHead>
@@ -564,14 +562,14 @@ export default function CustomersPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={5} className="h-24 text-center">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={5}
                       className="h-24 text-center text-muted-foreground"
                     >
                       暂无客户
@@ -589,9 +587,6 @@ export default function CustomersPage() {
                         <div className="text-xs text-muted-foreground">
                           {kindLabel(kindFromType(h.type))} · {h.province} · {h.city}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {resolveArchiveField(h, "collectorName") || "—"}
                       </TableCell>
                       <TableCell className="text-sm">
                         {kindFromType(h.type) === "hospital" ? h.level : "机构"}
@@ -647,9 +642,6 @@ export default function CustomersPage() {
                         {kindLabel(kindFromType(h.type))} · {h.province} · {h.city}
                       </span>
                       <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-                        <span>
-                          采集人：{resolveArchiveField(h, "collectorName") || "—"}
-                        </span>
                         <span>
                           {kindFromType(h.type) === "hospital" ? h.level : h.type}
                         </span>
