@@ -29,3 +29,15 @@ func TestCityFromBranchOrDefault(t *testing.T) {
 		t.Fatalf("expected 江苏省, got %q", got)
 	}
 }
+
+func TestHospitalNamesEqual(t *testing.T) {
+	if !hospitalNamesEqual(" 合肥市第一人民医院 ", "合肥市第一人民医院") {
+		t.Fatal("trim should be ignored")
+	}
+	if !hospitalNamesEqual("Test Hospital", "test hospital") {
+		t.Fatal("case should be ignored")
+	}
+	if hospitalNamesEqual("合肥市第一人民医院", "合肥市第二人民医院") {
+		t.Fatal("different names must not be equal")
+	}
+}

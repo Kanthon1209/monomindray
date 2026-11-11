@@ -825,23 +825,33 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	var existing *model.Hospital
 	var err error
+	// When an admin changes 客户/医院名称 on a bound assignment, leave the
+	// originally bound hospital untouched and insert a new hospital on 通过.
+	// Same name (trim + case-insensitive) still updates that hospital in place.
+	createNewForRenamedBound := false
 	if a.HospitalId != nil && *a.HospitalId > 0 {
 		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *a.HospitalId)
+		if err == nil && existing != nil && name != "" && !hospitalNamesEqual(existing.Name, name) {
+			existing = nil
+			createNewForRenamedBound = true
+		}
 	} else if sub.HospitalId != nil && *sub.HospitalId > 0 {
 		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *sub.HospitalId)
-		if err == nil && existing != nil && name != "" && !strings.EqualFold(strings.TrimSpace(existing.Name), name) {
+		if err == nil && existing != nil && name != "" && !hospitalNamesEqual(existing.Name, name) {
 			existing = nil
 		}
 	}
-	if err == nil && existing == nil && name != "" && province != "" && city != "" {
-		existing, err = l.svcCtx.HospitalModel.FindByNameProvinceCity(l.ctx, name, province, city)
-	}
-	if err == nil && existing == nil && name != "" {
-		byName, findErr := l.svcCtx.HospitalModel.FindByName(l.ctx, name)
-		if findErr != nil {
-			err = findErr
-		} else if byName != nil && (province == "" || strings.EqualFold(strings.TrimSpace(byName.Province), province)) {
-			existing = byName
+	if !createNewForRenamedBound {
+		if err == nil && existing == nil && name != "" && province != "" && city != "" {
+			existing, err = l.svcCtx.HospitalModel.FindByNameProvinceCity(l.ctx, name, province, city)
+		}
+		if err == nil && existing == nil && name != "" {
+			byName, findErr := l.svcCtx.HospitalModel.FindByName(l.ctx, name)
+			if findErr != nil {
+				err = findErr
+			} else if byName != nil && (province == "" || strings.EqualFold(strings.TrimSpace(byName.Province), province)) {
+				existing = byName
+			}
 		}
 	}
 	if err != nil {
@@ -945,6 +955,9 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	var hospitalID int64
 	if existing == nil {
+		if err := l.rejectHospitalNameConflict(0, name, province, city); err != nil {
+			return 0, err
+		}
 		h := &model.Hospital{
 			Name: name, Province: province, City: city, District: district,
 			Level: level, Type: typ, Status: "active", Address: address, Remark: remark,
@@ -954,6 +967,9 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		hospitalID, err = l.svcCtx.HospitalModel.Insert(l.ctx, h)
 		if err != nil {
 			l.Errorf("insert hospital from survey: %v", err)
+			if isUniqueViolation(err) {
+				return 0, hospitalNameConflictError(name, province, city)
+			}
 			return 0, NewCodeError(400, "写入医院失败，可能已存在同名医院或字段不合法")
 		}
 	} else {
@@ -1669,19 +1685,23 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+func hospitalNamesEqual(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
 func hospitalNameConflictError(name, province, city string) error {
 	loc := strings.TrimSpace(strings.Join([]string{strings.TrimSpace(province), strings.TrimSpace(city)}, " "))
 	if loc != "" {
-		return NewCodeError(409, "已存在同名客户「"+name+"」（"+loc+"），无法将当前医院改为此名称")
+		return NewCodeError(409, "已存在同名客户「"+name+"」（"+loc+"），无法创建或更新为此名称")
 	}
-	return NewCodeError(409, "已存在同名客户「"+name+"」，无法将当前医院改为此名称")
+	return NewCodeError(409, "已存在同名客户「"+name+"」，无法创建或更新为此名称")
 }
 
-// rejectHospitalNameConflict blocks renaming onto another hospital's unique
-// (name, province, city) key. Bound-hospital approve must rename in place, never re-bind.
+// rejectHospitalNameConflict reports a unique (name, province, city) clash with
+// another hospital. hospitalID 0 means a create (any match is a conflict).
 func (l *SurveyLogic) rejectHospitalNameConflict(hospitalID int64, name, province, city string) error {
 	name = strings.TrimSpace(name)
-	if name == "" || hospitalID <= 0 {
+	if name == "" {
 		return nil
 	}
 	other, err := l.svcCtx.HospitalModel.FindByNameProvinceCity(l.ctx, name, province, city)
@@ -2146,8 +2166,9 @@ func (l *SurveyLogic) loadPendingSubmission(id int64) (*model.SurveySubmission, 
 }
 
 // prepareAdminReviewAnswers normalizes admin edits. Locked campaign defaults are
-// NOT re-applied — the admin is correcting them. A bound assignment keeps its
-// hospital id, but the typed 客户/医院名称 is preserved (rename in place on approve).
+// NOT re-applied — the admin is correcting them. The typed 客户/医院名称 is kept
+// as-is; a new hospital is created on 通过 only if the name differs from the
+// bound hospital (save-without-approve does not create one).
 func (l *SurveyLogic) prepareAdminReviewAnswers(a *model.SurveyAssignment, raw map[string]any) (map[string]any, error) {
 	answers := normalizeAnswers(raw)
 	answers = pruneAnswersToSchema(a.Schema, answers)

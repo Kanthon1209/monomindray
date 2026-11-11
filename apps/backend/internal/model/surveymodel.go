@@ -494,7 +494,7 @@ func (m *surveyModel) ListAssignmentsByCampaign(ctx context.Context, campaignID 
 		FROM survey_assignments a
 		LEFT JOIN users u ON u.id = a.assignee_id
 		LEFT JOIN survey_submissions s ON s.assignment_id = a.id
-		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
+		LEFT JOIN hospitals h ON h.id = COALESCE(s.hospital_id, a.hospital_id)
 		WHERE a.campaign_id=$1
 		ORDER BY a.id`, campaignID)
 	if err != nil {
@@ -580,7 +580,7 @@ func (m *surveyModel) ListAssignments(ctx context.Context, f SurveyAssignmentFil
 		JOIN survey_templates t ON t.id = c.template_id
 		LEFT JOIN users u ON u.id = a.assignee_id
 		LEFT JOIN survey_submissions s ON s.assignment_id = a.id
-		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
+		LEFT JOIN hospitals h ON h.id = COALESCE(s.hospital_id, a.hospital_id)
 		WHERE %s
 		ORDER BY a.id DESC
 		LIMIT $%d OFFSET $%d`, whereSQL, len(args)-1, len(args)), args...)
@@ -725,7 +725,7 @@ func (m *surveyModel) FindSubmissionByAssignment(ctx context.Context, assignment
 		JOIN survey_campaigns c ON c.id = a.campaign_id
 		LEFT JOIN users u ON u.id = a.assignee_id
 		LEFT JOIN users cu ON cu.id = s.collected_by
-		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
+		LEFT JOIN hospitals h ON h.id = COALESCE(s.hospital_id, a.hospital_id)
 		WHERE s.assignment_id=$1`, assignmentID))
 }
 
@@ -740,7 +740,7 @@ func (m *surveyModel) FindSubmissionById(ctx context.Context, id int64) (*Survey
 		JOIN survey_campaigns c ON c.id = a.campaign_id
 		LEFT JOIN users u ON u.id = a.assignee_id
 		LEFT JOIN users cu ON cu.id = s.collected_by
-		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
+		LEFT JOIN hospitals h ON h.id = COALESCE(s.hospital_id, a.hospital_id)
 		WHERE s.id=$1`, id))
 }
 
@@ -900,7 +900,7 @@ func (m *surveyModel) ListSubmissions(ctx context.Context, f SurveySubmissionFil
 		LEFT JOIN survey_templates t ON t.id = c.template_id
 		LEFT JOIN users u ON u.id = a.assignee_id
 		LEFT JOIN users cu ON cu.id = s.collected_by
-		LEFT JOIN hospitals h ON h.id = COALESCE(a.hospital_id, s.hospital_id)
+		LEFT JOIN hospitals h ON h.id = COALESCE(s.hospital_id, a.hospital_id)
 		WHERE %s
 		ORDER BY s.submitted_at DESC NULLS LAST, s.id DESC
 		LIMIT $%d OFFSET $%d`, whereSQL, len(args)-1, len(args)), args...)
