@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { Calendar, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 
 import {
   fetchAssayTree,
@@ -293,6 +293,91 @@ export function isDeviceSubFieldFilled(
     return Array.isArray(v) && v.length > 0;
   }
   return String(v ?? "").trim() !== "";
+}
+
+/** Parse a typed date into YYYY-MM-DD. Empty string if blank; null if not a valid date. */
+function parseTypedDate(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return "";
+  const candidates: string[] = [];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    candidates.push(s);
+  }
+  const dotted = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if (dotted) {
+    candidates.push(
+      `${dotted[1]}-${dotted[2].padStart(2, "0")}-${dotted[3].padStart(2, "0")}`,
+    );
+  }
+  if (/^\d{8}$/.test(s)) {
+    candidates.push(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`);
+  }
+  for (const iso of candidates) {
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) continue;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const dt = new Date(y, mo - 1, d);
+    if (
+      dt.getFullYear() === y &&
+      dt.getMonth() === mo - 1 &&
+      dt.getDate() === d
+    ) {
+      return `${m[1]}-${m[2]}-${m[3]}`;
+    }
+  }
+  return null;
+}
+
+function typableDatePickerValue(raw: string): string {
+  return parseTypedDate(raw) || "";
+}
+
+function InstalledAtInput({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const pickerValue = typableDatePickerValue(value);
+
+  return (
+    <div className="relative">
+      <Input
+        type="text"
+        autoComplete="off"
+        placeholder="YYYY-MM-DD"
+        className="pr-10"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => {
+          const normalized = parseTypedDate(value);
+          if (normalized != null && normalized !== value) onChange(normalized);
+        }}
+      />
+      {/* Native date picker is only the right-side hit target so the text field stays typable. */}
+      <input
+        type="date"
+        tabIndex={-1}
+        disabled={disabled}
+        aria-label="选择安装日期"
+        value={pickerValue}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute top-0 right-0 z-10 h-full w-9 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 right-1.5 z-0 flex size-7 -translate-y-1/2 items-center justify-center text-muted-foreground"
+      >
+        <Calendar className="size-4" />
+      </span>
+    </div>
+  );
 }
 
 /** Returns Chinese error message, or null if OK. Empty device list is allowed. */
@@ -610,12 +695,11 @@ export function DeviceBlockField({
                   return (
                     <div key={fieldKey} className="space-y-1.5">
                       <Label>安装日期{reqMark("installedAt")}</Label>
-                      <Input
-                        type="date"
+                      <InstalledAtInput
                         value={row.installedAt || ""}
                         disabled={disabled}
-                        onChange={(e) =>
-                          updateRow(index, { installedAt: e.target.value })
+                        onChange={(next) =>
+                          updateRow(index, { installedAt: next })
                         }
                       />
                     </div>
