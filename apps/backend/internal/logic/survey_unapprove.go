@@ -212,12 +212,9 @@ func (l *SurveyLogic) createdHospitalInUse(hospitalID, excludeSubmissionID int64
 	if err != nil {
 		return false, "", err
 	}
-	cases, err := l.svcCtx.HospitalModel.CountCases(l.ctx, hospitalID)
-	if err != nil {
-		return false, "", err
-	}
-	if subs > 0 || assigns > 0 || cases > 0 {
-		return true, "答卷已回到待审核，但此次通过时新建的客户仍被其他答卷、任务或商机引用，已保留该客户资料。", nil
+	// cases was dropped in 010_drop_cases.sql; do not query it.
+	if subs > 0 || assigns > 0 {
+		return true, "答卷已回到待审核，但此次通过时新建的客户仍被其他答卷或任务引用，已保留该客户资料。", nil
 	}
 	return false, "", nil
 }
