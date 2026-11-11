@@ -104,10 +104,8 @@ function AppSidebar() {
   const [usersOpen, setUsersOpen] = useState(usersSectionActive);
   const [surveysOpen, setSurveysOpen] = useState(surveysSectionActive);
   const [eqaOpen, setEqaOpen] = useState(eqaSectionActive);
-  const { showUsersDot, showPasswordResetsDot, showSurveysDot } = useAdminPendingBadges(
-    admin,
-    pathname,
-  );
+  const { showUsersDot, showPasswordResetsDot, showSurveysDot, surveysTotal } =
+    useAdminPendingBadges(admin, pathname);
 
   useEffect(() => {
     if (usersSectionActive) {
@@ -247,9 +245,10 @@ function AppSidebar() {
                   {surveysOpen ? (
                     <SidebarMenuSub>
                       {surveyAdminSubItems.map((item) => {
-                        const showDot =
-                          item.href === "/dashboard/surveys/review" &&
-                          showSurveysDot;
+                        const pendingCount =
+                          item.href === "/dashboard/surveys/review"
+                            ? surveysTotal
+                            : 0;
                         return (
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton
@@ -258,13 +257,19 @@ function AppSidebar() {
                             >
                               <Link href={item.href}>
                                 <item.icon />
-                                <span>{item.title}</span>
+                                <span className="min-w-0 flex-1 truncate">
+                                  {item.title}
+                                </span>
+                                {pendingCount > 0 ? (
+                                  <span
+                                    className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground"
+                                    aria-label={`待审 ${pendingCount} 份`}
+                                  >
+                                    {pendingCount}
+                                  </span>
+                                ) : null}
                               </Link>
                             </SidebarMenuSubButton>
-                            <SidebarNotifyDot
-                              show={showDot}
-                              className="pointer-events-none absolute top-2.5 right-2"
-                            />
                           </SidebarMenuSubItem>
                         );
                       })}
