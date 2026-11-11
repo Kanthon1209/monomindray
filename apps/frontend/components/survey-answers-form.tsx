@@ -377,14 +377,16 @@ export function SurveyAnswersForm({
 
   const lockedSet = useMemo(() => {
     const s = new Set(lockedKeys || []);
-    if (hospitalBound) {
+    // Collectors: a bound assignment keeps 客户/医院名称 locked.
+    // Admins correcting a pending submission may edit the name in place.
+    if (hospitalBound && !allowLockedEdit) {
       for (const f of fields) {
         if (f.type === "repeat") continue;
         if (isHospitalNameField(f)) s.add(f.key);
       }
     }
     return s;
-  }, [lockedKeys, hospitalBound, fields]);
+  }, [lockedKeys, hospitalBound, allowLockedEdit, fields]);
 
   const isFieldDisabled = (key: string) =>
     disabled || (!allowLockedEdit && lockedSet.has(key));
@@ -616,7 +618,8 @@ export function SurveyAnswersForm({
       );
     }
     if (isHospitalNameField(field)) {
-      if (disabled || hospitalBound) {
+      const nameLocked = disabled || (hospitalBound && !allowLockedEdit);
+      if (nameLocked) {
         return (
           <Input
             value={
@@ -637,10 +640,13 @@ export function SurveyAnswersForm({
           disabled={disabled}
           placeholder="输入或选择医院名称"
           onChange={(v) => {
-            onLinkedHospitalIdChange?.(undefined);
+            // Bound identity stays; admin is renaming in place, not re-binding.
+            if (!hospitalBound) {
+              onLinkedHospitalIdChange?.(undefined);
+            }
             onChange(v);
           }}
-          onSelectHospital={applyHospitalPick}
+          onSelectHospital={hospitalBound ? undefined : applyHospitalPick}
         />
       );
     }

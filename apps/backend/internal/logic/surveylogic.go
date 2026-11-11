@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"mindray/internal/types"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -985,8 +987,14 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		existing.Status = "active"
 		existing.Archive = mergedArchive
 		existing.UpdatedBy = ptrInt64(reviewerID)
+		if err := l.rejectHospitalNameConflict(existing.Id, name, province, city); err != nil {
+			return 0, err
+		}
 		if err := l.svcCtx.HospitalModel.Update(l.ctx, existing); err != nil {
 			l.Errorf("update hospital from survey: %v", err)
+			if isUniqueViolation(err) {
+				return 0, hospitalNameConflictError(name, province, city)
+			}
 			return 0, NewCodeError(400, "更新医院失败，请检查字段是否合法")
 		}
 		hospitalID = existing.Id
@@ -1656,6 +1664,37 @@ func assignmentEffectiveLockedKeys(a *model.SurveyAssignment) []string {
 	return locked
 }
 
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func hospitalNameConflictError(name, province, city string) error {
+	loc := strings.TrimSpace(strings.Join([]string{strings.TrimSpace(province), strings.TrimSpace(city)}, " "))
+	if loc != "" {
+		return NewCodeError(409, "已存在同名客户「"+name+"」（"+loc+"），无法将当前医院改为此名称")
+	}
+	return NewCodeError(409, "已存在同名客户「"+name+"」，无法将当前医院改为此名称")
+}
+
+// rejectHospitalNameConflict blocks renaming onto another hospital's unique
+// (name, province, city) key. Bound-hospital approve must rename in place, never re-bind.
+func (l *SurveyLogic) rejectHospitalNameConflict(hospitalID int64, name, province, city string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || hospitalID <= 0 {
+		return nil
+	}
+	other, err := l.svcCtx.HospitalModel.FindByNameProvinceCity(l.ctx, name, province, city)
+	if err != nil {
+		l.Errorf("check hospital name conflict: %v", err)
+		return ErrInternal
+	}
+	if other != nil && other.Id != hospitalID {
+		return hospitalNameConflictError(name, province, city)
+	}
+	return nil
+}
+
 func forceAssignedHospitalAnswers(a *model.SurveyAssignment, answers map[string]any) map[string]any {
 	if a == nil || a.HospitalId == nil || *a.HospitalId <= 0 {
 		return answers
@@ -2107,18 +2146,17 @@ func (l *SurveyLogic) loadPendingSubmission(id int64) (*model.SurveySubmission, 
 }
 
 // prepareAdminReviewAnswers normalizes admin edits. Locked campaign defaults are
-// NOT re-applied — the admin is correcting them. A bound assignment still keeps
-// its hospital identity (name forced from the assignment).
+// NOT re-applied — the admin is correcting them. A bound assignment keeps its
+// hospital id, but the typed 客户/医院名称 is preserved (rename in place on approve).
 func (l *SurveyLogic) prepareAdminReviewAnswers(a *model.SurveyAssignment, raw map[string]any) (map[string]any, error) {
 	answers := normalizeAnswers(raw)
-	answers = forceAssignedHospitalAnswers(a, answers)
 	answers = pruneAnswersToSchema(a.Schema, answers)
 	if err := validateRequiredAnswers(a.Schema, answers); err != nil {
 		return nil, err
 	}
+	ansName := extractHospitalNameFromAnswers(a.Schema, answers)
 	openHospital := a.HospitalId == nil || *a.HospitalId <= 0
 	if openHospital {
-		ansName := extractHospitalNameFromAnswers(a.Schema, answers)
 		hid, err := l.resolveSubmissionHospitalID(a, nil, answers)
 		if err != nil {
 			return nil, err
@@ -2126,6 +2164,8 @@ func (l *SurveyLogic) prepareAdminReviewAnswers(a *model.SurveyAssignment, raw m
 		if ansName == "" && (hid == nil || *hid <= 0) {
 			return nil, NewCodeError(400, "请填写医院名称")
 		}
+	} else if ansName == "" {
+		return nil, NewCodeError(400, "请填写医院名称")
 	}
 	return answers, nil
 }
