@@ -29,6 +29,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ComboboxInput } from "@/components/ui/combobox-input";
+import { DateMaskInput } from "@/components/ui/date-mask-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -338,21 +339,21 @@ export default function DevicesPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>安装日期</Label>
-                  <Input
-                    type="date"
+                  <DateMaskInput
+                    label="安装日期"
                     value={form.installedAt}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, installedAt: e.target.value }))
+                    onChange={(next) =>
+                      setForm((f) => ({ ...f, installedAt: next }))
                     }
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>到期时间</Label>
-                  <Input
-                    type="date"
+                  <DateMaskInput
+                    label="到期时间"
                     value={form.enabledAt}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, enabledAt: e.target.value }))
+                    onChange={(next) =>
+                      setForm((f) => ({ ...f, enabledAt: next }))
                     }
                   />
                 </div>

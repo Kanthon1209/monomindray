@@ -17,6 +17,7 @@ import {
   normalizeDeviceBlockAnswer,
   validateDeviceBlockRequired,
 } from "@/components/device-block-field";
+import { DateMaskInput, parseTypedDate } from "@/components/ui/date-mask-input";
 import { HospitalNameTypeahead } from "@/components/hospital-name-typeahead";
 import { ComboboxInput } from "@/components/ui/combobox-input";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -279,6 +280,17 @@ export async function validateSurveyAnswersClient(opts: {
   }
 
   for (const f of fields) {
+    if ((f.type || "").toLowerCase() === "date") {
+      const raw = String(answers[f.key] ?? "").trim();
+      if (!raw) continue;
+      const iso = parseTypedDate(raw);
+      const fieldLabel = f.label || "日期";
+      if (iso == null) {
+        return `请输入完整有效的${fieldLabel}（YYYY/MM/DD）`;
+      }
+      if (iso !== raw) answers[f.key] = iso;
+      continue;
+    }
     if ((f.type || "").toLowerCase() !== "device_block") continue;
     const msg = validateDeviceBlockRequired(answers[f.key], f.subFieldRequired);
     if (msg) return msg;
@@ -765,6 +777,17 @@ export function SurveyAnswersForm({
               : "请先选择城市"
           }
           options={districtOptions}
+          onChange={onChange}
+        />
+      );
+    }
+
+    if ((field.type || "").toLowerCase() === "date") {
+      return (
+        <DateMaskInput
+          label={field.label || "日期"}
+          value={value == null ? "" : String(value)}
+          disabled={disabled}
           onChange={onChange}
         />
       );
