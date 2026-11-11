@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import {
   approveSurveySubmission,
   listSurveySubmissions,
+  previewApproveSurveySubmission,
   rejectSurveySubmission,
   unapproveSurveySubmission,
   updateSurveySubmissionAnswers,
@@ -37,6 +38,7 @@ import {
   MobileCardItem,
   MobileCardList,
 } from "@/components/mobile-data-list";
+import { useApproveOverwriteDialog } from "@/components/approve-overwrite-dialog";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SurveyAnswersView } from "@/components/survey-answers-view";
 import {
@@ -246,6 +248,7 @@ export default function SurveyReviewPage() {
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const confirm = useConfirmDialog();
+  const overwriteConfirm = useApproveOverwriteDialog();
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -377,13 +380,32 @@ export default function SurveyReviewPage() {
         return;
       }
     }
+    const approveOpts = payload
+      ? { answers: payload.answers, hospitalId: payload.hospitalId }
+      : undefined;
     setActingId(item.id);
     setError(null);
     setPanelMessage(null);
-    const res = await approveSurveySubmission(
-      item.id,
-      payload ? { answers: payload.answers, hospitalId: payload.hospitalId } : undefined,
-    );
+    const previewRes = await previewApproveSurveySubmission(item.id, approveOpts);
+    if (previewRes.error) {
+      setActingId(null);
+      setError(previewRes.error);
+      if (expandedId !== item.id) {
+        ensureDraft(item);
+        setExpandedId(item.id);
+      }
+      return;
+    }
+    if (previewRes.preview?.requiresConfirm) {
+      setActingId(null);
+      if (!(await overwriteConfirm.ask(previewRes.preview))) {
+        return;
+      }
+      setActingId(item.id);
+      setError(null);
+      setPanelMessage(null);
+    }
+    const res = await approveSurveySubmission(item.id, approveOpts);
     setActingId(null);
     if (res.error) setError(res.error);
     else await load();
@@ -739,6 +761,7 @@ export default function SurveyReviewPage() {
         </CardContent>
       </Card>
       {confirm.dialog}
+      {overwriteConfirm.dialog}
     </div>
   );
 }

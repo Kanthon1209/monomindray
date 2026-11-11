@@ -487,6 +487,25 @@ type (
 		PublishRollback string               `json:"publishRollback"`
 		Message         string               `json:"message,omitempty"`
 	}
+	ApprovePreviewHospital struct {
+		Id       int64  `json:"id,omitempty"`
+		Name     string `json:"name"`
+		Province string `json:"province,omitempty"`
+		City     string `json:"city,omitempty"`
+	}
+	ApprovePreviewChange struct {
+		Group  string `json:"group"`
+		Label  string `json:"label"`
+		Before string `json:"before"`
+		After  string `json:"after"`
+	}
+	ApproveSurveyPreviewResponse struct {
+		Action          string                  `json:"action"`
+		RequiresConfirm bool                    `json:"requiresConfirm"`
+		Message         string                  `json:"message,omitempty"`
+		Hospital        ApprovePreviewHospital  `json:"hospital"`
+		Changes         []ApprovePreviewChange  `json:"changes"`
+	}
 
 	// ---- assay projects (检测项目字典 / 层级树) ----
 	AssayProjectInfo struct {

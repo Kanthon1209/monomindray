@@ -852,6 +852,44 @@ export async function updateSurveySubmissionAnswers(
   return { submission: mapSubmission(data!.submission) };
 }
 
+export type ApprovePreviewChange = {
+  group: string;
+  label: string;
+  before: string;
+  after: string;
+};
+
+export type ApproveSurveyPreview = {
+  action: "create" | "update" | string;
+  requiresConfirm: boolean;
+  message?: string;
+  hospital: { id?: number | string; name: string; province?: string; city?: string };
+  changes: ApprovePreviewChange[];
+};
+
+export async function previewApproveSurveySubmission(
+  id: string,
+  opts?: { note?: string; answers?: Record<string, any>; hospitalId?: number },
+) {
+  const body: Record<string, any> = { note: opts?.note || "" };
+  if (opts?.answers) body.answers = opts.answers;
+  if (opts?.hospitalId != null) body.hospitalId = opts.hospitalId;
+  const { data, error } = await apiFetch<ApproveSurveyPreview>(
+    `/surveys/submissions/${id}/approve-preview`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+  if (error) return { error };
+  return {
+    preview: {
+      action: data?.action || "",
+      requiresConfirm: !!data?.requiresConfirm,
+      message: data?.message || "",
+      hospital: data?.hospital || { name: "" },
+      changes: Array.isArray(data?.changes) ? data!.changes : [],
+    } satisfies ApproveSurveyPreview,
+  };
+}
+
 export async function approveSurveySubmission(
   id: string,
   opts?: { note?: string; answers?: Record<string, any>; hospitalId?: number },

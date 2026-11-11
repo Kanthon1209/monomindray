@@ -727,245 +727,14 @@ func (l *SurveyLogic) review(id int64, status, note string) (*types.SurveySubmis
 }
 
 func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.SurveyAssignment, sub *model.SurveySubmission) (hospitalPublishOutcome, error) {
-	var schema struct {
-		Fields []surveySchemaField `json:"fields"`
-	}
-	if len(a.Schema) > 0 {
-		_ = json.Unmarshal(a.Schema, &schema)
-	}
-
-	answers := sub.Answers
-	if answers == nil {
-		answers = map[string]any{}
-	}
-
-	cols := map[string]string{}
-	archive := map[string]any{}
-	attributes := map[string]string{}
-	metrics := map[string]string{}
-
-	applyTarget := func(target, key, value string) {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return
-		}
-		target = strings.TrimSpace(target)
-		setArchive := func(k string, v string) {
-			// customer_level → hospital_attributes; usage_location → devices only
-			switch k {
-			case "customerLevel", "customer_level", "usageLocation", "usage_location":
-				return
-			}
-			archive[k] = model.NormalizeArchiveValue(k, v)
-		}
-		switch {
-		case strings.HasPrefix(target, "eqa."):
-			// EQA answers are written by EqaLogic.WritebackFromSurveyAnswers only.
-			return
-		case strings.HasPrefix(target, "assay."):
-			// Assay block written by AssayProjectLogic.WritebackFromSurveyAnswers only.
-			return
-		case strings.HasPrefix(target, "hospital.attributes."):
-			attrKey := strings.TrimPrefix(target, "hospital.attributes.")
-			if attrKey == "usage_location" || attrKey == "usageLocation" {
-				// device instance attr — collected via device_block
-				return
-			}
-			attributes[attrKey] = value
-		case strings.HasPrefix(target, "hospital.metrics."):
-			metrics[strings.TrimPrefix(target, "hospital.metrics.")] = value
-		case strings.HasPrefix(target, "hospital.archive."):
-			setArchive(strings.TrimPrefix(target, "hospital.archive."), value)
-		case strings.HasPrefix(target, "hospital."):
-			cols[strings.TrimPrefix(target, "hospital.")] = value
-		case target == "":
-			switch key {
-			case "name", "province", "city", "district", "level", "type", "address", "remark",
-				"customerCode", "region", "branchOffice":
-				cols[key] = value
-			case "hospital_name", "hospitalName", "customerName", "customer_name":
-				if cols["name"] == "" {
-					cols["name"] = value
-				}
-			case "devices", "eqa_year", "eqa_scope", "customer_level":
-				// devices handled below; EQA / catalog keys ignored without target
-			default:
-				if attrKey, ok := model.KnownAttributeKeys[key]; ok {
-					attributes[attrKey] = value
-					return
-				}
-				if metricKey, ok := model.KnownMetricKeys[key]; ok {
-					metrics[metricKey] = value
-					return
-				}
-				// no invent-into-archive for unknown keys
-			}
-		default:
-			// Unknown targets are ignored (do not dump into archive).
-			return
-		}
-	}
-
-	if len(schema.Fields) > 0 {
-		for _, f := range schema.Fields {
-			if strings.EqualFold(f.Type, "repeat") || strings.EqualFold(f.Type, "eqa_block") || strings.EqualFold(f.Type, "assay_block") || strings.EqualFold(f.Type, "device_block") {
-				continue
-			}
-			applyTarget(f.Target, f.Key, answerString(answers, f.Key))
-		}
-	} else {
-		for k, v := range answers {
-			if k == "devices" {
-				continue
-			}
-			applyTarget("", k, anyToString(v))
-		}
-	}
-
-	name := strings.TrimSpace(cols["name"])
-	if name == "" {
-		name = archiveString(archive, "customerName")
-	}
-	if name == "" {
-		name = extractHospitalNameFromAnswers(a.Schema, answers)
-	}
-	province := strings.TrimSpace(cols["province"])
-	city := strings.TrimSpace(cols["city"])
-	branchHint := firstNonEmpty(cols["branchOffice"], cols["branch_office"], archiveString(archive, "branchOffice"))
-
-	var existing *model.Hospital
-	var err error
-	// When an admin changes 客户/医院名称 on a bound assignment, leave the
-	// originally bound hospital untouched and insert a new hospital on 通过.
-	// Same name (trim + case-insensitive) still updates that hospital in place.
-	createNewForRenamedBound := false
-	if a.HospitalId != nil && *a.HospitalId > 0 {
-		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *a.HospitalId)
-		if err == nil && existing != nil && name != "" && !hospitalNamesEqual(existing.Name, name) {
-			existing = nil
-			createNewForRenamedBound = true
-		}
-	} else if sub.HospitalId != nil && *sub.HospitalId > 0 {
-		existing, err = l.svcCtx.HospitalModel.FindById(l.ctx, *sub.HospitalId)
-		if err == nil && existing != nil && name != "" && !hospitalNamesEqual(existing.Name, name) {
-			existing = nil
-		}
-	}
-	if !createNewForRenamedBound {
-		if err == nil && existing == nil && name != "" && province != "" && city != "" {
-			existing, err = l.svcCtx.HospitalModel.FindByNameProvinceCity(l.ctx, name, province, city)
-		}
-		if err == nil && existing == nil && name != "" {
-			byName, findErr := l.svcCtx.HospitalModel.FindByName(l.ctx, name)
-			if findErr != nil {
-				err = findErr
-			} else if byName != nil && (province == "" || strings.EqualFold(strings.TrimSpace(byName.Province), province)) {
-				existing = byName
-			}
-		}
-	}
+	plan, err := l.buildHospitalPublishPlan(a, sub)
 	if err != nil {
-		l.Errorf("find hospital for publish: %v", err)
-		return hospitalPublishOutcome{}, ErrInternal
+		return hospitalPublishOutcome{}, err
 	}
-	if existing == nil {
-		if name == "" {
-			return hospitalPublishOutcome{}, NewCodeError(400, "答卷缺少医院名称，且未绑定医院，无法写入看板")
-		}
-		if province == "" {
-			province = defaultDashboardProvince
-		}
-		if city == "" {
-			city = cityFromBranchOrDefault(branchHint, province)
-		}
-	} else {
-		if name == "" {
-			name = existing.Name
-		}
-		if province == "" {
-			province = existing.Province
-		}
-		if city == "" {
-			city = existing.City
-		}
-	}
-
-	level := strings.TrimSpace(cols["level"])
-	typ := strings.TrimSpace(cols["type"])
-	if !isAllowedHospitalLevel(level) {
-		level = ""
-	}
-	if !isAllowedHospitalType(typ) {
-		typ = ""
-	}
-	if level == "" {
-		if existing != nil && isAllowedHospitalLevel(existing.Level) {
-			level = existing.Level
-		} else {
-			level = "二级甲等"
-		}
-	}
-	if typ == "" {
-		if existing != nil && isAllowedHospitalType(existing.Type) {
-			typ = existing.Type
-		} else {
-			typ = "综合医院"
-		}
-	}
-
-	mergedArchive := map[string]any{}
-	if existing != nil && existing.Archive != nil {
-		for k, v := range existing.Archive {
-			mergedArchive[k] = v
-		}
-	}
-	for k, v := range archive {
-		mergedArchive[k] = v
-	}
-
-	// Merge device-level otherAnalyzers into hospital archive (assays go via assay_block / device_block).
-	deviceRows := extractAllDeviceRows(answers)
-	otherAnalyzers := []string{}
-	if s := archiveString(mergedArchive, "otherAnalyzers"); s != "" {
-		otherAnalyzers = append(otherAnalyzers, s)
-	}
-	for _, drow := range deviceRows {
-		if oa := anyToString(drow["otherAnalyzers"]); oa != "" {
-			otherAnalyzers = append(otherAnalyzers, oa)
-		}
-	}
-	if len(otherAnalyzers) > 0 {
-		mergedArchive["otherAnalyzers"] = strings.Join(uniquePreserve(otherAnalyzers), "；")
-	}
-	mergedArchive = model.NormalizeArchive(mergedArchive)
-	delete(mergedArchive, "customerLevel")
-	delete(mergedArchive, "customer_level")
-	delete(mergedArchive, "usageLocation")
-	delete(mergedArchive, "usage_location")
-	// Retired flat project lists — hospital_assays is the source of truth.
-	delete(mergedArchive, "mindrayProjects")
-	delete(mergedArchive, "newProjects")
-	delete(mergedArchive, "missingProjects")
-
-	district := strings.TrimSpace(cols["district"])
-	address := strings.TrimSpace(cols["address"])
-	remark := strings.TrimSpace(cols["remark"])
-	if remark == "" {
-		remark = archiveString(mergedArchive, "archiveRemark")
-	}
-	customerCode := firstNonEmpty(cols["customerCode"], cols["customer_code"], archiveString(mergedArchive, "customerCode"))
-	// 区域（大区）以问卷省份为准服务端派生，不信任客户端单独填写值。
-	region := resolveRegionFromProvince(province, firstNonEmpty(cols["region"], archiveString(mergedArchive, "region")))
-	if region != "" {
-		mergedArchive["region"] = region
-	}
-	branchOffice := firstNonEmpty(cols["branchOffice"], cols["branch_office"], archiveString(mergedArchive, "branchOffice"))
-
-	// Attributes/metrics come only from explicit hospital.attributes.* / hospital.metrics.* targets.
 
 	var before *approvalHospitalState
-	if existing != nil {
-		before, err = l.captureHospitalPublishState(existing.Id)
+	if plan.Existing != nil {
+		before, err = l.captureHospitalPublishState(plan.Existing.Id)
 		if err != nil {
 			l.Errorf("capture hospital before-image: %v", err)
 			return hospitalPublishOutcome{}, ErrInternal
@@ -973,73 +742,42 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 	}
 
 	var hospitalID int64
-	created := existing == nil
-	if existing == nil {
-		if err := l.rejectHospitalNameConflict(0, name, province, city); err != nil {
+	created := plan.Existing == nil
+	if created {
+		if err := l.rejectHospitalNameConflict(0, plan.After.Name, plan.After.Province, plan.After.City); err != nil {
 			return hospitalPublishOutcome{}, err
 		}
-		h := &model.Hospital{
-			Name: name, Province: province, City: city, District: district,
-			Level: level, Type: typ, Status: "active", Address: address, Remark: remark,
-			CustomerCode: customerCode, Region: region, BranchOffice: branchOffice,
-			Archive: mergedArchive, CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
-		}
-		hospitalID, err = l.svcCtx.HospitalModel.Insert(l.ctx, h)
+		h := plan.After
+		h.CreatedBy = ptrInt64(reviewerID)
+		h.UpdatedBy = ptrInt64(reviewerID)
+		hospitalID, err = l.svcCtx.HospitalModel.Insert(l.ctx, &h)
 		if err != nil {
 			l.Errorf("insert hospital from survey: %v", err)
 			if isUniqueViolation(err) {
-				return hospitalPublishOutcome{}, hospitalNameConflictError(name, province, city)
+				return hospitalPublishOutcome{}, hospitalNameConflictError(plan.After.Name, plan.After.Province, plan.After.City)
 			}
 			return hospitalPublishOutcome{}, NewCodeError(400, "写入医院失败，可能已存在同名医院或字段不合法")
 		}
 	} else {
-		if district != "" {
-			existing.District = district
-		}
-		if level != "" {
-			existing.Level = level
-		}
-		if typ != "" {
-			existing.Type = typ
-		}
-		if address != "" {
-			existing.Address = address
-		}
-		if remark != "" {
-			existing.Remark = remark
-		}
-		if customerCode != "" {
-			existing.CustomerCode = customerCode
-		}
-		if region != "" {
-			existing.Region = region
-		}
-		if branchOffice != "" {
-			existing.BranchOffice = branchOffice
-		}
-		existing.Name = name
-		existing.Province = province
-		existing.City = city
-		existing.Status = "active"
-		existing.Archive = mergedArchive
-		existing.UpdatedBy = ptrInt64(reviewerID)
-		if err := l.rejectHospitalNameConflict(existing.Id, name, province, city); err != nil {
+		h := plan.After
+		h.UpdatedBy = ptrInt64(reviewerID)
+		if err := l.rejectHospitalNameConflict(h.Id, h.Name, h.Province, h.City); err != nil {
 			return hospitalPublishOutcome{}, err
 		}
-		if err := l.svcCtx.HospitalModel.Update(l.ctx, existing); err != nil {
+		if err := l.svcCtx.HospitalModel.Update(l.ctx, &h); err != nil {
 			l.Errorf("update hospital from survey: %v", err)
 			if isUniqueViolation(err) {
-				return hospitalPublishOutcome{}, hospitalNameConflictError(name, province, city)
+				return hospitalPublishOutcome{}, hospitalNameConflictError(h.Name, h.Province, h.City)
 			}
 			return hospitalPublishOutcome{}, NewCodeError(400, "更新医院失败，请检查字段是否合法")
 		}
-		hospitalID = existing.Id
+		hospitalID = h.Id
 	}
 
-	if err := l.publishDevices(reviewerID, hospitalID, deviceRows); err != nil {
+	if err := l.publishDevices(reviewerID, hospitalID, plan.DeviceRows); err != nil {
 		return hospitalPublishOutcome{}, err
 	}
-	if err := l.dualWriteMasterData(hospitalID, mergedArchive, attributes, metrics); err != nil {
+	if err := l.dualWriteMasterData(hospitalID, plan.After.Archive, plan.Attributes, plan.Metrics); err != nil {
 		l.Errorf("dual-write master data: %v", err)
 		// non-fatal for approve: hospital/devices already saved
 	}

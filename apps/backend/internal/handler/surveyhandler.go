@@ -300,6 +300,24 @@ func ApproveSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc
 	}
 }
 
+func PreviewApproveSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := parsePathID(r)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		var req types.ReviewSurveySubmissionRequest
+		_ = httpx.Parse(r, &req)
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).PreviewApproveSubmission(id, &req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
 func RejectSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parsePathID(r)
