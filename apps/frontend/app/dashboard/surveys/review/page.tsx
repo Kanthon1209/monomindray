@@ -2,13 +2,14 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Inbox, Loader2, RefreshCw, Save, X } from "lucide-react";
+import { Check, Inbox, Loader2, RefreshCw, Save, Undo2, X } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 import {
   approveSurveySubmission,
   listSurveySubmissions,
   rejectSurveySubmission,
+  unapproveSurveySubmission,
   updateSurveySubmissionAnswers,
   type SurveySubmission,
 } from "@/lib/business";
@@ -36,6 +37,7 @@ import {
   MobileCardItem,
   MobileCardList,
 } from "@/components/mobile-data-list";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SurveyAnswersView } from "@/components/survey-answers-view";
 import {
   SurveyAnswersForm,
@@ -63,6 +65,7 @@ function ReviewEditor({
   onSave,
   onApprove,
   onReject,
+  onUnapprove,
 }: {
   item: SurveySubmission;
   isPending: boolean;
@@ -76,6 +79,7 @@ function ReviewEditor({
   onSave: () => void;
   onApprove: () => void;
   onReject: () => void;
+  onUnapprove?: () => void;
 }) {
   const hospitalBound = !!(item.hospitalId && Number(item.hospitalId) > 0);
   const setAnswers: Dispatch<SetStateAction<Record<string, any>>> = (
@@ -193,6 +197,33 @@ function ReviewEditor({
               审核备注：{item.reviewNote}
             </p>
           ) : null}
+          {error ? (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+          {message ? (
+            <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              {message}
+            </p>
+          ) : null}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="min-h-10 sm:min-h-8"
+              disabled={acting}
+              onClick={onUnapprove}
+            >
+              {acting ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Undo2 className="mr-1 h-4 w-4" />
+              )}
+              撤销
+            </Button>
+          </div>
         </>
       )}
     </div>
@@ -214,6 +245,7 @@ export default function SurveyReviewPage() {
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
+  const confirm = useConfirmDialog();
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -372,6 +404,35 @@ export default function SurveyReviewPage() {
     else await load();
   };
 
+  const onUnapprove = async (item: SurveySubmission) => {
+    if (
+      !(await confirm.ask({
+        title: "撤销通过？",
+        description:
+          "撤销后，这份答卷会回到待审核，答案恢复为管理员修改前的内容，并尝试把客户资料回滚到此次通过之前。此操作需要再次审核通过才会重新发布。",
+        confirmLabel: "撤销",
+        destructive: true,
+      }))
+    ) {
+      return;
+    }
+    setActingId(item.id);
+    setError(null);
+    setPanelMessage(null);
+    const res = await unapproveSurveySubmission(item.id);
+    setActingId(null);
+    if (res.error) {
+      setError(res.error);
+      if (expandedId !== item.id) {
+        setExpandedId(item.id);
+      }
+      return;
+    }
+    setExpandedId(null);
+    setPanelMessage(res.message || "答卷已回到待审核");
+    await load();
+  };
+
   if (!user || user.role !== "admin") return null;
 
   const isPending = tab === "pending";
@@ -425,6 +486,11 @@ export default function SurveyReviewPage() {
         <CardContent className="px-0">
           {error && !expandedId ? (
             <p className="mb-3 text-sm text-destructive">{error}</p>
+          ) : null}
+          {panelMessage && !expandedId ? (
+            <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {panelMessage}
+            </p>
           ) : null}
           <DesktopTable>
             <Table>
@@ -503,7 +569,23 @@ export default function SurveyReviewPage() {
                                   </>
                                 )}
                               </Button>
-                            ) : null}
+                            ) : (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={actingId === item.id}
+                                onClick={() => onUnapprove(item)}
+                              >
+                                {actingId === item.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Undo2 className="mr-1 h-4 w-4" />
+                                    撤销
+                                  </>
+                                )}
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -532,6 +614,7 @@ export default function SurveyReviewPage() {
                               onSave={() => onSave(item)}
                               onApprove={() => onApprove(item, true)}
                               onReject={() => onReject(item)}
+                              onUnapprove={() => onUnapprove(item)}
                             />
                           </TableCell>
                         </TableRow>
@@ -579,7 +662,7 @@ export default function SurveyReviewPage() {
                         {formatTime(isPending ? item.submittedAt : item.reviewedAt || item.submittedAt)}
                       </span>
                     </div>
-                    <div className={`grid gap-2 ${isPending ? "grid-cols-2" : "grid-cols-1"}`}>
+                    <div className="grid grid-cols-2 gap-2">
                       <Button
                         variant="outline"
                         className="min-h-10 w-full"
@@ -602,7 +685,23 @@ export default function SurveyReviewPage() {
                             </>
                           )}
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Button
+                          variant="destructive"
+                          className="min-h-10 w-full"
+                          disabled={actingId === item.id}
+                          onClick={() => onUnapprove(item)}
+                        >
+                          {actingId === item.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Undo2 className="mr-1 h-4 w-4" />
+                              撤销
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </div>
                     {open ? (
                       <div className="rounded-md bg-muted/30 p-3">
@@ -628,6 +727,7 @@ export default function SurveyReviewPage() {
                           onSave={() => onSave(item)}
                           onApprove={() => onApprove(item, true)}
                           onReject={() => onReject(item)}
+                          onUnapprove={() => onUnapprove(item)}
                         />
                       </div>
                     ) : null}
@@ -638,6 +738,7 @@ export default function SurveyReviewPage() {
           </MobileCardList>
         </CardContent>
       </Card>
+      {confirm.dialog}
     </div>
   );
 }

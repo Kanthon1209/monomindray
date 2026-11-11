@@ -651,10 +651,16 @@ func (l *SurveyLogic) ApproveSubmission(id int64, req *types.ReviewSurveySubmiss
 		}
 	}
 
-	hospitalID, err := l.publishSubmissionToHospital(uid, a, sub)
+	previousHospitalID := sub.HospitalId
+	if previousHospitalID == nil && a.HospitalId != nil && *a.HospitalId > 0 {
+		previousHospitalID = a.HospitalId
+	}
+
+	outcome, err := l.publishSubmissionToHospital(uid, a, sub)
 	if err != nil {
 		return nil, err
 	}
+	hospitalID := outcome.HospitalID
 
 	if err := l.svcCtx.SurveyModel.ReviewSubmission(l.ctx, id, uid, "approved", strings.TrimSpace(req.Note)); err != nil {
 		if err == pgx.ErrNoRows {
@@ -676,6 +682,10 @@ func (l *SurveyLogic) ApproveSubmission(id int64, req *types.ReviewSurveySubmiss
 	// Assay tree block → hospital_assays by leaf codes
 	if err := NewAssayProjectLogic(l.ctx, l.svcCtx).WritebackFromSurveyAnswers(hospitalID, sub.Answers); err != nil {
 		l.Errorf("assay writeback: %v", err)
+		return nil, ErrInternal
+	}
+	if err := l.saveApprovalSnapshot(id, previousHospitalID, outcome); err != nil {
+		l.Errorf("save approval snapshot: %v", err)
 		return nil, ErrInternal
 	}
 
@@ -716,7 +726,7 @@ func (l *SurveyLogic) review(id int64, status, note string) (*types.SurveySubmis
 	return &types.SurveySubmissionResponse{Submission: toSurveySubmissionInfo(sub)}, nil
 }
 
-func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.SurveyAssignment, sub *model.SurveySubmission) (int64, error) {
+func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.SurveyAssignment, sub *model.SurveySubmission) (hospitalPublishOutcome, error) {
 	var schema struct {
 		Fields []surveySchemaField `json:"fields"`
 	}
@@ -856,11 +866,11 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 	}
 	if err != nil {
 		l.Errorf("find hospital for publish: %v", err)
-		return 0, ErrInternal
+		return hospitalPublishOutcome{}, ErrInternal
 	}
 	if existing == nil {
 		if name == "" {
-			return 0, NewCodeError(400, "答卷缺少医院名称，且未绑定医院，无法写入看板")
+			return hospitalPublishOutcome{}, NewCodeError(400, "答卷缺少医院名称，且未绑定医院，无法写入看板")
 		}
 		if province == "" {
 			province = defaultDashboardProvince
@@ -953,10 +963,20 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 	// Attributes/metrics come only from explicit hospital.attributes.* / hospital.metrics.* targets.
 
+	var before *approvalHospitalState
+	if existing != nil {
+		before, err = l.captureHospitalPublishState(existing.Id)
+		if err != nil {
+			l.Errorf("capture hospital before-image: %v", err)
+			return hospitalPublishOutcome{}, ErrInternal
+		}
+	}
+
 	var hospitalID int64
+	created := existing == nil
 	if existing == nil {
 		if err := l.rejectHospitalNameConflict(0, name, province, city); err != nil {
-			return 0, err
+			return hospitalPublishOutcome{}, err
 		}
 		h := &model.Hospital{
 			Name: name, Province: province, City: city, District: district,
@@ -968,9 +988,9 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		if err != nil {
 			l.Errorf("insert hospital from survey: %v", err)
 			if isUniqueViolation(err) {
-				return 0, hospitalNameConflictError(name, province, city)
+				return hospitalPublishOutcome{}, hospitalNameConflictError(name, province, city)
 			}
-			return 0, NewCodeError(400, "写入医院失败，可能已存在同名医院或字段不合法")
+			return hospitalPublishOutcome{}, NewCodeError(400, "写入医院失败，可能已存在同名医院或字段不合法")
 		}
 	} else {
 		if district != "" {
@@ -1004,26 +1024,26 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 		existing.Archive = mergedArchive
 		existing.UpdatedBy = ptrInt64(reviewerID)
 		if err := l.rejectHospitalNameConflict(existing.Id, name, province, city); err != nil {
-			return 0, err
+			return hospitalPublishOutcome{}, err
 		}
 		if err := l.svcCtx.HospitalModel.Update(l.ctx, existing); err != nil {
 			l.Errorf("update hospital from survey: %v", err)
 			if isUniqueViolation(err) {
-				return 0, hospitalNameConflictError(name, province, city)
+				return hospitalPublishOutcome{}, hospitalNameConflictError(name, province, city)
 			}
-			return 0, NewCodeError(400, "更新医院失败，请检查字段是否合法")
+			return hospitalPublishOutcome{}, NewCodeError(400, "更新医院失败，请检查字段是否合法")
 		}
 		hospitalID = existing.Id
 	}
 
 	if err := l.publishDevices(reviewerID, hospitalID, deviceRows); err != nil {
-		return 0, err
+		return hospitalPublishOutcome{}, err
 	}
 	if err := l.dualWriteMasterData(hospitalID, mergedArchive, attributes, metrics); err != nil {
 		l.Errorf("dual-write master data: %v", err)
 		// non-fatal for approve: hospital/devices already saved
 	}
-	return hospitalID, nil
+	return hospitalPublishOutcome{HospitalID: hospitalID, Created: created, Before: before}, nil
 }
 
 func (l *SurveyLogic) dualWriteMasterData(hospitalID int64, archive map[string]any, attributes, metrics map[string]string) error {

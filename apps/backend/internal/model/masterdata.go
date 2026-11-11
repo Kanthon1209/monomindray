@@ -45,6 +45,16 @@ type MasterDataModel interface {
 	UpsertMetric(ctx context.Context, hospitalID int64, year int, code, valueText string) error
 	UpsertMetrics(ctx context.Context, hospitalID int64, year int, metrics map[string]string) error
 	ListMetrics(ctx context.Context, hospitalID int64, year int) (map[string]string, error)
+	ListAllMetrics(ctx context.Context, hospitalID int64) ([]HospitalMetric, error)
+	ReplaceAllMetrics(ctx context.Context, hospitalID int64, items []HospitalMetric) error
+	ReplaceAttributes(ctx context.Context, hospitalID int64, attrs map[string]string) error
+	ListHospitalOwnAssayCodes(ctx context.Context, hospitalID int64) ([]string, error)
+}
+
+type HospitalMetric struct {
+	Year  int
+	Code  string
+	Value string
 }
 
 type masterDataModel struct{ conn *pgxpool.Pool }
@@ -345,6 +355,86 @@ func (m *masterDataModel) ListMetrics(ctx context.Context, hospitalID int64, yea
 		out[k] = v
 	}
 	return out, rows.Err()
+}
+
+
+func (m *masterDataModel) ListAllMetrics(ctx context.Context, hospitalID int64) ([]HospitalMetric, error) {
+	if hospitalID <= 0 {
+		return nil, nil
+	}
+	rows, err := m.conn.Query(ctx, `
+		SELECT year, metric_code, value_text FROM hospital_metrics
+		WHERE hospital_id=$1 ORDER BY year, metric_code`, hospitalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []HospitalMetric{}
+	for rows.Next() {
+		var it HospitalMetric
+		if err := rows.Scan(&it.Year, &it.Code, &it.Value); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+func (m *masterDataModel) ReplaceAllMetrics(ctx context.Context, hospitalID int64, items []HospitalMetric) error {
+	if hospitalID <= 0 {
+		return nil
+	}
+	tx, err := m.conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM hospital_metrics WHERE hospital_id=$1`, hospitalID); err != nil {
+		return err
+	}
+	for _, it := range items {
+		code := strings.TrimSpace(it.Code)
+		if code == "" || it.Year <= 0 {
+			continue
+		}
+		var num *float64
+		if f, err := strconv.ParseFloat(strings.ReplaceAll(it.Value, ",", ""), 64); err == nil {
+			num = &f
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO hospital_metrics (hospital_id, year, metric_code, value_text, value_num, updated_at)
+			VALUES ($1,$2,$3,$4,$5,NOW())`, hospitalID, it.Year, code, it.Value, num); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (m *masterDataModel) ReplaceAttributes(ctx context.Context, hospitalID int64, attrs map[string]string) error {
+	if hospitalID <= 0 {
+		return nil
+	}
+	tx, err := m.conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM hospital_attributes WHERE hospital_id=$1`, hospitalID); err != nil {
+		return err
+	}
+	for k, v := range attrs {
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO hospital_attributes (hospital_id, attr_key, attr_value, updated_at)
+			VALUES ($1,$2,$3,NOW())`, hospitalID, k, v); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func nullIfZero(id int64) *int64 {

@@ -470,6 +470,41 @@ func (m *masterDataModel) ListHospitalAssayCodes(ctx context.Context, hospitalID
 	return out, rows.Err()
 }
 
+
+func (m *masterDataModel) ListHospitalOwnAssayCodes(ctx context.Context, hospitalID int64) ([]string, error) {
+	if hospitalID <= 0 {
+		return nil, nil
+	}
+	rows, err := m.conn.Query(ctx, `
+		SELECT COALESCE(ap.code, '')
+		FROM hospital_assays ha
+		LEFT JOIN assay_projects ap ON ap.id = ha.assay_project_id
+		WHERE ha.hospital_id=$1
+		  AND ha.source='own'
+		  AND ha.device_id IS NULL
+		  AND ap.kind='item'
+		  AND TRIM(COALESCE(ap.code,'')) <> ''
+		ORDER BY ap.sort_order, ap.name`, hospitalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	seen := map[string]struct{}{}
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // ReplaceHospitalAssaysByCodes replaces all hospital_assays for a hospital with the given item codes.
 // Only kind=item codes are accepted; unknown codes are rejected.
 func (m *masterDataModel) ReplaceHospitalAssaysByCodes(ctx context.Context, hospitalID int64, codes []string, source string) error {

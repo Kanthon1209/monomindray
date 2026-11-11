@@ -37,3 +37,37 @@ func TestUpdateSubmittedAnswersSQLSnapshotsOriginalAndStaysPending(t *testing.T)
 		t.Fatalf("must not change collector identity fields: %q", sql)
 	}
 }
+
+func TestUnapproveSubmissionSQLReopensApprovedAndRestoresAnswers(t *testing.T) {
+	sql := UnapproveSubmissionSQL
+	if strings.Contains(sql, "DELETE") {
+		t.Fatalf("unapprove must not delete the submission row: %q", sql)
+	}
+	if !strings.Contains(sql, "status = 'submitted'") && !strings.Contains(sql, "status='submitted'") {
+		t.Fatalf("unapprove must set status back to submitted: %q", sql)
+	}
+	if !strings.Contains(sql, "status = 'approved'") && !strings.Contains(sql, "status='approved'") {
+		t.Fatalf("unapprove must only touch approved rows: %q", sql)
+	}
+	if !strings.Contains(sql, "answers = COALESCE(original_answers, answers)") {
+		t.Fatalf("unapprove must restore collector answers: %q", sql)
+	}
+	if !strings.Contains(sql, "original_answers = NULL") {
+		t.Fatalf("unapprove must clear original_answers for a later edit snapshot: %q", sql)
+	}
+	if !strings.Contains(sql, "reviewed_by = NULL") || !strings.Contains(sql, "reviewed_at = NULL") {
+		t.Fatalf("unapprove must clear reviewer fields: %q", sql)
+	}
+	if strings.Contains(sql, "collected_by") || strings.Contains(sql, "submitted_at") {
+		t.Fatalf("unapprove must not change collector identity: %q", sql)
+	}
+}
+
+func TestUnapproveAssignmentSQLLeavesPending(t *testing.T) {
+	if strings.Contains(UnapproveAssignmentSQL, "DELETE") {
+		t.Fatalf("unapprove must not delete the assignment: %q", UnapproveAssignmentSQL)
+	}
+	if !strings.Contains(UnapproveAssignmentSQL, "status='submitted'") && !strings.Contains(UnapproveAssignmentSQL, "status = 'submitted'") {
+		t.Fatalf("assignment must return to submitted: %q", UnapproveAssignmentSQL)
+	}
+}

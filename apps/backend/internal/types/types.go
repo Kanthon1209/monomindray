@@ -482,6 +482,11 @@ type (
 		Answers    map[string]any `json:"answers"`
 		HospitalId *int64         `json:"hospitalId,optional"`
 	}
+	UnapproveSurveySubmissionResponse struct {
+		Submission      SurveySubmissionInfo `json:"submission"`
+		PublishRollback string               `json:"publishRollback"`
+		Message         string               `json:"message,omitempty"`
+	}
 
 	// ---- assay projects (检测项目字典 / 层级树) ----
 	AssayProjectInfo struct {

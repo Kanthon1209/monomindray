@@ -320,3 +320,19 @@ func RejectSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc 
 		}
 	}
 }
+
+func UnapproveSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := parsePathID(r)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).UnapproveSubmission(id)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}

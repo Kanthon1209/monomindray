@@ -147,6 +147,15 @@ type SurveyModel interface {
 	// are left unchanged.
 	UpdateSubmittedAnswers(ctx context.Context, id int64, answers map[string]any) error
 	SetSubmissionHospital(ctx context.Context, submissionID, hospitalID int64) error
+	SetApprovalSnapshot(ctx context.Context, id int64, snapshot json.RawMessage) error
+	FindApprovalSnapshot(ctx context.Context, id int64) (json.RawMessage, error)
+	// UnapproveSubmission reopens an approved row as submitted, restores
+	// collector answers from original_answers when present, clears review
+	// fields, and sets hospital_id to previous (nil clears it).
+	UnapproveSubmission(ctx context.Context, id int64, hospitalID *int64) error
+	CountLaterApprovedOnHospital(ctx context.Context, hospitalID, excludeID int64, after *time.Time) (int64, error)
+	CountSubmissionsByHospital(ctx context.Context, hospitalID, excludeID int64) (int64, error)
+	CountAssignmentsByHospital(ctx context.Context, hospitalID int64) (int64, error)
 	// CreateOpenAssignment inserts a hospital-unbound todo task + empty draft for multi-fill.
 	CreateOpenAssignment(ctx context.Context, campaignID, assigneeID int64) (int64, error)
 }
@@ -1001,6 +1010,100 @@ func (m *surveyModel) SetSubmissionHospital(ctx context.Context, submissionID, h
 	_, err := m.conn.Exec(ctx, `
 		UPDATE survey_submissions SET hospital_id=$1, updated_at=NOW() WHERE id=$2`, hospitalID, submissionID)
 	return err
+}
+
+
+func (m *surveyModel) SetApprovalSnapshot(ctx context.Context, id int64, snapshot json.RawMessage) error {
+	if len(snapshot) == 0 {
+		snapshot = json.RawMessage("null")
+	}
+	_, err := m.conn.Exec(ctx, `
+		UPDATE survey_submissions SET approval_snapshot=$2::jsonb, updated_at=NOW() WHERE id=$1`, id, snapshot)
+	return err
+}
+
+func (m *surveyModel) FindApprovalSnapshot(ctx context.Context, id int64) (json.RawMessage, error) {
+	var raw []byte
+	err := m.conn.QueryRow(ctx, `SELECT approval_snapshot FROM survey_submissions WHERE id=$1`, id).Scan(&raw)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// UnapproveSubmissionSQL is the approved → submitted reopen (keep in sync with UnapproveSubmission).
+const UnapproveSubmissionSQL = `
+		UPDATE survey_submissions
+		SET status = 'submitted',
+		    answers = COALESCE(original_answers, answers),
+		    original_answers = NULL,
+		    approval_snapshot = NULL,
+		    reviewed_by = NULL,
+		    reviewed_at = NULL,
+		    review_note = NULL,
+		    hospital_id = $2,
+		    updated_at = NOW()
+		WHERE id = $1 AND status = 'approved'`
+
+const UnapproveAssignmentSQL = `
+		UPDATE survey_assignments SET status='submitted', updated_at=NOW() WHERE id=$1`
+
+func (m *surveyModel) UnapproveSubmission(ctx context.Context, id int64, hospitalID *int64) error {
+	tx, err := m.conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var assignmentID int64
+	err = tx.QueryRow(ctx, UnapproveSubmissionSQL+`
+		RETURNING assignment_id`, id, hospitalID).Scan(&assignmentID)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, UnapproveAssignmentSQL, assignmentID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (m *surveyModel) CountLaterApprovedOnHospital(ctx context.Context, hospitalID, excludeID int64, after *time.Time) (int64, error) {
+	if hospitalID <= 0 {
+		return 0, nil
+	}
+	var n int64
+	err := m.conn.QueryRow(ctx, `
+		SELECT COUNT(*) FROM survey_submissions
+		WHERE hospital_id=$1 AND id<>$2 AND status='approved'
+		  AND ($3::timestamptz IS NULL OR reviewed_at > $3)`,
+		hospitalID, excludeID, after).Scan(&n)
+	return n, err
+}
+
+func (m *surveyModel) CountSubmissionsByHospital(ctx context.Context, hospitalID, excludeID int64) (int64, error) {
+	if hospitalID <= 0 {
+		return 0, nil
+	}
+	var n int64
+	err := m.conn.QueryRow(ctx, `
+		SELECT COUNT(*) FROM survey_submissions WHERE hospital_id=$1 AND id<>$2`,
+		hospitalID, excludeID).Scan(&n)
+	return n, err
+}
+
+func (m *surveyModel) CountAssignmentsByHospital(ctx context.Context, hospitalID int64) (int64, error) {
+	if hospitalID <= 0 {
+		return 0, nil
+	}
+	var n int64
+	err := m.conn.QueryRow(ctx, `SELECT COUNT(*) FROM survey_assignments WHERE hospital_id=$1`, hospitalID).Scan(&n)
+	return n, err
 }
 
 func (m *surveyModel) CreateOpenAssignment(ctx context.Context, campaignID, assigneeID int64) (int64, error) {

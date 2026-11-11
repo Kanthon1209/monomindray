@@ -876,6 +876,20 @@ export async function rejectSurveySubmission(id: string, note: string) {
   return { submission: mapSubmission(data!.submission) };
 }
 
+export async function unapproveSurveySubmission(id: string) {
+  const { data, error } = await apiFetch<{
+    submission: any;
+    publishRollback?: string;
+    message?: string;
+  }>(`/surveys/submissions/${id}/unapprove`, { method: "POST" });
+  if (error) return { error };
+  return {
+    submission: data?.submission ? mapSubmission(data.submission) : undefined,
+    publishRollback: data?.publishRollback || "",
+    message: data?.message || "",
+  };
+}
+
 // ---- assay projects (检测项目字典) ----
 
 export type AssayOwnership = "own" | "competitor";

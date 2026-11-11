@@ -68,6 +68,7 @@ type HospitalModel interface {
 	Insert(ctx context.Context, h *Hospital) (int64, error)
 	Update(ctx context.Context, h *Hospital) error
 	Delete(ctx context.Context, id int64) error
+	CountCases(ctx context.Context, hospitalID int64) (int64, error)
 	ProvinceStats(ctx context.Context, regionProvinces []string) ([]ProvinceCount, error)
 	CityStats(ctx context.Context, province string, cities []string, assayCategoryCode string) ([]ProvinceCount, error)
 }
@@ -423,6 +424,16 @@ func (m *hospitalModel) Delete(ctx context.Context, id int64) error {
 		return fmt.Errorf("delete hospital: %w", err)
 	}
 	return nil
+}
+
+
+func (m *hospitalModel) CountCases(ctx context.Context, hospitalID int64) (int64, error) {
+	if hospitalID <= 0 {
+		return 0, nil
+	}
+	var n int64
+	err := m.conn.QueryRow(ctx, `SELECT COUNT(*) FROM cases WHERE hospital_id=$1`, hospitalID).Scan(&n)
+	return n, err
 }
 
 func (m *hospitalModel) ProvinceStats(ctx context.Context, regionProvinces []string) ([]ProvinceCount, error) {
