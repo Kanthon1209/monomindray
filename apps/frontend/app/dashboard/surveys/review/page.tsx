@@ -1,14 +1,15 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Inbox, Loader2, RefreshCw, X } from "lucide-react";
+import { Check, Inbox, Loader2, RefreshCw, Save, X } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 import {
   approveSurveySubmission,
   listSurveySubmissions,
   rejectSurveySubmission,
+  updateSurveySubmissionAnswers,
   type SurveySubmission,
 } from "@/lib/business";
 import { formatTime } from "@/lib/users-admin";
@@ -36,8 +37,167 @@ import {
   MobileCardList,
 } from "@/components/mobile-data-list";
 import { SurveyAnswersView } from "@/components/survey-answers-view";
+import {
+  SurveyAnswersForm,
+  normalizeSurveyFormAnswers,
+  validateSurveyAnswersClient,
+} from "@/components/survey-answers-form";
 
 type ReviewTab = "pending" | "approved";
+
+type DraftState = {
+  answers: Record<string, any>;
+  hospitalId?: number;
+};
+
+function ReviewEditor({
+  item,
+  isPending,
+  acting,
+  rejectNote,
+  onRejectNoteChange,
+  draft,
+  onDraftChange,
+  error,
+  message,
+  onSave,
+  onApprove,
+  onReject,
+}: {
+  item: SurveySubmission;
+  isPending: boolean;
+  acting: boolean;
+  rejectNote: string;
+  onRejectNoteChange: (value: string) => void;
+  draft: DraftState;
+  onDraftChange: (next: DraftState | ((prev: DraftState) => DraftState)) => void;
+  error?: string | null;
+  message?: string | null;
+  onSave: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const hospitalBound = !!(item.hospitalId && Number(item.hospitalId) > 0);
+  const setAnswers: Dispatch<SetStateAction<Record<string, any>>> = (
+    update,
+  ) => {
+    onDraftChange((prev) => ({
+      ...prev,
+      answers: typeof update === "function" ? update(prev.answers) : update,
+    }));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="border-b border-border/60 pb-3 text-sm">
+        <div>
+          <span className="text-muted-foreground">客户：</span>
+          <span className="font-medium">{item.hospitalName || "—"}</span>
+        </div>
+        {item.campaignTitle ? (
+          <div className="mt-1 text-muted-foreground">
+            发放：{item.campaignTitle}
+          </div>
+        ) : null}
+        {item.assigneeName || item.collectorName ? (
+          <div className="mt-1 text-muted-foreground">
+            采集员：{item.assigneeName || item.collectorName}
+            {item.assigneeEmail ? `（${item.assigneeEmail}）` : ""}
+          </div>
+        ) : null}
+      </div>
+
+      {isPending ? (
+        <>
+          <SurveyAnswersForm
+            fields={item.schema?.fields || []}
+            sections={item.schema?.sections}
+            answers={draft.answers}
+            onAnswersChange={setAnswers}
+            allowLockedEdit
+            hospitalBound={hospitalBound}
+            hospitalName={item.hospitalName}
+            onLinkedHospitalIdChange={(id) =>
+              onDraftChange((prev) => ({ ...prev, hospitalId: id }))
+            }
+          />
+          {error ? (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+          {message ? (
+            <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              {message}
+            </p>
+          ) : null}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-h-10 sm:min-h-8"
+              disabled={acting}
+              onClick={onSave}
+            >
+              {acting ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-1 h-4 w-4" />
+              )}
+              保存修改
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="min-h-10 sm:min-h-8"
+              disabled={acting}
+              onClick={onApprove}
+            >
+              {acting ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-1 h-4 w-4" />
+              )}
+              通过
+            </Button>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <Input
+              className="w-full sm:max-w-md"
+              placeholder="驳回原因（必填）"
+              value={rejectNote}
+              onChange={(e) => onRejectNoteChange(e.target.value)}
+            />
+            <Button
+              variant="destructive"
+              size="sm"
+              className="min-h-10 sm:min-h-8"
+              disabled={acting}
+              onClick={onReject}
+            >
+              <X className="mr-1 h-4 w-4" />
+              驳回
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <SurveyAnswersView
+            answers={item.answers || {}}
+            fields={item.schema?.fields}
+            sections={item.schema?.sections}
+          />
+          {item.reviewNote ? (
+            <p className="text-sm text-muted-foreground">
+              审核备注：{item.reviewNote}
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function SurveyReviewPage() {
   const { user } = useAuth();
@@ -47,9 +207,13 @@ export default function SurveyReviewPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [panelMessage, setPanelMessage] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
   const [rejectNotes, setRejectNotes] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -74,26 +238,135 @@ export default function SurveyReviewPage() {
 
   useEffect(() => {
     setExpandedId(null);
+    setPanelMessage(null);
+    setDrafts({});
   }, [tab]);
 
-  const onApprove = async (id: string) => {
-    setActingId(id);
+  const initDraft = (item: SurveySubmission): DraftState => {
+    const existing = draftsRef.current[item.id];
+    if (existing) return existing;
+    const hospitalId = item.hospitalId ? Number(item.hospitalId) : undefined;
+    return {
+      answers: normalizeSurveyFormAnswers(
+        item.schema?.fields || [],
+        item.answers,
+        item.hospitalName,
+      ),
+      hospitalId: hospitalId && hospitalId > 0 ? hospitalId : undefined,
+    };
+  };
+
+  const ensureDraft = (item: SurveySubmission) => {
+    if (draftsRef.current[item.id]) return;
+    const next = initDraft(item);
+    setDrafts((prev) => (prev[item.id] ? prev : { ...prev, [item.id]: next }));
+  };
+
+  const toggleExpand = (item: SurveySubmission) => {
+    setPanelMessage(null);
     setError(null);
-    const res = await approveSurveySubmission(id);
+    setExpandedId((cur) => {
+      if (cur === item.id) return null;
+      ensureDraft(item);
+      return item.id;
+    });
+  };
+
+  const getDraftPayload = (item: SurveySubmission) => {
+    const draft = draftsRef.current[item.id] ?? initDraft(item);
+    return {
+      answers: draft.answers,
+      hospitalId:
+        draft.hospitalId && draft.hospitalId > 0 ? draft.hospitalId : undefined,
+    };
+  };
+
+  const onSave = async (item: SurveySubmission) => {
+    const payload = getDraftPayload(item);
+    const clientError = await validateSurveyAnswersClient({
+      fields: item.schema?.fields || [],
+      answers: payload.answers,
+      hospitalBound: !!(item.hospitalId && Number(item.hospitalId) > 0),
+      hospitalOpen: !(item.hospitalId && Number(item.hospitalId) > 0),
+      linkedHospitalId: payload.hospitalId,
+    });
+    if (clientError) {
+      setPanelMessage(null);
+      setError(clientError);
+      return;
+    }
+    setActingId(item.id);
+    setError(null);
+    setPanelMessage(null);
+    const res = await updateSurveySubmissionAnswers(item.id, payload);
+    setActingId(null);
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+    if (res.submission) {
+      setItems((prev) =>
+        prev.map((row) => (row.id === item.id ? { ...row, ...res.submission, schema: res.submission.schema || row.schema } : row)),
+      );
+      setDrafts((prev) => ({
+        ...prev,
+        [item.id]: {
+          answers: normalizeSurveyFormAnswers(
+            (res.submission.schema || item.schema)?.fields || [],
+            res.submission.answers,
+            res.submission.hospitalName || item.hospitalName,
+          ),
+          hospitalId: res.submission.hospitalId
+            ? Number(res.submission.hospitalId)
+            : payload.hospitalId,
+        },
+      }));
+    }
+    setPanelMessage("修改已保存，答卷仍待审核");
+  };
+
+  const onApprove = async (item: SurveySubmission, withEdits: boolean) => {
+    const payload = withEdits || draftsRef.current[item.id] ? getDraftPayload(item) : undefined;
+    if (payload) {
+      const clientError = await validateSurveyAnswersClient({
+        fields: item.schema?.fields || [],
+        answers: payload.answers,
+        hospitalBound: !!(item.hospitalId && Number(item.hospitalId) > 0),
+        hospitalOpen: !(item.hospitalId && Number(item.hospitalId) > 0),
+        linkedHospitalId: payload.hospitalId,
+      });
+      if (clientError) {
+        setPanelMessage(null);
+        setError(clientError);
+        if (expandedId !== item.id) {
+          ensureDraft(item);
+          setExpandedId(item.id);
+        }
+        return;
+      }
+    }
+    setActingId(item.id);
+    setError(null);
+    setPanelMessage(null);
+    const res = await approveSurveySubmission(
+      item.id,
+      payload ? { answers: payload.answers, hospitalId: payload.hospitalId } : undefined,
+    );
     setActingId(null);
     if (res.error) setError(res.error);
     else await load();
   };
 
-  const onReject = async (id: string) => {
-    const note = (rejectNotes[id] || "").trim();
+  const onReject = async (item: SurveySubmission) => {
+    const note = (rejectNotes[item.id] || "").trim();
     if (!note) {
       setError("驳回请填写原因");
       return;
     }
-    setActingId(id);
+    setActingId(item.id);
     setError(null);
-    const res = await rejectSurveySubmission(id, note);
+    setPanelMessage(null);
+    const res = await rejectSurveySubmission(item.id, note);
     setActingId(null);
     if (res.error) setError(res.error);
     else await load();
@@ -117,7 +390,7 @@ export default function SurveyReviewPage() {
                 <CardTitle>答卷审核</CardTitle>
                 <CardDescription>
                   {isPending
-                    ? `审核采集员提交的问卷。待审 ${total} 份。`
+                    ? `审核采集员提交的问卷，可直接修改后再通过。待审 ${total} 份。`
                     : `已通过答卷保留审核记录，共 ${total} 份。`}
                 </CardDescription>
               </div>
@@ -150,7 +423,9 @@ export default function SurveyReviewPage() {
           </div>
         </CardHeader>
         <CardContent className="px-0">
-          {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
+          {error && !expandedId ? (
+            <p className="mb-3 text-sm text-destructive">{error}</p>
+          ) : null}
           <DesktopTable>
             <Table>
               <TableHeader>
@@ -209,17 +484,15 @@ export default function SurveyReviewPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() =>
-                                setExpandedId((cur) => (cur === item.id ? null : item.id))
-                              }
+                              onClick={() => toggleExpand(item)}
                             >
-                              {expandedId === item.id ? "收起" : "查看"}
+                              {expandedId === item.id ? "收起" : isPending ? "查看 / 修改" : "查看"}
                             </Button>
                             {isPending ? (
                               <Button
                                 size="sm"
                                 disabled={actingId === item.id}
-                                onClick={() => onApprove(item.id)}
+                                onClick={() => onApprove(item, expandedId === item.id)}
                               >
                                 {actingId === item.id ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -237,50 +510,29 @@ export default function SurveyReviewPage() {
                       {expandedId === item.id ? (
                         <TableRow>
                           <TableCell colSpan={isPending ? 6 : 7} className="bg-muted/30">
-                            <div className="mb-3 border-b border-border/60 pb-3 text-sm">
-                              <div>
-                                <span className="text-muted-foreground">客户：</span>
-                                <span className="font-medium">{item.hospitalName || "—"}</span>
-                              </div>
-                              {item.campaignTitle ? (
-                                <div className="mt-1 text-muted-foreground">
-                                  发放：{item.campaignTitle}
-                                </div>
-                              ) : null}
-                            </div>
-                            <SurveyAnswersView
-                              answers={item.answers || {}}
-                              fields={item.schema?.fields}
-                              sections={item.schema?.sections}
+                            <ReviewEditor
+                              item={item}
+                              isPending={isPending}
+                              acting={actingId === item.id}
+                              rejectNote={rejectNotes[item.id] || ""}
+                              onRejectNoteChange={(value) =>
+                                setRejectNotes((prev) => ({ ...prev, [item.id]: value }))
+                              }
+                              draft={drafts[item.id] || initDraft(item)}
+                              onDraftChange={(update) =>
+                                setDrafts((prev) => {
+                                  const cur = prev[item.id] || initDraft(item);
+                                  const next =
+                                    typeof update === "function" ? update(cur) : update;
+                                  return { ...prev, [item.id]: next };
+                                })
+                              }
+                              error={error}
+                              message={panelMessage}
+                              onSave={() => onSave(item)}
+                              onApprove={() => onApprove(item, true)}
+                              onReject={() => onReject(item)}
                             />
-                            {isPending ? (
-                              <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <Input
-                                  className="max-w-md"
-                                  placeholder="驳回原因（必填）"
-                                  value={rejectNotes[item.id] || ""}
-                                  onChange={(e) =>
-                                    setRejectNotes((prev) => ({
-                                      ...prev,
-                                      [item.id]: e.target.value,
-                                    }))
-                                  }
-                                />
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  disabled={actingId === item.id}
-                                  onClick={() => onReject(item.id)}
-                                >
-                                  <X className="mr-1 h-4 w-4" />
-                                  驳回
-                                </Button>
-                              </div>
-                            ) : item.reviewNote ? (
-                              <p className="mt-3 text-sm text-muted-foreground">
-                                审核备注：{item.reviewNote}
-                              </p>
-                            ) : null}
                           </TableCell>
                         </TableRow>
                       ) : null}
@@ -331,17 +583,15 @@ export default function SurveyReviewPage() {
                       <Button
                         variant="outline"
                         className="min-h-10 w-full"
-                        onClick={() =>
-                          setExpandedId((cur) => (cur === item.id ? null : item.id))
-                        }
+                        onClick={() => toggleExpand(item)}
                       >
-                        {open ? "收起" : "查看"}
+                        {open ? "收起" : isPending ? "查看 / 修改" : "查看"}
                       </Button>
                       {isPending ? (
                         <Button
                           className="min-h-10 w-full"
                           disabled={actingId === item.id}
-                          onClick={() => onApprove(item.id)}
+                          onClick={() => onApprove(item, open)}
                         >
                           {actingId === item.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -355,45 +605,30 @@ export default function SurveyReviewPage() {
                       ) : null}
                     </div>
                     {open ? (
-                      <div className="space-y-3 rounded-md bg-muted/30 p-3">
-                        <div className="border-b border-border/60 pb-2 text-sm">
-                          <span className="text-muted-foreground">客户：</span>
-                          <span className="font-medium">{item.hospitalName || "—"}</span>
-                        </div>
-                        <SurveyAnswersView
-                          answers={item.answers || {}}
-                          fields={item.schema?.fields}
-                          sections={item.schema?.sections}
-                          className="grid gap-2 text-sm"
+                      <div className="rounded-md bg-muted/30 p-3">
+                        <ReviewEditor
+                          item={item}
+                          isPending={isPending}
+                          acting={actingId === item.id}
+                          rejectNote={rejectNotes[item.id] || ""}
+                          onRejectNoteChange={(value) =>
+                            setRejectNotes((prev) => ({ ...prev, [item.id]: value }))
+                          }
+                          draft={drafts[item.id] || initDraft(item)}
+                          onDraftChange={(update) =>
+                            setDrafts((prev) => {
+                              const cur = prev[item.id] || initDraft(item);
+                              const next =
+                                typeof update === "function" ? update(cur) : update;
+                              return { ...prev, [item.id]: next };
+                            })
+                          }
+                          error={error}
+                          message={panelMessage}
+                          onSave={() => onSave(item)}
+                          onApprove={() => onApprove(item, true)}
+                          onReject={() => onReject(item)}
                         />
-                        {isPending ? (
-                          <>
-                            <Input
-                              className="w-full"
-                              placeholder="驳回原因（必填）"
-                              value={rejectNotes[item.id] || ""}
-                              onChange={(e) =>
-                                setRejectNotes((prev) => ({
-                                  ...prev,
-                                  [item.id]: e.target.value,
-                                }))
-                              }
-                            />
-                            <Button
-                              variant="destructive"
-                              className="min-h-10 w-full"
-                              disabled={actingId === item.id}
-                              onClick={() => onReject(item.id)}
-                            >
-                              <X className="mr-1 h-4 w-4" />
-                              驳回
-                            </Button>
-                          </>
-                        ) : item.reviewNote ? (
-                          <p className="text-sm text-muted-foreground">
-                            审核备注：{item.reviewNote}
-                          </p>
-                        ) : null}
                       </div>
                     ) : null}
                   </MobileCardItem>

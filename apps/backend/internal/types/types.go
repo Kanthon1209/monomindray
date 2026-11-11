@@ -474,7 +474,13 @@ type (
 		NextAssignmentId *int64               `json:"nextAssignmentId,omitempty"`
 	}
 	ReviewSurveySubmissionRequest struct {
-		Note string `json:"note,optional"`
+		Note       string         `json:"note,optional"`
+		Answers    map[string]any `json:"answers,optional"`
+		HospitalId *int64         `json:"hospitalId,optional"`
+	}
+	UpdateSurveySubmissionAnswersRequest struct {
+		Answers    map[string]any `json:"answers"`
+		HospitalId *int64         `json:"hospitalId,optional"`
 	}
 
 	// ---- assay projects (检测项目字典 / 层级树) ----

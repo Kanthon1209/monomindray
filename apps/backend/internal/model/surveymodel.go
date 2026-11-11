@@ -141,6 +141,11 @@ type SurveyModel interface {
 	ListSubmissions(ctx context.Context, f SurveySubmissionFilter) ([]SurveySubmission, int64, error)
 	FindSubmissionById(ctx context.Context, id int64) (*SurveySubmission, error)
 	ReviewSubmission(ctx context.Context, id, reviewerID int64, status, note string) error
+	// UpdateSubmittedAnswers overwrites answers on a still-pending (status=submitted)
+	// row. On the first admin edit, original_answers is snapshotted from the previous
+	// answers so the collector version is kept. Status / collected_by / submitted_at
+	// are left unchanged.
+	UpdateSubmittedAnswers(ctx context.Context, id int64, answers map[string]any) error
 	SetSubmissionHospital(ctx context.Context, submissionID, hospitalID int64) error
 	// CreateOpenAssignment inserts a hospital-unbound todo task + empty draft for multi-fill.
 	CreateOpenAssignment(ctx context.Context, campaignID, assigneeID int64) (int64, error)
@@ -965,6 +970,31 @@ func (m *surveyModel) ReviewSubmission(ctx context.Context, id, reviewerID int64
 	}
 
 	return tx.Commit(ctx)
+}
+
+// UpdateSubmittedAnswersSQL is the pending-row answers update (keep in sync with UpdateSubmittedAnswers).
+// original_answers = COALESCE(original_answers, answers) uses the OLD answers value
+// because PostgreSQL evaluates SET expressions against the pre-update row.
+const UpdateSubmittedAnswersSQL = `
+		UPDATE survey_submissions
+		SET answers = $2::jsonb,
+		    original_answers = COALESCE(original_answers, answers),
+		    updated_at = NOW()
+		WHERE id = $1 AND status = 'submitted'`
+
+func (m *surveyModel) UpdateSubmittedAnswers(ctx context.Context, id int64, answers map[string]any) error {
+	raw, err := json.Marshal(answers)
+	if err != nil {
+		return err
+	}
+	tag, err := m.conn.Exec(ctx, UpdateSubmittedAnswersSQL, id, raw)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (m *surveyModel) SetSubmissionHospital(ctx context.Context, submissionID, hospitalID int64) error {

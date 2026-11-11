@@ -15,3 +15,25 @@ func TestReviewSubmissionApprovedBranchPreservesRows(t *testing.T) {
 // ReviewSubmissionApprovedAssignmentSQL is the assignment update run on approve (keep in sync with ReviewSubmission).
 const ReviewSubmissionApprovedAssignmentSQL = `
 			UPDATE survey_assignments SET status='approved', updated_at=NOW() WHERE id=$1`
+
+func TestUpdateSubmittedAnswersSQLSnapshotsOriginalAndStaysPending(t *testing.T) {
+	sql := UpdateSubmittedAnswersSQL
+	if !strings.Contains(sql, "original_answers = COALESCE(original_answers, answers)") {
+		t.Fatalf("first admin edit must snapshot collector answers: %q", sql)
+	}
+	if !strings.Contains(sql, "status = 'submitted'") && !strings.Contains(sql, "status='submitted'") {
+		t.Fatalf("admin answer update must only touch pending submitted rows: %q", sql)
+	}
+	if strings.Contains(sql, "DELETE") {
+		t.Fatalf("admin answer update must not delete rows: %q", sql)
+	}
+	lower := strings.ToLower(sql)
+	for _, forbidden := range []string{"collected_by", "submitted_at", "status = 'approved'", "status='approved'"} {
+		if strings.Contains(lower, forbidden) && forbidden != "status = 'submitted'" {
+			// collected_by / submitted_at must not be rewritten (collector identity stays)
+		}
+	}
+	if strings.Contains(lower, "collected_by") || strings.Contains(lower, "submitted_at") {
+		t.Fatalf("must not change collector identity fields: %q", sql)
+	}
+}

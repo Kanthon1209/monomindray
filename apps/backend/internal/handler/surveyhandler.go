@@ -74,7 +74,6 @@ func UpdateSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
-
 func DeleteSurveyTemplateHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := parsePathID(r)
@@ -254,6 +253,27 @@ func ListSurveySubmissionsHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).ListSubmissions(&req)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}
+
+func UpdateSurveySubmissionAnswersHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := parsePathID(r)
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		var req types.UpdateSurveySubmissionAnswersRequest
+		if err := httpx.Parse(r, &req); err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+			return
+		}
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).UpdateSubmissionAnswers(id, &req)
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {

@@ -593,6 +593,30 @@ func (l *SurveyLogic) ListSubmissions(req *types.ListSurveySubmissionsRequest) (
 	return &types.ListSurveySubmissionsResponse{Total: total, Items: out}, nil
 }
 
+func (l *SurveyLogic) UpdateSubmissionAnswers(id int64, req *types.UpdateSurveySubmissionAnswersRequest) (*types.SurveySubmissionResponse, error) {
+	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
+		return nil, err
+	}
+	sub, a, err := l.loadPendingSubmission(id)
+	if err != nil {
+		return nil, err
+	}
+	answers, err := l.prepareAdminReviewAnswers(a, req.Answers)
+	if err != nil {
+		return nil, err
+	}
+	if err := l.persistAdminReviewAnswers(id, a, sub, answers, req.HospitalId); err != nil {
+		return nil, err
+	}
+	sub, err = l.svcCtx.SurveyModel.FindSubmissionById(l.ctx, id)
+	if err != nil || sub == nil {
+		return nil, ErrInternal
+	}
+	// Keep schema from the assignment so the review editor can re-render after save.
+	sub.Schema = a.Schema
+	return &types.SurveySubmissionResponse{Submission: toSurveySubmissionInfo(sub)}, nil
+}
+
 func (l *SurveyLogic) ApproveSubmission(id int64, req *types.ReviewSurveySubmissionRequest) (*types.SurveySubmissionResponse, error) {
 	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
 		return nil, err
@@ -602,20 +626,27 @@ func (l *SurveyLogic) ApproveSubmission(id int64, req *types.ReviewSurveySubmiss
 		return nil, ErrUnauthorized
 	}
 
-	sub, err := l.svcCtx.SurveyModel.FindSubmissionById(l.ctx, id)
+	sub, a, err := l.loadPendingSubmission(id)
 	if err != nil {
-		return nil, ErrInternal
-	}
-	if sub == nil {
-		return nil, NewCodeError(404, "答卷不存在")
-	}
-	if sub.Status != "submitted" {
-		return nil, NewCodeError(409, "仅能审核已提交的答卷")
+		return nil, err
 	}
 
-	a, err := l.svcCtx.SurveyModel.FindAssignmentById(l.ctx, sub.AssignmentId)
-	if err != nil || a == nil {
-		return nil, ErrInternal
+	// Optional answers: persist first, then publish/writeback against the updated map.
+	// Approving with a nil/empty answers body keeps today's no-edit path.
+	if req != nil && req.Answers != nil {
+		answers, err := l.prepareAdminReviewAnswers(a, req.Answers)
+		if err != nil {
+			return nil, err
+		}
+		if err := l.persistAdminReviewAnswers(id, a, sub, answers, req.HospitalId); err != nil {
+			return nil, err
+		}
+		sub.Answers = answers
+		if hid, err := l.resolveSubmissionHospitalID(a, req.HospitalId, answers); err != nil {
+			return nil, err
+		} else if hid != nil && *hid > 0 {
+			sub.HospitalId = hid
+		}
 	}
 
 	hospitalID, err := l.publishSubmissionToHospital(uid, a, sub)
@@ -973,7 +1004,7 @@ func (l *SurveyLogic) publishSubmissionToHospital(reviewerID int64, a *model.Sur
 
 func (l *SurveyLogic) dualWriteMasterData(hospitalID int64, archive map[string]any, attributes, metrics map[string]string) error {
 	md := l.svcCtx.MasterDataModel
-		if stage, ok := attributes["customer_stage"]; ok && !model.IsAllowedEnum(stage, model.CustomerStageEnum) {
+	if stage, ok := attributes["customer_stage"]; ok && !model.IsAllowedEnum(stage, model.CustomerStageEnum) {
 		return NewCodeError(400, "客户所在阶段不在可选范围内："+stage)
 	}
 	if err := md.UpsertAttributes(l.ctx, hospitalID, attributes); err != nil {
@@ -1114,7 +1145,7 @@ func (l *SurveyLogic) publishDevices(reviewerID, hospitalID int64, rows []map[st
 				Status: "active", InstalledAt: installedAt, EnabledAt: enabledAt,
 				UsageLocation: usageLoc, Remark: remark,
 				ServiceEvaluation: serviceEval,
-				ReagentBrand: reagentBrand, MonthlySampleVolume: monthlyVol,
+				ReagentBrand:      reagentBrand, MonthlySampleVolume: monthlyVol,
 				DeptHead: deptHead, ChannelCsa: channelCsa,
 				ItemCodes: itemCodes,
 				CreatedBy: ptrInt64(reviewerID), UpdatedBy: ptrInt64(reviewerID),
@@ -1517,19 +1548,19 @@ func validateRequiredAnswers(schemaJSON json.RawMessage, answers map[string]any)
 var defaultDeviceSubFieldRequired = []string{"model", "serialNo", "installedAt", "enabledAt"}
 
 var deviceSubFieldLabelMap = map[string]string{
-	"brand":                "所属公司",
-	"model":                "机型",
-	"serialNo":             "序列号",
-	"installedAt":          "安装日期",
-	"enabledAt":            "到期时间",
-	"usageLocation":        "使用位置",
-	"assayLineCode":        "所属检测线",
-	"itemCodes":            "检测细项覆盖",
-	"reagentBrand":         "试剂品牌",
-	"monthlySampleVolume":  "月样本量",
-	"deptHead":             "科室负责人",
-	"channelCsa":           "渠道CSA",
-	"serviceEvaluation":    "客户服务评价",
+	"brand":               "所属公司",
+	"model":               "机型",
+	"serialNo":            "序列号",
+	"installedAt":         "安装日期",
+	"enabledAt":           "到期时间",
+	"usageLocation":       "使用位置",
+	"assayLineCode":       "所属检测线",
+	"itemCodes":           "检测细项覆盖",
+	"reagentBrand":        "试剂品牌",
+	"monthlySampleVolume": "月样本量",
+	"deptHead":            "科室负责人",
+	"channelCsa":          "渠道CSA",
+	"serviceEvaluation":   "客户服务评价",
 }
 
 func deviceBlockRequiredKeys(configured []string, explicit bool) []string {
@@ -1587,7 +1618,6 @@ func devicePropFilled(row map[string]any, key string) bool {
 	}
 	return anyToString(v) != ""
 }
-
 
 func isHospitalNameSchemaField(f schemaFieldMeta) bool {
 	t := strings.TrimSpace(f.Target)
@@ -2056,6 +2086,71 @@ func marshalSchemaMap(schema map[string]any) ([]byte, error) {
 		return nil, nil
 	}
 	return json.Marshal(schema)
+}
+
+func (l *SurveyLogic) loadPendingSubmission(id int64) (*model.SurveySubmission, *model.SurveyAssignment, error) {
+	sub, err := l.svcCtx.SurveyModel.FindSubmissionById(l.ctx, id)
+	if err != nil {
+		return nil, nil, ErrInternal
+	}
+	if sub == nil {
+		return nil, nil, NewCodeError(404, "答卷不存在")
+	}
+	if sub.Status != "submitted" {
+		return nil, nil, NewCodeError(409, "仅能审核已提交的答卷")
+	}
+	a, err := l.svcCtx.SurveyModel.FindAssignmentById(l.ctx, sub.AssignmentId)
+	if err != nil || a == nil {
+		return nil, nil, ErrInternal
+	}
+	return sub, a, nil
+}
+
+// prepareAdminReviewAnswers normalizes admin edits. Locked campaign defaults are
+// NOT re-applied — the admin is correcting them. A bound assignment still keeps
+// its hospital identity (name forced from the assignment).
+func (l *SurveyLogic) prepareAdminReviewAnswers(a *model.SurveyAssignment, raw map[string]any) (map[string]any, error) {
+	answers := normalizeAnswers(raw)
+	answers = forceAssignedHospitalAnswers(a, answers)
+	answers = pruneAnswersToSchema(a.Schema, answers)
+	if err := validateRequiredAnswers(a.Schema, answers); err != nil {
+		return nil, err
+	}
+	openHospital := a.HospitalId == nil || *a.HospitalId <= 0
+	if openHospital {
+		ansName := extractHospitalNameFromAnswers(a.Schema, answers)
+		hid, err := l.resolveSubmissionHospitalID(a, nil, answers)
+		if err != nil {
+			return nil, err
+		}
+		if ansName == "" && (hid == nil || *hid <= 0) {
+			return nil, NewCodeError(400, "请填写医院名称")
+		}
+	}
+	return answers, nil
+}
+
+func (l *SurveyLogic) persistAdminReviewAnswers(id int64, a *model.SurveyAssignment, sub *model.SurveySubmission, answers map[string]any, reqHospitalID *int64) error {
+	if err := l.svcCtx.SurveyModel.UpdateSubmittedAnswers(l.ctx, id, answers); err != nil {
+		if err == pgx.ErrNoRows {
+			return NewCodeError(409, "仅能审核已提交的答卷")
+		}
+		l.Errorf("update submission answers: %v", err)
+		return ErrInternal
+	}
+	hid, err := l.resolveSubmissionHospitalID(a, reqHospitalID, answers)
+	if err != nil {
+		return err
+	}
+	if hid != nil && *hid > 0 {
+		if err := l.svcCtx.SurveyModel.SetSubmissionHospital(l.ctx, id, *hid); err != nil {
+			l.Errorf("link hospital after admin edit: %v", err)
+			return ErrInternal
+		}
+		sub.HospitalId = hid
+	}
+	sub.Answers = answers
+	return nil
 }
 
 func (l *SurveyLogic) resolveSubmissionHospitalID(a *model.SurveyAssignment, reqHospitalID *int64, answers map[string]any) (*int64, error) {

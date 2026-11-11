@@ -840,10 +840,28 @@ export async function listSurveySubmissions(params?: {
   };
 }
 
-export async function approveSurveySubmission(id: string, note?: string) {
+export async function updateSurveySubmissionAnswers(
+  id: string,
+  payload: { answers: Record<string, any>; hospitalId?: number },
+) {
+  const { data, error } = await apiFetch<{ submission: any }>(
+    `/surveys/submissions/${id}/answers`,
+    { method: "PUT", body: JSON.stringify(payload) },
+  );
+  if (error) return { error };
+  return { submission: mapSubmission(data!.submission) };
+}
+
+export async function approveSurveySubmission(
+  id: string,
+  opts?: { note?: string; answers?: Record<string, any>; hospitalId?: number },
+) {
+  const body: Record<string, any> = { note: opts?.note || "" };
+  if (opts?.answers) body.answers = opts.answers;
+  if (opts?.hospitalId != null) body.hospitalId = opts.hospitalId;
   const { data, error } = await apiFetch<{ submission: any }>(
     `/surveys/submissions/${id}/approve`,
-    { method: "POST", body: JSON.stringify({ note: note || "" }) },
+    { method: "POST", body: JSON.stringify(body) },
   );
   if (error) return { error };
   return { submission: mapSubmission(data!.submission) };
