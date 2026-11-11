@@ -58,6 +58,9 @@ func TestUnapproveSubmissionSQLReopensApprovedAndRestoresAnswers(t *testing.T) {
 	if !strings.Contains(sql, "reviewed_by = NULL") || !strings.Contains(sql, "reviewed_at = NULL") {
 		t.Fatalf("unapprove must clear reviewer fields: %q", sql)
 	}
+	if !strings.Contains(sql, "review_note = ''") || strings.Contains(sql, "review_note = NULL") {
+		t.Fatalf("unapprove must clear review_note to empty string, not NULL: %q", sql)
+	}
 	if strings.Contains(sql, "collected_by") || strings.Contains(sql, "submitted_at") {
 		t.Fatalf("unapprove must not change collector identity: %q", sql)
 	}

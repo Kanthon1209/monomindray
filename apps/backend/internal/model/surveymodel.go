@@ -1046,7 +1046,7 @@ const UnapproveSubmissionSQL = `
 		    approval_snapshot = NULL,
 		    reviewed_by = NULL,
 		    reviewed_at = NULL,
-		    review_note = NULL,
+		    review_note = '',
 		    hospital_id = $2,
 		    updated_at = NOW()
 		WHERE id = $1 AND status = 'approved'`
