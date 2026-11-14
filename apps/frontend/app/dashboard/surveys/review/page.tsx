@@ -14,7 +14,7 @@ import {
   updateSurveySubmissionAnswers,
   type SurveySubmission,
 } from "@/lib/business";
-import { formatTime } from "@/lib/users-admin";
+import { formatAlignedDateTime } from "@/lib/users-admin";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -556,9 +556,9 @@ export default function SurveyReviewPage() {
                             {item.assigneeEmail}
                           </div>
                         </TableCell>
-                        <TableCell>{formatTime(item.submittedAt)}</TableCell>
+                        <TableCell className="font-mono tabular-nums">{formatAlignedDateTime(item.submittedAt)}</TableCell>
                         {isPending ? null : (
-                          <TableCell>{formatTime(item.reviewedAt)}</TableCell>
+                          <TableCell className="font-mono tabular-nums">{formatAlignedDateTime(item.reviewedAt)}</TableCell>
                         )}
                         <TableCell>
                           {isPending ? (
@@ -680,8 +680,8 @@ export default function SurveyReviewPage() {
                       ) : (
                         <Badge variant="success">已通过</Badge>
                       )}
-                      <span className="text-xs text-muted-foreground">
-                        {formatTime(isPending ? item.submittedAt : item.reviewedAt || item.submittedAt)}
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                        {formatAlignedDateTime(isPending ? item.submittedAt : item.reviewedAt || item.submittedAt)}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
