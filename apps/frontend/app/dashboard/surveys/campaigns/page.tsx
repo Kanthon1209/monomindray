@@ -56,18 +56,30 @@ function formatCampaignCreatedAt(value?: string) {
   return formatShanghaiDateTime(value);
 }
 
-function campaignAssigneeLabel(c: SurveyCampaign) {
+function campaignCollectorNames(c: SurveyCampaign) {
   const fromSummary = (c.assigneeNames || []).map((n) => n.trim()).filter(Boolean);
-  if (fromSummary.length > 0) return fromSummary.join("、");
-  const fromAssign = [
+  if (fromSummary.length > 0) return fromSummary;
+  return [
     ...new Set(
       (c.assignments || [])
         .map((a) => (a.assigneeName || a.assigneeEmail || "").trim())
         .filter(Boolean),
     ),
   ];
-  return fromAssign.length > 0 ? fromAssign.join("、") : "—";
 }
+
+function campaignAssigneeLabel(c: SurveyCampaign) {
+  const names = campaignCollectorNames(c);
+  return names.length > 0 ? names.join("、") : "—";
+}
+
+const CAMPAIGN_STATUS_FILTERS = [
+  { value: "pending_review", label: "待审核" },
+  { value: "approved", label: "已通过" },
+  { value: "rejected", label: "已驳回" },
+  { value: "active", label: "进行中" },
+  { value: "closed", label: "已关闭" },
+] as const;
 
 function reviewProgressLabel(c: SurveyCampaign) {
   const approved = c.approvedCount ?? 0;
@@ -153,6 +165,8 @@ function SurveyCampaignsPage() {
   >("hospital");
   const [selectedHospitals, setSelectedHospitals] = useState<string[]>([]);
   const [hospitalKeyword, setHospitalKeyword] = useState("");
+  const [collectorFilter, setCollectorFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     if (user && user.role !== "admin") {
@@ -355,6 +369,29 @@ function SurveyCampaignsPage() {
     return (id: string, fallback?: string) => map.get(id) || fallback || id;
   }, [templates]);
 
+  const collectorFilterOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const c of items) {
+      for (const name of campaignCollectorNames(c)) names.add(name);
+    }
+    if (collectorFilter !== "all") names.add(collectorFilter);
+    return [...names].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }, [items, collectorFilter]);
+
+  const filtersActive = collectorFilter !== "all" || statusFilter !== "all";
+
+  const visibleItems = useMemo(() => {
+    return items.filter((c) => {
+      if (collectorFilter !== "all" && !campaignCollectorNames(c).includes(collectorFilter)) {
+        return false;
+      }
+      if (statusFilter !== "all" && campaignProgressStatus(c) !== statusFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [items, collectorFilter, statusFilter]);
+
   if (!user || user.role !== "admin") return null;
 
   return (
@@ -371,7 +408,7 @@ function SurveyCampaignsPage() {
                 <CardDescription>
                   {tab === "progress"
                     ? "按采集员查看收集进度。分到 / 未提交不含「自选医院」提交后自动生成的空闲任务；该项单独记为「可继续」。"
-                    : `支持「按医院锁定」或「发给采集员自选医院（可重复填）」。当前共 ${total} 次发放。`}
+                    : `支持「按医院锁定」或「发给采集员自选医院（可重复填）」。当前共 ${total} 次发放${filtersActive ? `，已筛选出 ${visibleItems.length} 次` : ""}。`}
                 </CardDescription>
               </div>
             </div>
@@ -624,6 +661,35 @@ function SurveyCampaignsPage() {
             </form>
           ) : null}
 
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+            <Select value={collectorFilter} onValueChange={setCollectorFilter}>
+              <SelectTrigger className="w-full sm:w-[160px]" aria-label="按采集者筛选">
+                <SelectValue placeholder="采集者" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部采集者</SelectItem>
+                {collectorFilterOptions.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-[140px]" aria-label="按状态筛选">
+                <SelectValue placeholder="状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                {CAMPAIGN_STATUS_FILTERS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <DesktopTable className="rounded-md">
             <Table>
               <TableHeader>
@@ -651,8 +717,14 @@ function SurveyCampaignsPage() {
                       暂无发放
                     </TableCell>
                   </TableRow>
+                ) : visibleItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      没有符合筛选条件的发放
+                    </TableCell>
+                  </TableRow>
                 ) : (
-                  items.map((c) => (
+                  visibleItems.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">
                         <div>{c.title}</div>
@@ -714,8 +786,12 @@ function SurveyCampaignsPage() {
               <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
                 暂无发放
               </li>
+            ) : visibleItems.length === 0 ? (
+              <li className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                没有符合筛选条件的发放
+              </li>
             ) : (
-              items.map((c) => (
+              visibleItems.map((c) => (
                 <MobileCardItem key={c.id}>
                   <div className="font-medium">{c.title}</div>
                   <div className="text-xs text-muted-foreground">
