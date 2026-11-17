@@ -9,10 +9,18 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronRight } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   listCollectorProgress,
+  type CollectorProgressCampaign,
   type CollectorProgressItem,
 } from "@/lib/business";
 
@@ -150,7 +158,7 @@ function TickHoverCard({
 }) {
   return createPortal(
     <div
-      className="pointer-events-none fixed z-50"
+      className="pointer-events-none fixed z-[80]"
       style={{ left: x, top: y, transform: "translate(-50%, calc(-100% - 8px))" }}
     >
       <div className="flex w-max flex-col gap-1 rounded-2xl border border-black/5 bg-white p-3 shadow-lg dark:border-white/10 dark:bg-[#2a2a2a]">
@@ -268,48 +276,126 @@ function Num({ value }: { value: number }) {
   return <span className="font-mono tabular-nums">{value}</span>;
 }
 
+function collectorCampaignProgressStatus(campaign: CollectorProgressCampaign) {
+  if (campaign.campaignStatus === "closed") return "closed";
+  if (campaign.campaignStatus === "draft") return "draft";
+  const pending = campaign.pendingReviewCount ?? 0;
+  const approved = campaign.approvedCount ?? 0;
+  const rejected = campaign.rejectedCount ?? 0;
+  if (pending > 0) return "pending_review";
+  const unfinished =
+    (campaign.assignedCount ?? 0) - approved - rejected - pending;
+  if (unfinished <= 0 && approved > 0) return "approved";
+  if (unfinished <= 0 && rejected > 0) return "rejected";
+  return "active";
+}
+
+function collectorCampaignStatusBadge(campaign: CollectorProgressCampaign) {
+  switch (collectorCampaignProgressStatus(campaign)) {
+    case "pending_review":
+      return <Badge variant="warning">待审核</Badge>;
+    case "approved":
+      return <Badge variant="success">已通过</Badge>;
+    case "rejected":
+      return <Badge variant="destructive">已驳回</Badge>;
+    case "closed":
+      return <Badge variant="outline">已关闭</Badge>;
+    case "draft":
+      return <Badge variant="secondary">草稿</Badge>;
+    case "active":
+      return <Badge variant="secondary">进行中</Badge>;
+    default:
+      return (
+        <Badge variant="secondary">{campaign.campaignStatus || "进行中"}</Badge>
+      );
+  }
+}
+
 const CollectorCard = memo(function CollectorCard({
   item,
-  open,
-  onToggle,
+  onOpen,
 }: {
   item: CollectorProgressItem;
-  open: boolean;
-  onToggle: (id: string) => void;
+  onOpen: (item: CollectorProgressItem) => void;
 }) {
   const ariaLabel = `${item.name} 收集进度`;
+  const openDialog = () => onOpen(item);
   return (
-    <div className={COLLECTOR_CARD_CLASS}>
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-2 text-left"
-        onClick={() => onToggle(item.userId)}
-        aria-expanded={open}
+    <div
+      className={`${COLLECTOR_CARD_CLASS} cursor-pointer`}
+      role="button"
+      tabIndex={0}
+      aria-haspopup="dialog"
+      aria-label={`${item.name} 的问卷状态`}
+      onClick={openDialog}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openDialog();
+        }
+      }}
+    >
+      <div className="min-w-0">
+        <div className="truncate text-[15px] leading-5 font-semibold">{item.name}</div>
+        {item.email && item.email !== item.name ? (
+          <div className="truncate text-xs text-muted-foreground">{item.email}</div>
+        ) : null}
+      </div>
+      <div
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
       >
-        <div className="min-w-0">
-          <div className="truncate text-[15px] leading-5 font-semibold">{item.name}</div>
-          {item.email && item.email !== item.name ? (
-            <div className="truncate text-xs text-muted-foreground">{item.email}</div>
-          ) : null}
-        </div>
-        {open ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-      </button>
-      <StatusTickBar counts={item} ariaLabel={ariaLabel} />
-      {open ? (
-        <div className="space-y-3 border-t border-black/[0.06] pt-3 dark:border-white/[0.08]">
-          {item.campaigns.map((campaign) => (
-            <div key={campaign.campaignId} className="space-y-1">
-              <div className="truncate text-sm font-medium">{campaign.campaignTitle}</div>
-              <StatusTickBar counts={campaign} ariaLabel={`${campaign.campaignTitle} 进度`} />
-            </div>
-          ))}
-        </div>
-      ) : null}
+        <StatusTickBar counts={item} ariaLabel={ariaLabel} />
+      </div>
     </div>
+  );
+});
+
+const CollectorCampaignDialog = memo(function CollectorCampaignDialog({
+  item,
+  onOpenChange,
+}: {
+  item: CollectorProgressItem | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={!!item} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={`gap-4 p-5 sm:max-w-xl ${PANEL_VARS}`}
+      >
+        <DialogHeader className="pr-8 text-left">
+          <DialogTitle>{item?.name ?? "采集员"}</DialogTitle>
+          <DialogDescription>
+            {item?.email && item.email !== item.name ? `${item.email} · ` : ""}
+            负责的问卷及状态
+          </DialogDescription>
+        </DialogHeader>
+        {item && item.campaigns.length > 0 ? (
+          <div className="space-y-3">
+            {item.campaigns.map((campaign) => (
+              <div
+                key={campaign.campaignId}
+                className="space-y-2 rounded-2xl bg-[var(--status-card)] p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 truncate text-sm font-medium">
+                    {campaign.campaignTitle}
+                  </div>
+                  <div className="shrink-0">{collectorCampaignStatusBadge(campaign)}</div>
+                </div>
+                <StatusTickBar
+                  counts={campaign}
+                  ariaLabel={`${campaign.campaignTitle} 进度`}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">暂无负责的问卷</p>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 });
 
@@ -317,40 +403,22 @@ export function CampaignProgressPanel({ refreshNonce }: { refreshNonce: number }
   const [items, setItems] = useState<CollectorProgressItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [selected, setSelected] = useState<CollectorProgressItem | null>(null);
 
   const load = useCallback(async () => {
     const res = await listCollectorProgress();
     if (res.error) {
       setError(res.error);
       setItems([]);
+      setSelected(null);
       setLoading(false);
       return;
     }
     setError(null);
     setItems(res.items);
-    setExpanded((prev) => {
-      const next: Record<string, boolean> = {};
-      let changed = false;
-      for (const it of res.items) {
-        const value = prev[it.userId] ?? false;
-        next[it.userId] = value;
-        if (prev[it.userId] !== value && prev[it.userId] !== undefined) {
-          changed = true;
-        }
-      }
-      const prevKeys = Object.keys(prev);
-      if (prevKeys.length !== res.items.length) changed = true;
-      else if (!changed) {
-        for (const it of res.items) {
-          if (!(it.userId in prev)) {
-            changed = true;
-            break;
-          }
-        }
-      }
-      return changed || prevKeys.length !== Object.keys(next).length ? next : prev;
-    });
+    setSelected((prev) =>
+      prev ? (res.items.find((it) => it.userId === prev.userId) ?? null) : null,
+    );
     setLoading(false);
   }, []);
 
@@ -382,8 +450,12 @@ export function CampaignProgressPanel({ refreshNonce }: { refreshNonce: number }
     );
   }, [items]);
 
-  const onToggle = useCallback((id: string) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  const onOpen = useCallback((item: CollectorProgressItem) => {
+    setSelected(item);
+  }, []);
+
+  const onDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) setSelected(null);
   }, []);
 
   return (
@@ -429,12 +501,13 @@ export function CampaignProgressPanel({ refreshNonce }: { refreshNonce: number }
             <CollectorCard
               key={it.userId}
               item={it}
-              open={!!expanded[it.userId]}
-              onToggle={onToggle}
+              onOpen={onOpen}
             />
           ))}
         </div>
       )}
+
+      <CollectorCampaignDialog item={selected} onOpenChange={onDialogOpenChange} />
     </div>
   );
 }
