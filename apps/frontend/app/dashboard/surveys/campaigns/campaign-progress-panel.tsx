@@ -1,26 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import {
   listCollectorProgress,
-  type CollectorProgressCampaign,
   type CollectorProgressItem,
 } from "@/lib/business";
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-mono tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function Num({ value }: { value: number }) {
-  return <span className="font-mono tabular-nums">{value}</span>;
-}
+const TICK_COUNT = 90;
+const TICK_HEIGHT_PX = 32;
+const TICK_RADIUS_PX = 48;
+const HOVER_SCALE_X = 1.2;
+const HOVER_SCALE_Y = 1.25;
+const HOVER_NEIGHBOR_X = 0.5;
+const HOVER_NEIGHBOR_Y = 1 / 3;
 
 type StatusCounts = {
   pendingReviewCount: number;
@@ -30,7 +32,6 @@ type StatusCounts = {
   openSlotCount: number;
 };
 
-/** Source hues from status.x.ai; fill is color-mix(card 80%, hue). */
 const STATUS_SEGMENTS = [
   { key: "pending", label: "待审", hue: "#F3C500", count: (n: StatusCounts) => n.pendingReviewCount },
   { key: "approved", label: "已通过", hue: "#45D155", count: (n: StatusCounts) => n.approvedCount },
@@ -39,28 +40,25 @@ const STATUS_SEGMENTS = [
   { key: "open", label: "可继续", hue: "#8B7AE0", count: (n: StatusCounts) => n.openSlotCount },
 ] as const;
 
-const TICK_WIDTH_PX = 8;
-const TICK_HEIGHT_PX = 32;
-const TICK_RADIUS_PX = 48;
+const mixedFill = (hue: string) =>
+  `color-mix(in srgb, var(--status-card) 80%, ${hue})`;
 
-const collectorCardClass =
-  "flex flex-col gap-2 overflow-hidden rounded-3xl p-4 bg-[#f9f8f7] dark:bg-[#1a1918] [--collector-card-bg:#f9f8f7] dark:[--collector-card-bg:#1a1918] [--collector-tick-border:#0000000f] dark:[--collector-tick-border:#ffffff1f]";
+/** Equivalent of hsl(foreground / 0.12); our --foreground is a hex token. */
+const EMPTY_FILL = "color-mix(in srgb, var(--foreground) 12%, transparent)";
 
-function mixedFill(hue: string) {
-  return `color-mix(in srgb, var(--collector-card-bg) 80%, ${hue})`;
-}
+const PANEL_VARS =
+  "[--status-card:#f9f8f7] dark:[--status-card:#1c1c1c] [--status-bar-hairline:#0000000f] dark:[--status-bar-hairline:#ffffff1f]";
 
-const emptyFill = "color-mix(in srgb, var(--foreground) 12%, transparent)";
+const COLLECTOR_CARD_CLASS =
+  "bg-[var(--status-card)] hover:bg-black/[0.03] dark:hover:bg-white/[0.06] flex min-w-0 flex-col gap-2 overflow-hidden rounded-3xl p-4";
 
-const tickStyle = (background: string): CSSProperties => ({
-  width: TICK_WIDTH_PX,
-  height: TICK_HEIGHT_PX,
-  boxSizing: "border-box",
-  borderRadius: TICK_RADIUS_PX,
-  flex: "none",
-  border: "0.5px solid var(--collector-tick-border)",
-  background,
-});
+type TickModel = {
+  i: number;
+  background: string;
+  label: string;
+  count: number;
+  empty: boolean;
+};
 
 /** Largest-remainder allocation; any non-zero status gets at least one tick when slots allow. */
 function allocateSlots(values: number[], slots: number): number[] {
@@ -80,8 +78,7 @@ function allocateSlots(values: number[], slots: number): number[] {
       });
     return out;
   }
-  const reserved = active.length;
-  const rest = slots - reserved;
+  const rest = slots - active.length;
   const raw = values.map((v) => (v / total) * rest);
   const extra = raw.map((r, i) => (values[i] > 0 ? Math.floor(r) : 0));
   let used = extra.reduce((sum, n) => sum + n, 0);
@@ -98,75 +95,166 @@ function allocateSlots(values: number[], slots: number): number[] {
   return values.map((v, i) => (v > 0 ? 1 + extra[i] : 0));
 }
 
-function StatusTickBar({ counts }: { counts: StatusCounts }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [slots, setSlots] = useState(0);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const compute = () => {
-      const width = el.clientWidth;
-      const gap = Number.parseFloat(getComputedStyle(el).columnGap || getComputedStyle(el).gap) || 1;
-      const stride = TICK_WIDTH_PX + gap;
-      setSlots(Math.max(1, Math.floor((width + gap) / stride)));
-    };
-    compute();
-    const ro = new ResizeObserver(compute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
+function buildTicks(counts: StatusCounts): TickModel[] {
   const values = STATUS_SEGMENTS.map((seg) => seg.count(counts));
-  const allocated = allocateSlots(values, slots);
   const total = values.reduce((sum, v) => sum + v, 0);
-  const label =
-    total > 0
-      ? STATUS_SEGMENTS.map((seg, i) => `${seg.label} ${values[i]}`).join(" · ")
-      : "暂无任务";
-
-  const ticks: { key: string; background: string }[] = [];
-  if (slots > 0 && total === 0) {
-    for (let i = 0; i < slots; i += 1) {
-      ticks.push({ key: `empty-${i}`, background: emptyFill });
-    }
-  } else {
-    allocated.forEach((n, i) => {
-      for (let j = 0; j < n; j += 1) {
-        ticks.push({
-          key: `${STATUS_SEGMENTS[i].key}-${j}`,
-          background: mixedFill(STATUS_SEGMENTS[i].hue),
-        });
-      }
-    });
+  if (total <= 0) {
+    return Array.from({ length: TICK_COUNT }, (_, i) => ({
+      i,
+      background: EMPTY_FILL,
+      label: "暂无任务",
+      count: 0,
+      empty: true,
+    }));
   }
+  const allocated = allocateSlots(values, TICK_COUNT);
+  const ticks: TickModel[] = [];
+  allocated.forEach((n, segIndex) => {
+    const seg = STATUS_SEGMENTS[segIndex];
+    const background = mixedFill(seg.hue);
+    for (let j = 0; j < n; j += 1) {
+      ticks.push({
+        i: ticks.length,
+        background,
+        label: seg.label,
+        count: values[segIndex],
+        empty: false,
+      });
+    }
+  });
+  return ticks;
+}
 
-  return (
+function hoverScale(distance: number | null): { sx: number; sy: number; z: number } {
+  if (distance === null || distance > 1) return { sx: 1, sy: 1, z: 0 };
+  if (distance === 0) return { sx: HOVER_SCALE_X, sy: HOVER_SCALE_Y, z: 2 };
+  return {
+    sx: 1 + (HOVER_SCALE_X - 1) * HOVER_NEIGHBOR_X,
+    sy: 1 + (HOVER_SCALE_Y - 1) * HOVER_NEIGHBOR_Y,
+    z: 1,
+  };
+}
+
+function TickHoverCard({
+  x,
+  y,
+  label,
+  count,
+  empty,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  count: number;
+  empty: boolean;
+}) {
+  return createPortal(
     <div
-      ref={ref}
-      className="relative flex h-10 w-full min-w-0 items-center gap-px py-1 sm:gap-0.5"
-      role="img"
-      aria-label={label}
-      title={label}
+      className="pointer-events-none fixed z-50"
+      style={{ left: x, top: y, transform: "translate(-50%, calc(-100% - 8px))" }}
     >
-      {ticks.map((tick) => (
-        <span key={tick.key} style={tickStyle(tick.background)} />
-      ))}
-    </div>
+      <div className="flex w-max flex-col gap-1 rounded-2xl border border-black/5 bg-white p-3 shadow-lg dark:border-white/10 dark:bg-[#2a2a2a]">
+        <div className="text-[15px] leading-5 font-semibold">{label}</div>
+        <div className="text-sm leading-5 font-medium text-muted-foreground">
+          {empty ? "暂无任务" : `${count} 份`}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
-function StatusLegend() {
+const StatusTickBar = memo(function StatusTickBar({
+  counts,
+  ariaLabel,
+}: {
+  counts: StatusCounts;
+  ariaLabel?: string;
+}) {
+  const ticks = useMemo(() => buildTicks(counts), [
+    counts.pendingReviewCount,
+    counts.approvedCount,
+    counts.rejectedCount,
+    counts.inProgressCount,
+    counts.openSlotCount,
+  ]);
+  const [hover, setHover] = useState<{
+    index: number;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const onEnter = useCallback((index: number, event: ReactPointerEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHover({ index, x: rect.left + rect.width / 2, y: rect.top });
+  }, []);
+
+  const onLeave = useCallback(() => setHover(null), []);
+
+  const hovered = hover ? ticks[hover.index] : undefined;
+
+  return (
+    <div className="w-full min-w-0" role="grid" aria-label={ariaLabel}>
+      <div className="relative flex h-10 w-full min-w-0 items-center gap-px py-1 sm:gap-0.5">
+        {ticks.map((tick) => {
+          const dist = hover ? Math.abs(tick.i - hover.index) : null;
+          const { sx, sy, z } = hoverScale(dist);
+          return (
+            <button
+              key={tick.i}
+              type="button"
+              className="relative flex h-full min-w-0 flex-1 cursor-default items-center p-0"
+              style={{ zIndex: z }}
+              aria-label={tick.empty ? tick.label : `${tick.label} ${tick.count} 份`}
+              onPointerEnter={(event) => onEnter(tick.i, event)}
+              onPointerLeave={onLeave}
+            >
+              <span
+                className="pointer-events-none block w-full origin-center transition-transform duration-150 ease-out motion-reduce:transition-none"
+                style={{
+                  boxSizing: "border-box",
+                  width: "100%",
+                  height: TICK_HEIGHT_PX,
+                  border: "0.5px solid var(--status-bar-hairline)",
+                  borderRadius: TICK_RADIUS_PX,
+                  flex: "none",
+                  background: tick.background,
+                  transform: `scale(${sx}, ${sy})`,
+                }}
+              />
+            </button>
+          );
+        })}
+      </div>
+      {hover && hovered
+        ? (
+          <TickHoverCard
+            x={hover.x}
+            y={hover.y}
+            label={hovered.label}
+            count={hovered.count}
+            empty={hovered.empty}
+          />
+        )
+        : null}
+    </div>
+  );
+});
+
+const StatusLegend = memo(function StatusLegend() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
       {STATUS_SEGMENTS.map((seg) => (
         <span key={seg.key} className="inline-flex items-center gap-1.5">
           <span
-            className="h-2.5 w-1.5 shrink-0"
+            className="shrink-0"
             style={{
-              ...tickStyle(mixedFill(seg.hue)),
               width: 6,
               height: 12,
+              boxSizing: "border-box",
+              borderRadius: TICK_RADIUS_PX,
+              border: "0.5px solid var(--status-bar-hairline)",
+              background: mixedFill(seg.hue),
             }}
           />
           {seg.label}
@@ -174,42 +262,34 @@ function StatusLegend() {
       ))}
     </div>
   );
+});
+
+function Num({ value }: { value: number }) {
+  return <span className="font-mono tabular-nums">{value}</span>;
 }
 
-function MetricGrid({ item }: { item: StatusCounts & { assignedCount: number; submittedCount: number } }) {
-  return (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4 lg:grid-cols-7">
-      <Metric label="分到" value={item.assignedCount} />
-      <Metric label="已提交" value={item.submittedCount} />
-      <Metric label="待审" value={item.pendingReviewCount} />
-      <Metric label="已通过" value={item.approvedCount} />
-      <Metric label="驳回" value={item.rejectedCount} />
-      <Metric label="未提交" value={item.inProgressCount} />
-      <Metric label="可继续" value={item.openSlotCount} />
-    </div>
-  );
-}
-
-function CollectorCard({
+const CollectorCard = memo(function CollectorCard({
   item,
   open,
   onToggle,
 }: {
   item: CollectorProgressItem;
   open: boolean;
-  onToggle: () => void;
+  onToggle: (id: string) => void;
 }) {
+  const ariaLabel = `${item.name} 收集进度`;
   return (
-    <div className={collectorCardClass}>
+    <div className={COLLECTOR_CARD_CLASS}>
       <button
         type="button"
         className="flex w-full items-center justify-between gap-2 text-left"
-        onClick={onToggle}
+        onClick={() => onToggle(item.userId)}
+        aria-expanded={open}
       >
         <div className="min-w-0">
-          <div className="font-medium">{item.name}</div>
+          <div className="truncate text-[15px] leading-5 font-semibold">{item.name}</div>
           {item.email && item.email !== item.name ? (
-            <div className="text-xs text-muted-foreground">{item.email}</div>
+            <div className="truncate text-xs text-muted-foreground">{item.email}</div>
           ) : null}
         </div>
         {open ? (
@@ -218,21 +298,20 @@ function CollectorCard({
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         )}
       </button>
-      <StatusTickBar counts={item} />
-      <MetricGrid item={item} />
+      <StatusTickBar counts={item} ariaLabel={ariaLabel} />
       {open ? (
         <div className="space-y-3 border-t border-black/[0.06] pt-3 dark:border-white/[0.08]">
-          {item.campaigns.map((c: CollectorProgressCampaign) => (
-            <div key={c.campaignId} className="space-y-1">
-              <div className="text-sm font-medium">{c.campaignTitle}</div>
-              <MetricGrid item={c} />
+          {item.campaigns.map((campaign) => (
+            <div key={campaign.campaignId} className="space-y-1">
+              <div className="truncate text-sm font-medium">{campaign.campaignTitle}</div>
+              <StatusTickBar counts={campaign} ariaLabel={`${campaign.campaignTitle} 进度`} />
             </div>
           ))}
         </div>
       ) : null}
     </div>
   );
-}
+});
 
 export function CampaignProgressPanel({ refreshNonce }: { refreshNonce: number }) {
   const [items, setItems] = useState<CollectorProgressItem[]>([]);
@@ -241,23 +320,38 @@ export function CampaignProgressPanel({ refreshNonce }: { refreshNonce: number }
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     const res = await listCollectorProgress();
-    setLoading(false);
     if (res.error) {
       setError(res.error);
       setItems([]);
+      setLoading(false);
       return;
     }
+    setError(null);
     setItems(res.items);
     setExpanded((prev) => {
       const next: Record<string, boolean> = {};
+      let changed = false;
       for (const it of res.items) {
-        next[it.userId] = prev[it.userId] ?? false;
+        const value = prev[it.userId] ?? false;
+        next[it.userId] = value;
+        if (prev[it.userId] !== value && prev[it.userId] !== undefined) {
+          changed = true;
+        }
       }
-      return next;
+      const prevKeys = Object.keys(prev);
+      if (prevKeys.length !== res.items.length) changed = true;
+      else if (!changed) {
+        for (const it of res.items) {
+          if (!(it.userId in prev)) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      return changed || prevKeys.length !== Object.keys(next).length ? next : prev;
     });
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -288,16 +382,16 @@ export function CampaignProgressPanel({ refreshNonce }: { refreshNonce: number }
     );
   }, [items]);
 
-  const toggle = (id: string) => {
+  const onToggle = useCallback((id: string) => {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  }, []);
 
   return (
-    <div className="[--collector-card-bg:#f9f8f7] dark:[--collector-card-bg:#1a1918] [--collector-tick-border:#0000000f] dark:[--collector-tick-border:#ffffff1f]">
+    <div className={`p-4 ${PANEL_VARS}`}>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {!loading && items.length > 0 ? (
-        <div className="space-y-2">
+        <div className="mb-4 space-y-2">
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
             <span>
               分到 <Num value={totals.assigned} />
@@ -330,13 +424,13 @@ export function CampaignProgressPanel({ refreshNonce }: { refreshNonce: number }
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">暂无采集任务</p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {items.map((it) => (
             <CollectorCard
               key={it.userId}
               item={it}
               open={!!expanded[it.userId]}
-              onToggle={() => toggle(it.userId)}
+              onToggle={onToggle}
             />
           ))}
         </div>
