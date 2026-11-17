@@ -129,6 +129,7 @@ type SurveyModel interface {
 	CreateCampaignWithAssignments(ctx context.Context, c *SurveyCampaign, specs []SurveyAssignmentSpec) (int64, error)
 	ListCampaigns(ctx context.Context, f SurveyCampaignFilter) ([]SurveyCampaign, int64, error)
 	FindCampaignById(ctx context.Context, id int64) (*SurveyCampaign, error)
+	ListCollectorProgress(ctx context.Context) ([]CollectorProgress, error)
 	ListAssignmentsByCampaign(ctx context.Context, campaignID int64) ([]SurveyAssignment, error)
 	CloseCampaign(ctx context.Context, id int64) error
 	DeleteCampaign(ctx context.Context, id int64) error
@@ -1174,4 +1175,182 @@ func (m *surveyModel) CreateOpenAssignment(ctx context.Context, campaignID, assi
 		return 0, err
 	}
 	return assignmentID, nil
+}
+
+// CollectorProgress is one collector's campaign-collection totals and per-campaign breakdown.
+type CollectorProgress struct {
+	UserId             int64
+	Name               string
+	Email              string
+	AssignedCount      int
+	SubmittedCount     int
+	PendingReviewCount int
+	ApprovedCount      int
+	RejectedCount      int
+	InProgressCount    int
+	OpenSlotCount      int
+	Campaigns          []CollectorProgressCampaign
+}
+
+type CollectorProgressCampaign struct {
+	CampaignId         int64
+	CampaignTitle      string
+	CampaignStatus     string
+	AssignedCount      int
+	SubmittedCount     int
+	PendingReviewCount int
+	ApprovedCount      int
+	RejectedCount      int
+	InProgressCount    int
+	OpenSlotCount      int
+}
+
+type collectorProgressRow struct {
+	UserID           int64
+	Name             string
+	Email            string
+	CampaignID       int64
+	CampaignTitle    string
+	CampaignStatus   string
+	AssignmentID     int64
+	AssignmentStatus string
+	HospitalID       *int64
+	SubStatus        string
+}
+
+func (m *surveyModel) ListCollectorProgress(ctx context.Context) ([]CollectorProgress, error) {
+	rows, err := m.conn.Query(ctx, `
+		SELECT u.id,
+		       COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), '未知'),
+		       COALESCE(u.email, ''),
+		       c.id, c.title, c.status,
+		       a.id, a.status, a.hospital_id,
+		       COALESCE(s.status, '')
+		FROM survey_assignments a
+		JOIN users u ON u.id = a.assignee_id
+		JOIN survey_campaigns c ON c.id = a.campaign_id
+		LEFT JOIN survey_submissions s ON s.assignment_id = a.id
+		ORDER BY COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), '未知'), c.id, a.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var raw []collectorProgressRow
+	for rows.Next() {
+		var r collectorProgressRow
+		if err := rows.Scan(
+			&r.UserID, &r.Name, &r.Email,
+			&r.CampaignID, &r.CampaignTitle, &r.CampaignStatus,
+			&r.AssignmentID, &r.AssignmentStatus, &r.HospitalID, &r.SubStatus,
+		); err != nil {
+			return nil, err
+		}
+		raw = append(raw, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	type key struct {
+		UserID     int64
+		CampaignID int64
+	}
+	type bucket struct {
+		meta collectorProgressRow
+		rows []collectorProgressRow
+	}
+	groups := map[key]*bucket{}
+	order := []key{}
+	for _, r := range raw {
+		k := key{UserID: r.UserID, CampaignID: r.CampaignID}
+		b, ok := groups[k]
+		if !ok {
+			b = &bucket{meta: r}
+			groups[k] = b
+			order = append(order, k)
+		}
+		b.rows = append(b.rows, r)
+	}
+
+	isFinished := func(subStatus string) bool {
+		return subStatus == "submitted" || subStatus == "approved" || subStatus == "rejected"
+	}
+	isOpenSlot := func(items []collectorProgressRow, idx int) bool {
+		r := items[idx]
+		if r.AssignmentStatus != "todo" {
+			return false
+		}
+		if r.HospitalID != nil {
+			return false
+		}
+		if r.SubStatus != "" && r.SubStatus != "draft" {
+			return false
+		}
+		for i, other := range items {
+			if i == idx {
+				continue
+			}
+			if isFinished(other.SubStatus) {
+				return true
+			}
+		}
+		return false
+	}
+
+	outByUser := map[int64]*CollectorProgress{}
+	userOrder := []int64{}
+	for _, k := range order {
+		b := groups[k]
+		camp := CollectorProgressCampaign{
+			CampaignId:      b.meta.CampaignID,
+			CampaignTitle:   b.meta.CampaignTitle,
+			CampaignStatus:  b.meta.CampaignStatus,
+		}
+		for i, r := range b.rows {
+			if isOpenSlot(b.rows, i) {
+				camp.OpenSlotCount++
+				continue
+			}
+			camp.AssignedCount++
+			switch r.SubStatus {
+			case "submitted":
+				camp.SubmittedCount++
+				camp.PendingReviewCount++
+			case "approved":
+				camp.SubmittedCount++
+				camp.ApprovedCount++
+			case "rejected":
+				camp.SubmittedCount++
+				camp.RejectedCount++
+			default:
+				camp.InProgressCount++
+			}
+		}
+		item, ok := outByUser[k.UserID]
+		if !ok {
+			item = &CollectorProgress{
+				UserId:    b.meta.UserID,
+				Name:      b.meta.Name,
+				Email:     b.meta.Email,
+				Campaigns: []CollectorProgressCampaign{},
+			}
+			outByUser[k.UserID] = item
+			userOrder = append(userOrder, k.UserID)
+		}
+		item.AssignedCount += camp.AssignedCount
+		item.SubmittedCount += camp.SubmittedCount
+		item.PendingReviewCount += camp.PendingReviewCount
+		item.ApprovedCount += camp.ApprovedCount
+		item.RejectedCount += camp.RejectedCount
+		item.InProgressCount += camp.InProgressCount
+		item.OpenSlotCount += camp.OpenSlotCount
+		item.Campaigns = append(item.Campaigns, camp)
+	}
+
+	out := make([]CollectorProgress, 0, len(userOrder))
+	for _, id := range userOrder {
+		out = append(out, *outByUser[id])
+	}
+	return out, nil
 }

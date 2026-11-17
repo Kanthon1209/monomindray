@@ -361,6 +361,37 @@ func (l *SurveyLogic) ListCampaigns(req *types.ListSurveyCampaignsRequest) (*typ
 	return &types.ListSurveyCampaignsResponse{Total: total, Items: out}, nil
 }
 
+func (l *SurveyLogic) ListCollectorProgress() (*types.ListCollectorProgressResponse, error) {
+	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
+		return nil, err
+	}
+	items, err := l.svcCtx.SurveyModel.ListCollectorProgress(l.ctx)
+	if err != nil {
+		return nil, ErrInternal
+	}
+	out := make([]types.CollectorProgressItem, 0, len(items))
+	for _, it := range items {
+		camps := make([]types.CollectorProgressCampaign, 0, len(it.Campaigns))
+		for _, c := range it.Campaigns {
+			camps = append(camps, types.CollectorProgressCampaign{
+				CampaignId: c.CampaignId, CampaignTitle: c.CampaignTitle, CampaignStatus: c.CampaignStatus,
+				AssignedCount: c.AssignedCount, SubmittedCount: c.SubmittedCount,
+				PendingReviewCount: c.PendingReviewCount, ApprovedCount: c.ApprovedCount,
+				RejectedCount: c.RejectedCount, InProgressCount: c.InProgressCount,
+				OpenSlotCount: c.OpenSlotCount,
+			})
+		}
+		out = append(out, types.CollectorProgressItem{
+			UserId: it.UserId, Name: it.Name, Email: it.Email,
+			AssignedCount: it.AssignedCount, SubmittedCount: it.SubmittedCount,
+			PendingReviewCount: it.PendingReviewCount, ApprovedCount: it.ApprovedCount,
+			RejectedCount: it.RejectedCount, InProgressCount: it.InProgressCount,
+			OpenSlotCount: it.OpenSlotCount, Campaigns: camps,
+		})
+	}
+	return &types.ListCollectorProgressResponse{Items: out}, nil
+}
+
 func (l *SurveyLogic) GetCampaign(id int64) (*types.SurveyCampaignResponse, error) {
 	if err := requireAdmin(authx.RoleFromCtx(l.ctx)); err != nil {
 		return nil, err

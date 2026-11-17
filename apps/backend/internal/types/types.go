@@ -409,6 +409,34 @@ type (
 	SurveyCampaignResponse struct {
 		Campaign SurveyCampaignInfo `json:"campaign"`
 	}
+	CollectorProgressCampaign struct {
+		CampaignId         int64  `json:"campaignId"`
+		CampaignTitle      string `json:"campaignTitle"`
+		CampaignStatus     string `json:"campaignStatus,omitempty"`
+		AssignedCount      int    `json:"assignedCount"`
+		SubmittedCount     int    `json:"submittedCount"`
+		PendingReviewCount int    `json:"pendingReviewCount"`
+		ApprovedCount      int    `json:"approvedCount"`
+		RejectedCount      int    `json:"rejectedCount"`
+		InProgressCount    int    `json:"inProgressCount"`
+		OpenSlotCount      int    `json:"openSlotCount"`
+	}
+	CollectorProgressItem struct {
+		UserId             int64                        `json:"userId"`
+		Name               string                       `json:"name"`
+		Email              string                       `json:"email,omitempty"`
+		AssignedCount      int                          `json:"assignedCount"`
+		SubmittedCount     int                          `json:"submittedCount"`
+		PendingReviewCount int                          `json:"pendingReviewCount"`
+		ApprovedCount      int                          `json:"approvedCount"`
+		RejectedCount      int                          `json:"rejectedCount"`
+		InProgressCount    int                          `json:"inProgressCount"`
+		OpenSlotCount      int                          `json:"openSlotCount"`
+		Campaigns          []CollectorProgressCampaign  `json:"campaigns"`
+	}
+	ListCollectorProgressResponse struct {
+		Items []CollectorProgressItem `json:"items"`
+	}
 
 	SurveyAssignmentInfo struct {
 		Id               int64           `json:"id"`

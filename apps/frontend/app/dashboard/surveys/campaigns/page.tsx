@@ -355,7 +355,7 @@ export default function SurveyCampaignsPage() {
                 <Send className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
-                <CardTitle>问卷发放</CardTitle>
+                <CardTitle>问卷发放 · 总览</CardTitle>
                 <CardDescription>
                   支持「按医院锁定」或「发给采集员自选医院（可重复填）」。当前共 {total} 次发放。
                 </CardDescription>

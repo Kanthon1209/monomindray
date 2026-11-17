@@ -450,6 +450,33 @@ export interface SurveyTemplate {
   status: string;
 }
 
+export interface CollectorProgressCampaign {
+  campaignId: string;
+  campaignTitle: string;
+  campaignStatus?: string;
+  assignedCount: number;
+  submittedCount: number;
+  pendingReviewCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  inProgressCount: number;
+  openSlotCount: number;
+}
+
+export interface CollectorProgressItem {
+  userId: string;
+  name: string;
+  email?: string;
+  assignedCount: number;
+  submittedCount: number;
+  pendingReviewCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  inProgressCount: number;
+  openSlotCount: number;
+  campaigns: CollectorProgressCampaign[];
+}
+
 export interface SurveyCampaign {
   id: string;
   templateId: string;
@@ -778,6 +805,42 @@ export async function deleteSurveyCampaign(id: string) {
   });
   if (error) return { error };
   return { ok: true as const };
+}
+
+export async function listCollectorProgress() {
+  const { data, error } = await apiFetch<{ items: any[] }>(
+    "/surveys/collector-progress",
+  );
+  if (error) return { error, items: [] as CollectorProgressItem[] };
+  return { items: (data?.items || []).map(mapCollectorProgress) };
+}
+
+function mapCollectorProgress(raw: any): CollectorProgressItem {
+  const mapCampaign = (c: any): CollectorProgressCampaign => ({
+    campaignId: String(c.campaignId),
+    campaignTitle: c.campaignTitle || "",
+    campaignStatus: c.campaignStatus || undefined,
+    assignedCount: c.assignedCount ?? 0,
+    submittedCount: c.submittedCount ?? 0,
+    pendingReviewCount: c.pendingReviewCount ?? 0,
+    approvedCount: c.approvedCount ?? 0,
+    rejectedCount: c.rejectedCount ?? 0,
+    inProgressCount: c.inProgressCount ?? 0,
+    openSlotCount: c.openSlotCount ?? 0,
+  });
+  return {
+    userId: String(raw.userId),
+    name: raw.name || raw.email || "未知",
+    email: raw.email || undefined,
+    assignedCount: raw.assignedCount ?? 0,
+    submittedCount: raw.submittedCount ?? 0,
+    pendingReviewCount: raw.pendingReviewCount ?? 0,
+    approvedCount: raw.approvedCount ?? 0,
+    rejectedCount: raw.rejectedCount ?? 0,
+    inProgressCount: raw.inProgressCount ?? 0,
+    openSlotCount: raw.openSlotCount ?? 0,
+    campaigns: Array.isArray(raw.campaigns) ? raw.campaigns.map(mapCampaign) : [],
+  };
 }
 
 export async function listMySurveyAssignments(params?: { status?: string }) {

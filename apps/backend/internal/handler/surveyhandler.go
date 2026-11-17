@@ -354,3 +354,14 @@ func UnapproveSurveySubmissionHandler(svcCtx *svc.ServiceContext) http.HandlerFu
 		}
 	}
 }
+
+func ListCollectorProgressHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := logic.NewSurveyLogic(r.Context(), svcCtx).ListCollectorProgress()
+		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
+		} else {
+			httpx.OkJsonCtx(r.Context(), w, resp)
+		}
+	}
+}

@@ -17,6 +17,8 @@ import {
   Send,
   Inbox,
   LayoutTemplate,
+  List,
+  BarChart3,
   Cpu,
   FlaskConical,
   FolderTree,
@@ -86,9 +88,14 @@ const userAdminSubItems = [
   { title: "用户列表", href: "/dashboard/users/manage", icon: UserRoundCog },
 ];
 
+const surveyCampaignSubItems = [
+  { title: "总览", href: "/dashboard/surveys/campaigns", icon: List, exact: true },
+  { title: "进度", href: "/dashboard/surveys/campaigns/progress", icon: BarChart3, exact: false },
+] as const;
+
 const surveyAdminSubItems = [
   { title: "模板管理", href: "/dashboard/surveys/templates", icon: LayoutTemplate },
-  { title: "问卷发放", href: "/dashboard/surveys/campaigns", icon: Send },
+  { title: "问卷发放", href: "/dashboard/surveys/campaigns", icon: Send, children: surveyCampaignSubItems },
   { title: "答卷审核", href: "/dashboard/surveys/review", icon: Inbox },
 ];
 
@@ -249,27 +256,68 @@ function AppSidebar() {
                           item.href === "/dashboard/surveys/review"
                             ? surveysTotal
                             : 0;
+                        const children = "children" in item ? item.children : undefined;
+                        const childActive = children
+                          ? children.some((child) =>
+                              child.exact
+                                ? pathname === child.href
+                                : pathname.startsWith(child.href),
+                            )
+                          : false;
                         return (
                           <SidebarMenuSubItem key={item.href}>
-                            <SidebarMenuSubButton
-                              asChild
-                              isActive={pathname.startsWith(item.href)}
-                            >
-                              <Link href={item.href}>
-                                <item.icon />
-                                <span className="min-w-0 flex-1 truncate">
-                                  {item.title}
-                                </span>
-                                {pendingCount > 0 ? (
-                                  <span
-                                    className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground"
-                                    aria-label={`待审 ${pendingCount} 份`}
-                                  >
-                                    {pendingCount}
+                            {children ? (
+                              <>
+                                <SidebarMenuSubButton
+                                  isActive={childActive}
+                                  className="pointer-events-none"
+                                >
+                                  <item.icon />
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {item.title}
                                   </span>
-                                ) : null}
-                              </Link>
-                            </SidebarMenuSubButton>
+                                </SidebarMenuSubButton>
+                                <SidebarMenuSub>
+                                  {children.map((child) => (
+                                    <SidebarMenuSubItem key={child.href}>
+                                      <SidebarMenuSubButton
+                                        asChild
+                                        isActive={
+                                          child.exact
+                                            ? pathname === child.href
+                                            : pathname.startsWith(child.href)
+                                        }
+                                      >
+                                        <Link href={child.href}>
+                                          <child.icon />
+                                          <span>{child.title}</span>
+                                        </Link>
+                                      </SidebarMenuSubButton>
+                                    </SidebarMenuSubItem>
+                                  ))}
+                                </SidebarMenuSub>
+                              </>
+                            ) : (
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={pathname.startsWith(item.href)}
+                              >
+                                <Link href={item.href}>
+                                  <item.icon />
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {item.title}
+                                  </span>
+                                  {pendingCount > 0 ? (
+                                    <span
+                                      className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground"
+                                      aria-label={`待审 ${pendingCount} 份`}
+                                    >
+                                      {pendingCount}
+                                    </span>
+                                  ) : null}
+                                </Link>
+                              </SidebarMenuSubButton>
+                            )}
                           </SidebarMenuSubItem>
                         );
                       })}
