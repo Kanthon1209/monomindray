@@ -424,7 +424,7 @@ export function CampaignProgressPanel({ refreshNonce }: { refreshNonce: number }
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">暂无采集任务</p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {items.map((it) => (
             <CollectorCard
               key={it.userId}
