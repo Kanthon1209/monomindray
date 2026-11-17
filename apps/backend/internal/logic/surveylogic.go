@@ -1050,13 +1050,41 @@ func toSurveyCampaignInfo(c *model.SurveyCampaign, assigns []types.SurveyAssignm
 		Title: c.Title, Description: c.Description, Status: c.Status,
 		Defaults: c.Defaults, LockedKeys: c.LockedKeys, DistributionMode: mode,
 		AssignmentCount: c.AssignmentCount, ApprovedCount: c.ApprovedCount,
-		PendingReviewCount: c.PendingReviewCount, CreatedAt: formatTime(c.CreatedAt),
+		PendingReviewCount: c.PendingReviewCount, RejectedCount: c.RejectedCount,
+		OpenSlotCount: c.OpenSlotCount, ProgressStatus: campaignProgressStatus(c),
+		CreatedAt: formatTime(c.CreatedAt),
 		AssigneeNames: c.AssigneeNames, Assignments: assigns,
 	}
 	if c.DueAt != nil {
 		info.DueAt = formatTime(*c.DueAt)
 	}
 	return info
+}
+
+// campaignProgressStatus derives the badge shown on the campaign list.
+// collector_open always spawns a leftover empty todo after each submit, so the
+// raw campaign.status stays "active" even when every real submission is done.
+func campaignProgressStatus(c *model.SurveyCampaign) string {
+	switch c.Status {
+	case "closed":
+		return "closed"
+	case "draft":
+		return "draft"
+	}
+	if c.PendingReviewCount > 0 {
+		return "pending_review"
+	}
+	unfinished := c.AssignmentCount - c.ApprovedCount - c.RejectedCount - c.PendingReviewCount - c.OpenSlotCount
+	if unfinished < 0 {
+		unfinished = 0
+	}
+	if unfinished == 0 && c.ApprovedCount > 0 {
+		return "approved"
+	}
+	if unfinished == 0 && c.RejectedCount > 0 {
+		return "rejected"
+	}
+	return "active"
 }
 
 func toSurveyAssignmentInfo(a *model.SurveyAssignment, answers map[string]any, note string) types.SurveyAssignmentInfo {

@@ -376,6 +376,9 @@ type (
 		AssignmentCount    int                     `json:"assignmentCount"`
 		ApprovedCount      int                     `json:"approvedCount"`
 		PendingReviewCount int                     `json:"pendingReviewCount"`
+		RejectedCount      int                     `json:"rejectedCount"`
+		OpenSlotCount      int                     `json:"openSlotCount"`
+		ProgressStatus     string                  `json:"progressStatus,omitempty"`
 		CreatedAt          string                  `json:"createdAt,omitempty"`
 		AssigneeNames      []string                `json:"assigneeNames,omitempty"`
 		Assignments        []SurveyAssignmentBrief `json:"assignments,omitempty"`

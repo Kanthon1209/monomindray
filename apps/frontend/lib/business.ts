@@ -468,6 +468,12 @@ export interface SurveyCampaign {
   approvedCount: number;
   /** Submissions waiting for review (status=submitted). */
   pendingReviewCount: number;
+  /** Submissions already rejected for this campaign. */
+  rejectedCount: number;
+  /** collector_open leftover empty todos spawned after a completed submit. */
+  openSlotCount: number;
+  /** Derived list badge: active | pending_review | approved | rejected | closed | draft */
+  progressStatus?: string;
   createdAt?: string;
   /** Distinct collector names for this campaign's assignments. */
   assigneeNames?: string[];
@@ -567,6 +573,9 @@ function mapCampaign(raw: any): SurveyCampaign {
     assignmentCount: raw.assignmentCount ?? 0,
     approvedCount: raw.approvedCount ?? 0,
     pendingReviewCount: raw.pendingReviewCount ?? 0,
+    rejectedCount: raw.rejectedCount ?? 0,
+    openSlotCount: raw.openSlotCount ?? 0,
+    progressStatus: raw.progressStatus || undefined,
     createdAt: raw.createdAt || undefined,
     assigneeNames: Array.isArray(raw.assigneeNames)
       ? raw.assigneeNames.filter((n: unknown) => typeof n === "string" && n.trim())

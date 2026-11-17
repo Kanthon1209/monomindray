@@ -50,19 +50,10 @@ import {
   MobileCardList,
   PageToolbar,
 } from "@/components/mobile-data-list";
-
-
+import { formatShanghaiDateTime } from "@/lib/datetime";
 
 function formatCampaignCreatedAt(value?: string) {
-  if (!value) return "-";
-  try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  } catch {
-    return value;
-  }
+  return formatShanghaiDateTime(value);
 }
 
 function campaignAssigneeLabel(c: SurveyCampaign) {
@@ -81,17 +72,42 @@ function campaignAssigneeLabel(c: SurveyCampaign) {
 function reviewProgressLabel(c: SurveyCampaign) {
   const approved = c.approvedCount ?? 0;
   const pending = c.pendingReviewCount ?? 0;
-  return `待审核 ${pending} · 已审核 ${approved}`;
+  const rejected = c.rejectedCount ?? 0;
+  return `待审核 ${pending} · 已通过 ${approved} · 驳回 ${rejected}`;
 }
 
-function campaignStatusBadge(status: string) {
-  switch (status) {
-    case "active":
-      return <Badge variant="success">进行中</Badge>;
+function campaignProgressStatus(c: SurveyCampaign) {
+  if (c.progressStatus) return c.progressStatus;
+  if (c.status === "closed") return "closed";
+  if (c.status === "draft") return "draft";
+  const pending = c.pendingReviewCount ?? 0;
+  const approved = c.approvedCount ?? 0;
+  const rejected = c.rejectedCount ?? 0;
+  const openSlots = c.openSlotCount ?? 0;
+  if (pending > 0) return "pending_review";
+  const unfinished =
+    (c.assignmentCount ?? 0) - approved - rejected - pending - openSlots;
+  if (unfinished <= 0 && approved > 0) return "approved";
+  if (unfinished <= 0 && rejected > 0) return "rejected";
+  return "active";
+}
+
+function campaignStatusBadge(c: SurveyCampaign) {
+  switch (campaignProgressStatus(c)) {
+    case "pending_review":
+      return <Badge variant="warning">待审核</Badge>;
+    case "approved":
+      return <Badge variant="success">已通过</Badge>;
+    case "rejected":
+      return <Badge variant="destructive">已驳回</Badge>;
     case "closed":
       return <Badge variant="outline">已关闭</Badge>;
+    case "draft":
+      return <Badge variant="secondary">草稿</Badge>;
+    case "active":
+      return <Badge variant="secondary">进行中</Badge>;
     default:
-      return <Badge variant="secondary">{status}</Badge>;
+      return <Badge variant="secondary">{c.status}</Badge>;
   }
 }
 
@@ -306,7 +322,7 @@ export default function SurveyCampaignsPage() {
     const pending = c.pendingReviewCount ?? 0;
     const tip =
       `确定删除发放「${c.title}」？\n` +
-      `将同时删除其全部任务与答卷（任务 ${c.assignmentCount} · 待审核 ${pending} · 已审核 ${approved}）。\n` +
+      `将同时删除其全部任务与答卷（任务 ${c.assignmentCount} · 待审核 ${pending} · 已通过 ${approved} · 驳回 ${c.rejectedCount ?? 0}）。\n` +
       `注意：已审核并写入客户/设备的数据不会回滚。`;
     const ok = await confirmDlg.ask({
       title: "删除发放",
@@ -611,7 +627,7 @@ export default function SurveyCampaignsPage() {
                       <TableCell className="max-w-[180px] text-sm">
                         {campaignAssigneeLabel(c)}
                       </TableCell>
-                      <TableCell>{campaignStatusBadge(c.status)}</TableCell>
+                      <TableCell>{campaignStatusBadge(c)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {reviewProgressLabel(c)}
                       </TableCell>
@@ -672,7 +688,7 @@ export default function SurveyCampaignsPage() {
                     <span className="text-sm text-muted-foreground">
                       {c.assignmentCount} 条任务
                     </span>
-                    {campaignStatusBadge(c.status)}
+                    {campaignStatusBadge(c)}
                   </div>
                   <div className="text-sm text-muted-foreground">
                     采集者：{campaignAssigneeLabel(c)}

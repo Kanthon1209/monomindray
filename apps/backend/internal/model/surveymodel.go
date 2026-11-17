@@ -42,6 +42,8 @@ type SurveyCampaign struct {
 	AssignmentCount    int
 	ApprovedCount      int
 	PendingReviewCount int
+	RejectedCount      int
+	OpenSlotCount      int
 	AssigneeNames      []string
 }
 
@@ -401,6 +403,24 @@ func (m *surveyModel) ListCampaigns(ctx context.Context, f SurveyCampaignFilter)
 		       (SELECT COUNT(*)::INT FROM survey_submissions s
 		          JOIN survey_assignments a ON a.id = s.assignment_id
 		          WHERE a.campaign_id = c.id AND s.status = 'submitted'),
+		       (SELECT COUNT(*)::INT FROM survey_submissions s
+		          JOIN survey_assignments a ON a.id = s.assignment_id
+		          WHERE a.campaign_id = c.id AND s.status = 'rejected'),
+		       (SELECT COUNT(*)::INT FROM survey_assignments a
+		          LEFT JOIN survey_submissions s ON s.assignment_id = a.id
+		          WHERE a.campaign_id = c.id
+		            AND a.status = 'todo'
+		            AND (s.id IS NULL OR s.status = 'draft')
+		            AND a.hospital_id IS NULL
+		            AND EXISTS (
+		              SELECT 1
+		              FROM survey_assignments a2
+		              JOIN survey_submissions s2 ON s2.assignment_id = a2.id
+		              WHERE a2.campaign_id = a.campaign_id
+		                AND a2.assignee_id = a.assignee_id
+		                AND a2.id <> a.id
+		                AND s2.status IN ('submitted', 'approved', 'rejected')
+		            )),
 		       COALESCE((
 		         SELECT array_agg(x ORDER BY x)
 		         FROM (
@@ -443,6 +463,24 @@ func (m *surveyModel) FindCampaignById(ctx context.Context, id int64) (*SurveyCa
 		       (SELECT COUNT(*)::INT FROM survey_submissions s
 		          JOIN survey_assignments a ON a.id = s.assignment_id
 		          WHERE a.campaign_id = c.id AND s.status = 'submitted'),
+		       (SELECT COUNT(*)::INT FROM survey_submissions s
+		          JOIN survey_assignments a ON a.id = s.assignment_id
+		          WHERE a.campaign_id = c.id AND s.status = 'rejected'),
+		       (SELECT COUNT(*)::INT FROM survey_assignments a
+		          LEFT JOIN survey_submissions s ON s.assignment_id = a.id
+		          WHERE a.campaign_id = c.id
+		            AND a.status = 'todo'
+		            AND (s.id IS NULL OR s.status = 'draft')
+		            AND a.hospital_id IS NULL
+		            AND EXISTS (
+		              SELECT 1
+		              FROM survey_assignments a2
+		              JOIN survey_submissions s2 ON s2.assignment_id = a2.id
+		              WHERE a2.campaign_id = a.campaign_id
+		                AND a2.assignee_id = a.assignee_id
+		                AND a2.id <> a.id
+		                AND s2.status IN ('submitted', 'approved', 'rejected')
+		            )),
 		       COALESCE((
 		         SELECT array_agg(x ORDER BY x)
 		         FROM (
@@ -465,7 +503,7 @@ func scanCampaign(row pgx.Row) (*SurveyCampaign, error) {
 		&c.Id, &c.TemplateId, &c.Title, &c.Description, &c.DueAt, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 		&defaultsRaw, &lockedRaw, &c.DistributionMode,
 		&c.TemplateCode, &c.TemplateTitle, &c.AssignmentCount,
-		&c.ApprovedCount, &c.PendingReviewCount, &c.AssigneeNames,
+		&c.ApprovedCount, &c.PendingReviewCount, &c.RejectedCount, &c.OpenSlotCount, &c.AssigneeNames,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
