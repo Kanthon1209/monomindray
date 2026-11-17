@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
@@ -48,8 +48,8 @@ import {
   DesktopTable,
   MobileCardItem,
   MobileCardList,
-  PageToolbar,
 } from "@/components/mobile-data-list";
+import { CampaignProgressPanel } from "./campaign-progress-panel";
 import { formatShanghaiDateTime } from "@/lib/datetime";
 
 function formatCampaignCreatedAt(value?: string) {
@@ -111,10 +111,22 @@ function campaignStatusBadge(c: SurveyCampaign) {
   }
 }
 
-export default function SurveyCampaignsPage() {
+function SurveyCampaignsPage() {
   const confirmDlg = useConfirmDialog();
   const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab") === "progress" ? "progress" : "overview";
+  const [progressNonce, setProgressNonce] = useState(0);
+
+  const setTab = (next: "overview" | "progress") => {
+    const url =
+      next === "progress"
+        ? "/dashboard/surveys/campaigns?tab=progress"
+        : "/dashboard/surveys/campaigns";
+    router.replace(url, { scroll: false });
+  };
+
   const [items, setItems] = useState<SurveyCampaign[]>([]);
   const [templates, setTemplates] = useState<SurveyTemplate[]>([]);
   const [collectors, setCollectors] = useState<User[]>([]);
@@ -355,42 +367,72 @@ export default function SurveyCampaignsPage() {
                 <Send className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
-                <CardTitle>问卷发放 · 总览</CardTitle>
+                <CardTitle>问卷发放</CardTitle>
                 <CardDescription>
-                  支持「按医院锁定」或「发给采集员自选医院（可重复填）」。当前共 {total} 次发放。
+                  {tab === "progress"
+                    ? "按采集员查看收集进度。分到 / 未提交不含「自选医院」提交后自动生成的空闲任务；该项单独记为「可继续」。"
+                    : `支持「按医院锁定」或「发给采集员自选医院（可重复填）」。当前共 ${total} 次发放。`}
                 </CardDescription>
               </div>
             </div>
-            <PageToolbar>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex rounded-lg border p-0.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={tab === "overview" ? "secondary" : "ghost"}
+                  className="h-8"
+                  onClick={() => setTab("overview")}
+                >
+                  总览
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={tab === "progress" ? "secondary" : "ghost"}
+                  className="h-8"
+                  onClick={() => setTab("progress")}
+                >
+                  进度
+                </Button>
+              </div>
               <Button
                 variant="outline"
                 size="icon"
-                className="h-10 w-10 shrink-0"
-                onClick={load}
-                disabled={loading}
+                onClick={() => {
+                  if (tab === "progress") setProgressNonce((n) => n + 1);
+                  else void load();
+                }}
+                disabled={tab === "overview" && loading}
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-              <Button
-                className="min-h-10 w-full sm:w-auto"
-                onClick={() => setShowForm((v) => !v)}
-              >
-                {showForm ? (
-                  <>
-                    <X className="mr-1 h-4 w-4" />
-                    取消
-                  </>
-                ) : (
-                  <>
-                    <Plus className="mr-1 h-4 w-4" />
-                    新建发放
-                  </>
-                )}
-              </Button>
-            </PageToolbar>
+              {tab === "overview" ? (
+                <Button
+                  className="min-h-10 w-full sm:w-auto"
+                  onClick={() => setShowForm((v) => !v)}
+                >
+                  {showForm ? (
+                    <>
+                      <X className="mr-1 h-4 w-4" />
+                      取消
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="mr-1 h-4 w-4" />
+                      新建发放
+                    </>
+                  )}
+                </Button>
+              ) : null}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 px-0">
+          {tab === "progress" ? (
+            <CampaignProgressPanel refreshNonce={progressNonce} />
+          ) : (
+            <>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           {showForm ? (
@@ -724,9 +766,19 @@ export default function SurveyCampaignsPage() {
               ))
             )}
           </MobileCardList>
+            </>
+          )}
         </CardContent>
       </Card>
       {confirmDlg.dialog}
     </div>
+  );
+}
+
+export default function SurveyCampaignsPageEntry() {
+  return (
+    <Suspense fallback={null}>
+      <SurveyCampaignsPage />
+    </Suspense>
   );
 }
