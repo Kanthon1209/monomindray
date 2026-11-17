@@ -376,6 +376,24 @@ function SurveyCampaignsPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {tab === "overview" ? (
+                <Button
+                  className="min-h-10 shrink-0"
+                  onClick={() => setShowForm((v) => !v)}
+                >
+                  {showForm ? (
+                    <>
+                      <X className="mr-1 h-4 w-4" />
+                      取消
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="mr-1 h-4 w-4" />
+                      新建发放
+                    </>
+                  )}
+                </Button>
+              ) : null}
               <div className="flex rounded-lg border p-0.5">
                 <Button
                   type="button"
@@ -407,24 +425,6 @@ function SurveyCampaignsPage() {
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-              {tab === "overview" ? (
-                <Button
-                  className="min-h-10 w-full sm:w-auto"
-                  onClick={() => setShowForm((v) => !v)}
-                >
-                  {showForm ? (
-                    <>
-                      <X className="mr-1 h-4 w-4" />
-                      取消
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="mr-1 h-4 w-4" />
-                      新建发放
-                    </>
-                  )}
-                </Button>
-              ) : null}
             </div>
           </div>
         </CardHeader>
