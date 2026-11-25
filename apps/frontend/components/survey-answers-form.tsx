@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 
 import type { HospitalSearchOption, SurveyField } from "@/lib/business";
+import { fetchSurveyHospitalPrefill } from "@/lib/business";
+import { mergeHospitalPrefillAnswers } from "@/lib/survey-hospital-prefill";
 import {
   EqaParticipationField,
   normalizeEqaBlockAnswer,
@@ -309,6 +311,8 @@ export type SurveyAnswersFormProps = {
   allowLockedEdit?: boolean;
   hospitalBound?: boolean;
   hospitalName?: string;
+  assignmentId?: string;
+  linkedHospitalId?: number;
   onLinkedHospitalIdChange?: (id: number | undefined) => void;
   className?: string;
 };
@@ -323,12 +327,18 @@ export function SurveyAnswersForm({
   allowLockedEdit = false,
   hospitalBound = false,
   hospitalName,
+  assignmentId,
+  linkedHospitalId,
   onLinkedHospitalIdChange,
   className,
 }: SurveyAnswersFormProps) {
   const confirmDlg = useConfirmDialog();
   const [pca, setPca] = useState<ChinaPcaData | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [prefillHint, setPrefillHint] = useState<string | null>(null);
+  const lastPrefillRef = useRef<Record<string, any> | null>(null);
+  const prefillSeqRef = useRef(0);
+  const boundPrefillDoneRef = useRef<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -449,8 +459,7 @@ export function SurveyAnswersForm({
     });
   };
 
-  const applyHospitalPick = (hospital: HospitalSearchOption) => {
-    if (hospitalBound) return;
+  const applySlimHospitalPick = (hospital: HospitalSearchOption) => {
     onLinkedHospitalIdChange?.(Number(hospital.id));
     onAnswersChange((prev) => {
       const next = { ...prev };
@@ -491,6 +500,77 @@ export function SurveyAnswersForm({
       return next;
     });
   };
+
+  const requestHospitalPrefill = useCallback(
+    async (
+      params: { hospitalId?: number; name?: string; province?: string; city?: string },
+      mode: "pick" | "lookup",
+    ) => {
+      if (!assignmentId) return { ok: false as const };
+      const seq = ++prefillSeqRef.current;
+      const res = await fetchSurveyHospitalPrefill(assignmentId, params);
+      if (seq !== prefillSeqRef.current) return { ok: false as const, stale: true };
+      if (res.error) return { ok: false as const, error: res.error };
+      if (res.ambiguous) {
+        setPrefillHint("有多家同名医院，请从列表中选择（含省/市）");
+        return { ok: false as const, ambiguous: true };
+      }
+      if (!res.matched) {
+        setPrefillHint(null);
+        return { ok: false as const };
+      }
+      setPrefillHint(null);
+      onAnswersChange((prev) => {
+        const merged = mergeHospitalPrefillAnswers({
+          current: prev,
+          incoming: res.answers,
+          previousPrefill: lastPrefillRef.current,
+          mode,
+          fields,
+        });
+        lastPrefillRef.current = res.answers;
+        return merged;
+      });
+      if (res.hospitalId) onLinkedHospitalIdChange?.(res.hospitalId);
+      return { ok: true as const, hospitalId: res.hospitalId };
+    },
+    [assignmentId, fields, onAnswersChange, onLinkedHospitalIdChange],
+  );
+
+  const applyHospitalPick = (hospital: HospitalSearchOption) => {
+    if (hospitalBound) return;
+    setPrefillHint(null);
+    if (!assignmentId) {
+      applySlimHospitalPick(hospital);
+      return;
+    }
+    void (async () => {
+      const result = await requestHospitalPrefill({ hospitalId: Number(hospital.id) }, "pick");
+      if (!result.ok && !("stale" in result && result.stale) && !("ambiguous" in result && result.ambiguous)) {
+        applySlimHospitalPick(hospital);
+      }
+    })();
+  };
+
+  const lookupHospitalByTypedName = (typedName: string) => {
+    if (hospitalBound || !assignmentId || disabled) return;
+    const name = typedName.trim();
+    if (!name) {
+      setPrefillHint(null);
+      return;
+    }
+    const province = provinceFieldKey ? String(answers[provinceFieldKey] || "").trim() : "";
+    const city = cityFieldKey ? String(answers[cityFieldKey] || "").trim() : "";
+    void requestHospitalPrefill({ name, province: province || undefined, city: city || undefined }, "lookup");
+  };
+
+  useEffect(() => {
+    if (!assignmentId || !hospitalBound || !linkedHospitalId || disabled) return;
+    const key = `${assignmentId}:${linkedHospitalId}`;
+    if (boundPrefillDoneRef.current === key) return;
+    boundPrefillDoneRef.current = key;
+    void requestHospitalPrefill({ hospitalId: linkedHospitalId }, "lookup");
+  }, [assignmentId, hospitalBound, linkedHospitalId, disabled, requestHospitalPrefill]);
 
   const setAnswers = onAnswersChange;
 
@@ -647,6 +727,7 @@ export function SurveyAnswersForm({
         );
       }
       return (
+        <>
         <HospitalNameTypeahead
           value={value == null ? "" : String(value)}
           disabled={disabled}
@@ -656,10 +737,16 @@ export function SurveyAnswersForm({
             if (!hospitalBound) {
               onLinkedHospitalIdChange?.(undefined);
             }
+            setPrefillHint(null);
             onChange(v);
           }}
           onSelectHospital={hospitalBound ? undefined : applyHospitalPick}
+          onBlur={hospitalBound ? undefined : lookupHospitalByTypedName}
         />
+        {prefillHint && !hospitalBound ? (
+          <p className="mt-1 text-xs text-muted-foreground">{prefillHint}</p>
+        ) : null}
+      </>
       );
     }
     const levelPresets = hospitalLevelPresets(field);

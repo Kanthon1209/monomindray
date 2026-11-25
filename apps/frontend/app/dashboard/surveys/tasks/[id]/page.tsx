@@ -255,6 +255,8 @@ export default function SurveyTaskFillPage() {
             lockedKeys={lockedKeys}
             hospitalBound={hospitalBound}
             hospitalName={assignment.hospitalName}
+            assignmentId={assignment.id}
+            linkedHospitalId={linkedHospitalId}
             onLinkedHospitalIdChange={setLinkedHospitalId}
           />
 

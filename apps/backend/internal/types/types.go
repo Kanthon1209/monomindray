@@ -195,6 +195,21 @@ type (
 	SearchHospitalsResponse struct {
 		Items []HospitalSearchOption `json:"items"`
 	}
+	// Collector-safe survey prefill for an existing hospital, filtered to the assignment schema.
+	SurveyHospitalPrefillRequest struct {
+		Id         int64  `path:"id"`
+		HospitalId int64  `form:"hospitalId,optional"`
+		Name       string `form:"name,optional"`
+		Province   string `form:"province,optional"`
+		City       string `form:"city,optional"`
+	}
+	SurveyHospitalPrefillResponse struct {
+		Matched    bool                   `json:"matched"`
+		Ambiguous  bool                   `json:"ambiguous,omitempty"`
+		HospitalId int64                  `json:"hospitalId,omitempty"`
+		Matches    []HospitalSearchOption `json:"matches,omitempty"`
+		Answers    map[string]interface{} `json:"answers,omitempty"`
+	}
 	HospitalResponse struct {
 		Hospital HospitalInfo `json:"hospital"`
 	}

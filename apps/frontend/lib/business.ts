@@ -1257,6 +1257,59 @@ export async function searchHospitalsForSurvey(keyword: string, limit = 40) {
   };
 }
 
+export type SurveyHospitalPrefillResult = {
+  matched: boolean;
+  ambiguous?: boolean;
+  hospitalId?: number;
+  matches: HospitalSearchOption[];
+  answers: Record<string, any>;
+  error?: string;
+};
+
+/** Collector-safe, schema-filtered prefill for an existing hospital on a survey assignment. */
+export async function fetchSurveyHospitalPrefill(
+  assignmentId: string,
+  params: {
+    hospitalId?: number;
+    name?: string;
+    province?: string;
+    city?: string;
+  },
+): Promise<SurveyHospitalPrefillResult> {
+  const { data, error } = await apiFetch<{
+    matched?: boolean;
+    ambiguous?: boolean;
+    hospitalId?: number;
+    matches?: any[];
+    answers?: Record<string, any>;
+  }>(
+    `/me/survey-assignments/${assignmentId}/hospital-prefill${qs({
+      hospitalId: params.hospitalId,
+      name: params.name,
+      province: params.province,
+      city: params.city,
+    })}`,
+  );
+  if (error) {
+    return { error, matched: false, matches: [], answers: {} };
+  }
+  return {
+    matched: !!data?.matched,
+    ambiguous: !!data?.ambiguous,
+    hospitalId: data?.hospitalId ? Number(data.hospitalId) : undefined,
+    matches: (data?.matches || []).map((raw) => ({
+      id: String(raw.id),
+      name: String(raw.name || ""),
+      province: raw.province || undefined,
+      city: raw.city || undefined,
+      district: raw.district || undefined,
+      level: raw.level || undefined,
+      type: raw.type || undefined,
+    })),
+    answers: data?.answers && typeof data.answers === "object" ? data.answers : {},
+  };
+}
+
 
 /** Device brand typeahead: DISTINCT devices.brand + seed commons (JWT shared). */
 export async function fetchDeviceBrandSuggestions(q = "", limit = 40) {
