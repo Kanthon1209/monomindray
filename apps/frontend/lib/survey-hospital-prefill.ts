@@ -121,7 +121,6 @@ const HOSPITAL_MAPPED_KEY_ALIASES = new Set([
   "annualrevenue",
   "hospitalannualrevenue",
 ]);
-}
 
 /** Merge a hospital prefill into current answers without clobbering unrelated user input. */
 export function mergeHospitalPrefillAnswers(opts: {
