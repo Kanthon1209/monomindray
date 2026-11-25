@@ -53,7 +53,11 @@ func (l *SurveyLogic) HospitalPrefill(req *types.SurveyHospitalPrefillRequest) (
 		return nil, NewCodeError(404, "医院不存在")
 	}
 
-	answers := mapHospitalToSchemaAnswers(a.Schema, h)
+	answers, err := l.schemaAnswersFromHospital(a.Schema, h)
+	if err != nil {
+		l.Errorf("hospital prefill map answers: %v", err)
+		return nil, ErrInternal
+	}
 	if err := l.attachPrefillSpecialBlocks(a.Schema, answers, hid); err != nil {
 		l.Errorf("hospital prefill blocks: %v", err)
 		return nil, ErrInternal
@@ -289,4 +293,19 @@ func (l *SurveyLogic) eqaTrueCodes(participationID int64) ([]string, error) {
 		}
 	}
 	return codes, nil
+}
+
+func (l *SurveyLogic) schemaAnswersFromHospital(schema []byte, h *model.Hospital) (map[string]any, error) {
+	if h == nil {
+		return map[string]any{}, nil
+	}
+	attrs, err := l.svcCtx.MasterDataModel.ListAttributes(l.ctx, h.Id)
+	if err != nil {
+		return nil, err
+	}
+	all, err := l.svcCtx.MasterDataModel.ListAllMetrics(l.ctx, h.Id)
+	if err != nil {
+		return nil, err
+	}
+	return mapHospitalToSchemaAnswers(schema, h, attrs, preferredMetrics(all, model.CurrentMetricYear())), nil
 }

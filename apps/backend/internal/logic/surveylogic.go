@@ -321,10 +321,15 @@ func (l *SurveyLogic) CreateCampaign(req *types.CreateSurveyCampaignRequest) (*t
 			if h == nil {
 				return nil, NewCodeError(400, fmt.Sprintf("医院不存在: %d", hid))
 			}
+			prefill, err := l.schemaAnswersFromHospital(tpl.Schema, h)
+			if err != nil {
+				l.Errorf("campaign prefill hospital %d: %v", hid, err)
+				return nil, ErrInternal
+			}
 			specs = append(specs, model.SurveyAssignmentSpec{
 				AssigneeID: assigneeID,
 				HospitalID: hid,
-				Prefill:    mapHospitalToSchemaAnswers(tpl.Schema, h),
+				Prefill:    prefill,
 			})
 		}
 	}
@@ -1083,7 +1088,7 @@ func toSurveyCampaignInfo(c *model.SurveyCampaign, assigns []types.SurveyAssignm
 		AssignmentCount: c.AssignmentCount, ApprovedCount: c.ApprovedCount,
 		PendingReviewCount: c.PendingReviewCount, RejectedCount: c.RejectedCount,
 		OpenSlotCount: c.OpenSlotCount, ProgressStatus: campaignProgressStatus(c),
-		CreatedAt: formatTime(c.CreatedAt),
+		CreatedAt:     formatTime(c.CreatedAt),
 		AssigneeNames: c.AssigneeNames, Assignments: assigns,
 	}
 	if c.DueAt != nil {
@@ -1550,8 +1555,11 @@ func forceAssignedHospitalAnswers(a *model.SurveyAssignment, answers map[string]
 	return out
 }
 
-// mapHospitalToSchemaAnswers maps hospital columns onto template field keys by target/key.
-func mapHospitalToSchemaAnswers(schemaJSON json.RawMessage, h *model.Hospital) map[string]any {
+// mapHospitalToSchemaAnswers maps hospital columns, archive keys, attributes, and
+// metrics onto template field keys. attrs/metrics may be nil when none are stored.
+// Empty values are omitted; hospital grade (hospital.level) is never copied into
+// customer level (hospital.attributes.customer_level).
+func mapHospitalToSchemaAnswers(schemaJSON json.RawMessage, h *model.Hospital, attrs map[string]string, metrics map[string]string) map[string]any {
 	if h == nil {
 		return map[string]any{}
 	}
@@ -1562,32 +1570,11 @@ func mapHospitalToSchemaAnswers(schemaJSON json.RawMessage, h *model.Hospital) m
 		if key == "" || strings.EqualFold(strings.TrimSpace(f.Type), "repeat") {
 			continue
 		}
-		target := strings.TrimSpace(f.Target)
-		var val any
-		switch {
-		case target == "hospital.name" || target == "hospital.archive.customerName":
-			val = h.Name
-		case strings.HasPrefix(target, "hospital.archive."):
-			ak := strings.TrimPrefix(target, "hospital.archive.")
-			if v, ok := raw[ak]; ok {
-				val = v
-			}
-		case strings.HasPrefix(target, "hospital.attributes."), strings.HasPrefix(target, "hospital.metrics."):
-			// attributes/metrics are not part of hospitalPrefillAnswers
-		case strings.HasPrefix(target, "hospital."):
-			col := strings.TrimPrefix(target, "hospital.")
-			if v, ok := raw[col]; ok {
-				val = v
-			}
-		default:
-			if v, ok := raw[key]; ok {
-				val = v
-			}
-		}
+		val := lookupHospitalPrefillValue(f, h, raw, attrs, metrics)
 		if isHospitalNameSchemaField(f) && anyToString(val) == "" {
 			val = h.Name
 		}
-		if anyToString(val) != "" {
+		if s := anyToString(val); s != "" {
 			out[key] = val
 		}
 	}
@@ -1600,27 +1587,324 @@ func mapHospitalToSchemaAnswers(schemaJSON json.RawMessage, h *model.Hospital) m
 }
 
 func hospitalPrefillAnswers(h *model.Hospital) map[string]any {
-	out := map[string]any{
-		"name":     h.Name,
-		"province": h.Province,
-		"city":     h.City,
-		"level":    h.Level,
-		"type":     h.Type,
+	out := map[string]any{}
+	set := func(k, v string) {
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" || v == "" {
+			return
+		}
+		if cur, ok := out[k]; ok && anyToString(cur) != "" {
+			return
+		}
+		out[k] = v
 	}
-	if h.District != "" {
-		out["district"] = h.District
+	set("name", h.Name)
+	set("province", h.Province)
+	set("city", h.City)
+	set("district", h.District)
+	set("level", h.Level)
+	set("type", h.Type)
+	set("status", h.Status)
+	set("address", h.Address)
+	set("remark", h.Remark)
+	set("customerCode", h.CustomerCode)
+	set("customer_code", h.CustomerCode)
+	set("region", h.Region)
+	set("branchOffice", h.BranchOffice)
+	set("branch_office", h.BranchOffice)
+
+	reserved := map[string]struct{}{
+		"name": {}, "province": {}, "city": {}, "district": {}, "level": {}, "type": {},
+		"status": {}, "address": {}, "remark": {}, "customerCode": {}, "customer_code": {},
+		"region": {}, "branchOffice": {}, "branch_office": {},
 	}
-	if h.Address != "" {
-		out["address"] = h.Address
-	}
-	if h.Archive != nil {
-		for _, k := range []string{"region", "branchOffice", "customerCode", "customerName", "contactName", "contactPhone"} {
-			if v := archiveString(h.Archive, k); v != "" {
-				out[k] = v
+	for k, v := range h.Archive {
+		s := formatPrefillValue(v)
+		if s == "" {
+			continue
+		}
+		if _, taken := reserved[k]; taken {
+			continue
+		}
+		set(k, s)
+		if alt := camelToSnakeKey(k); alt != k {
+			if _, taken := reserved[alt]; !taken {
+				set(alt, s)
+			}
+		}
+		if alt := snakeToCamelKey(k); alt != k {
+			if _, taken := reserved[alt]; !taken {
+				set(alt, s)
 			}
 		}
 	}
 	return out
+}
+
+func lookupHospitalPrefillValue(f schemaFieldMeta, h *model.Hospital, raw map[string]any, attrs, metrics map[string]string) any {
+	target := strings.TrimSpace(f.Target)
+	key := strings.TrimSpace(f.Key)
+	switch {
+	case target == "hospital.name" || target == "hospital.archive.customerName":
+		if v := strings.TrimSpace(h.Name); v != "" {
+			return v
+		}
+		return rawLookup(raw, "customerName")
+	case strings.HasPrefix(target, "hospital.attributes."):
+		attrKey := strings.TrimPrefix(target, "hospital.attributes.")
+		if v := attrPrefillValue(attrs, attrKey); v != "" {
+			return v
+		}
+		return archiveAliasForAttr(h.Archive, attrKey)
+	case strings.HasPrefix(target, "hospital.metrics."):
+		return strings.TrimSpace(metrics[strings.TrimPrefix(target, "hospital.metrics.")])
+	case strings.HasPrefix(target, "hospital.archive."):
+		ak := strings.TrimPrefix(target, "hospital.archive.")
+		if v := archiveLookup(h.Archive, ak); v != "" {
+			return v
+		}
+		if attrKey, ok := model.KnownAttributeKeys[ak]; ok {
+			if v := attrPrefillValue(attrs, attrKey); v != "" {
+				return v
+			}
+		}
+		if code := metricCodeForKey(ak); code != "" {
+			return strings.TrimSpace(metrics[code])
+		}
+		return nil
+	case strings.HasPrefix(target, "hospital."):
+		col := strings.TrimPrefix(target, "hospital.")
+		if v := rawLookup(raw, col); v != "" {
+			return v
+		}
+		return archiveLookup(h.Archive, col)
+	default:
+		return fallbackPrefillByKey(key, f.Label, raw, h.Archive, attrs, metrics)
+	}
+}
+
+func fallbackPrefillByKey(key, label string, raw map[string]any, archive map[string]any, attrs, metrics map[string]string) any {
+	if v := rawLookup(raw, key); v != "" {
+		return v
+	}
+	if attrKey, ok := model.KnownAttributeKeys[key]; ok {
+		if v := attrPrefillValue(attrs, attrKey); v != "" {
+			return v
+		}
+		if v := archiveAliasForAttr(archive, attrKey); v != "" {
+			return v
+		}
+	}
+	if code := metricCodeForKey(key); code != "" {
+		if v := strings.TrimSpace(metrics[code]); v != "" {
+			return v
+		}
+	}
+	if v := archiveLookup(archive, key); v != "" {
+		return v
+	}
+	if attrKey, ok := prefillLabelAttrKeys[strings.TrimSpace(label)]; ok {
+		if v := attrPrefillValue(attrs, attrKey); v != "" {
+			return v
+		}
+		if v := archiveAliasForAttr(archive, attrKey); v != "" {
+			return v
+		}
+	}
+	return nil
+}
+
+// prefillLabelAttrKeys maps exact questionnaire labels to attribute keys when
+// the field has no usable target. "医院等级" is intentionally omitted because it
+// may mean hospital grade or (in some templates) customer level.
+var prefillLabelAttrKeys = map[string]string{
+	"客户等级":        "customer_level",
+	"客户所在阶段":      "customer_stage",
+	"客户端待解决问题及需求": "pending_issues",
+	"采集者姓名":       "collector_name",
+}
+
+func preferredMetrics(all []model.HospitalMetric, currentYear int) map[string]string {
+	type rec struct {
+		year  int
+		value string
+	}
+	best := map[string]rec{}
+	for _, m := range all {
+		code := strings.TrimSpace(m.Code)
+		val := strings.TrimSpace(m.Value)
+		if code == "" || val == "" {
+			continue
+		}
+		prev, ok := best[code]
+		if !ok {
+			best[code] = rec{year: m.Year, value: val}
+			continue
+		}
+		if m.Year == currentYear && prev.year != currentYear {
+			best[code] = rec{year: m.Year, value: val}
+			continue
+		}
+		if prev.year != currentYear && m.Year > prev.year {
+			best[code] = rec{year: m.Year, value: val}
+		}
+	}
+	out := map[string]string{}
+	for code, r := range best {
+		out[code] = r.value
+	}
+	return out
+}
+
+func attrPrefillValue(attrs map[string]string, key string) string {
+	if len(attrs) == 0 {
+		return ""
+	}
+	for _, k := range []string{key, camelToSnakeKey(key), snakeToCamelKey(key)} {
+		if v := strings.TrimSpace(attrs[k]); v != "" {
+			return v
+		}
+	}
+	if alt, ok := model.KnownAttributeKeys[key]; ok {
+		if v := strings.TrimSpace(attrs[alt]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func archiveAliasForAttr(archive map[string]any, attrKey string) string {
+	if v := archiveLookup(archive, attrKey); v != "" {
+		return v
+	}
+	for alias, code := range model.KnownAttributeKeys {
+		if code == attrKey {
+			if v := archiveLookup(archive, alias); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+func metricCodeForKey(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	if code, ok := model.KnownMetricKeys[key]; ok {
+		return code
+	}
+	if code, ok := model.KnownMetricKeys[snakeToCamelKey(key)]; ok {
+		return code
+	}
+	if code, ok := model.KnownMetricKeys[camelToSnakeKey(key)]; ok {
+		return code
+	}
+	for _, code := range model.KnownMetricKeys {
+		if code == key || code == camelToSnakeKey(key) || code == snakeToCamelKey(key) {
+			return code
+		}
+	}
+	return ""
+}
+
+func rawLookup(raw map[string]any, key string) string {
+	if raw == nil {
+		return ""
+	}
+	for _, k := range []string{key, camelToSnakeKey(key), snakeToCamelKey(key)} {
+		if v := anyToString(raw[k]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func archiveLookup(archive map[string]any, key string) string {
+	if archive == nil {
+		return ""
+	}
+	for _, k := range []string{key, camelToSnakeKey(key), snakeToCamelKey(key)} {
+		if v := formatPrefillValue(archive[k]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func formatPrefillValue(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case []string:
+		parts := make([]string, 0, len(t))
+		for _, s := range t {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, "、")
+	case []any:
+		parts := make([]string, 0, len(t))
+		for _, item := range t {
+			switch item.(type) {
+			case map[string]any:
+				return ""
+			}
+			s := anyToString(item)
+			if s != "" {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, "、")
+	case map[string]any:
+		return ""
+	default:
+		return anyToString(v)
+	}
+}
+
+func camelToSnakeKey(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r - 'A' + 'a')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func snakeToCamelKey(s string) string {
+	var b strings.Builder
+	up := false
+	for _, r := range s {
+		if r == '_' {
+			up = true
+			continue
+		}
+		if up {
+			if r >= 'a' && r <= 'z' {
+				b.WriteRune(r - 'a' + 'A')
+			} else {
+				b.WriteRune(r)
+			}
+			up = false
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // filterPrefillBySchema keeps only keys declared in the template schema.
