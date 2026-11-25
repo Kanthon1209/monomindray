@@ -90,25 +90,37 @@ function isHospitalMappedField(field: SurveyField): boolean {
   if (typ === "repeat" && field.key === "devices") return true;
   const t = (field.target || "").trim();
   if (t.startsWith("hospital.")) return true;
-  const key = (field.key || "").toLowerCase();
-  return (
-    key === "name" ||
-    key === "hospitalname" ||
-    key === "customername" ||
-    key === "province" ||
-    key === "city" ||
-    key === "district" ||
-    key === "region" ||
-    key === "level" ||
-    key === "type" ||
-    key === "address" ||
-    key === "contactname" ||
-    key === "contactphone" ||
-    key === "customercode" ||
-    key === "branchoffice" ||
-    key === "msporderno" ||
-    key === "msp_order_no"
-  );
+  const key = (field.key || "").toLowerCase().replace(/_/g, "");
+  return HOSPITAL_MAPPED_KEY_ALIASES.has(key);
+}
+
+const HOSPITAL_MAPPED_KEY_ALIASES = new Set([
+  "name",
+  "hospitalname",
+  "customername",
+  "province",
+  "city",
+  "district",
+  "region",
+  "level",
+  "type",
+  "status",
+  "address",
+  "remark",
+  "contactname",
+  "contactphone",
+  "customercode",
+  "branchoffice",
+  "msporderno",
+  "customerlevel",
+  "customerstage",
+  "pendingissues",
+  "collectorname",
+  "labannualrevenue",
+  "labdirector",
+  "annualrevenue",
+  "hospitalannualrevenue",
+]);
 }
 
 /** Merge a hospital prefill into current answers without clobbering unrelated user input. */
