@@ -28,6 +28,7 @@ func RegisterHandlers(server *rest.Server, svcCtx *svc.ServiceContext) {
 
 			{Method: http.MethodGet, Path: "/api/v1/me/survey-assignments", Handler: ListMySurveyAssignmentsHandler(svcCtx)},
 			{Method: http.MethodGet, Path: "/api/v1/me/survey-assignments/:id", Handler: GetMySurveyAssignmentHandler(svcCtx)},
+			{Method: http.MethodGet, Path: "/api/v1/me/survey-assignments/:id/hospital-prefill", Handler: HospitalPrefillHandler(svcCtx)},
 			{Method: http.MethodPut, Path: "/api/v1/me/survey-assignments/:id/draft", Handler: SaveSurveyDraftHandler(svcCtx)},
 			{Method: http.MethodPost, Path: "/api/v1/me/survey-assignments/:id/submit", Handler: SubmitSurveyAssignmentHandler(svcCtx)},
 

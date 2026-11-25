@@ -14,6 +14,7 @@ type HospitalNameTypeaheadProps = {
   value: string;
   onChange: (value: string) => void;
   onSelectHospital?: (hospital: HospitalSearchOption) => void;
+  onBlur?: (value: string) => void;
   disabled?: boolean;
   placeholder?: string;
   id?: string;
@@ -24,6 +25,7 @@ export function HospitalNameTypeahead({
   value,
   onChange,
   onSelectHospital,
+  onBlur,
   disabled,
   placeholder = "输入医院名称搜索",
   id,
@@ -93,6 +95,7 @@ export function HospitalNameTypeahead({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
+          onBlur={() => onBlur?.(value)}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               setOpen(false);

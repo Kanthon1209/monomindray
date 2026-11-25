@@ -123,6 +123,8 @@ function ReviewEditor({
             allowLockedEdit
             hospitalBound={hospitalBound}
             hospitalName={item.hospitalName}
+            assignmentId={item.assignmentId}
+            linkedHospitalId={draft.hospitalId}
             onLinkedHospitalIdChange={(id) =>
               onDraftChange((prev) => ({ ...prev, hospitalId: id }))
             }

@@ -64,6 +64,9 @@ type HospitalModel interface {
 	Search(ctx context.Context, keyword string, limit int) ([]Hospital, error)
 	FindById(ctx context.Context, id int64) (*Hospital, error)
 	FindByName(ctx context.Context, name string) (*Hospital, error)
+	// ListByExactName returns every hospital whose name matches (case-insensitive).
+	// Unlike FindByName, it does not stop at the first row.
+	ListByExactName(ctx context.Context, name string) ([]Hospital, error)
 	FindByNameProvinceCity(ctx context.Context, name, province, city string) (*Hospital, error)
 	Insert(ctx context.Context, h *Hospital) (int64, error)
 	Update(ctx context.Context, h *Hospital) error
@@ -323,6 +326,48 @@ func (m *hospitalModel) FindByName(ctx context.Context, name string) (*Hospital,
 		h.DeviceBrands = []string{}
 	}
 	return &h, nil
+}
+
+func (m *hospitalModel) ListByExactName(ctx context.Context, name string) ([]Hospital, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil
+	}
+	rows, err := m.conn.Query(ctx, `
+		SELECT h.id, h.name, h.province, h.city, h.district, h.level, h.type, h.status,
+		       h.address, h.remark, COALESCE(h.customer_code,''), COALESCE(h.region,''), COALESCE(h.branch_office,''),
+		       COALESCE(h.archive, '{}'::jsonb), h.created_by, h.updated_by, h.created_at, h.updated_at,
+		       COALESCE(v.device_count, 0), COALESCE(v.device_models, ARRAY[]::TEXT[]), COALESCE(v.device_brands, ARRAY[]::TEXT[])
+		FROM hospitals h
+		LEFT JOIN v_hospital_dashboard v ON v.id = h.id
+		WHERE lower(trim(h.name)) = lower(trim($1))
+		ORDER BY CASE WHEN h.status = 'active' THEN 0 ELSE 1 END, h.id`, name)
+	if err != nil {
+		return nil, fmt.Errorf("list hospitals by exact name: %w", err)
+	}
+	defer rows.Close()
+	items := make([]Hospital, 0)
+	for rows.Next() {
+		var h Hospital
+		var archiveRaw []byte
+		if err := rows.Scan(
+			&h.Id, &h.Name, &h.Province, &h.City, &h.District, &h.Level, &h.Type, &h.Status,
+			&h.Address, &h.Remark, &h.CustomerCode, &h.Region, &h.BranchOffice,
+			&archiveRaw, &h.CreatedBy, &h.UpdatedBy, &h.CreatedAt, &h.UpdatedAt,
+			&h.DeviceCount, &h.DeviceModels, &h.DeviceBrands,
+		); err != nil {
+			return nil, fmt.Errorf("scan hospital exact name: %w", err)
+		}
+		h.Archive = decodeArchive(archiveRaw)
+		if h.DeviceModels == nil {
+			h.DeviceModels = []string{}
+		}
+		if h.DeviceBrands == nil {
+			h.DeviceBrands = []string{}
+		}
+		items = append(items, h)
+	}
+	return items, rows.Err()
 }
 
 func (m *hospitalModel) FindByNameProvinceCity(ctx context.Context, name, province, city string) (*Hospital, error) {
